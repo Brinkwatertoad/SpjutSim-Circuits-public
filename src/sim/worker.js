@@ -1,0 +1,216 @@
+const workerBase = (() => {
+  if (typeof self !== "undefined" && typeof self.SpjutSimWorkerBase === "string" && self.SpjutSimWorkerBase) {
+    return self.SpjutSimWorkerBase.replace(/\/$/, "");
+  }
+  if (typeof self === "undefined" || !self.location) {
+    return "";
+  }
+  try {
+    return new URL(".", self.location.href).href.replace(/\/$/, "");
+  } catch {
+    return "";
+  }
+})();
+
+const spiceBase = (() => {
+  if (typeof self !== "undefined" && typeof self.SpjutSimSpiceBase === "string" && self.SpjutSimSpiceBase) {
+    return self.SpjutSimSpiceBase.replace(/\/$/, "");
+  }
+  if (workerBase) {
+    try {
+      return new URL("../../public/spice/", `${workerBase}/`).href.replace(/\/$/, "");
+    } catch {
+      return "/public/spice";
+    }
+  }
+  return "/public/spice";
+})();
+
+if (typeof self !== "undefined") {
+  self.SpjutSimSpiceBase = spiceBase;
+}
+
+const bridgeUrl = (workerBase ? `${workerBase}/ngspice-bridge.js` : "./ngspice-bridge.js") + `?v=${Date.now()}`;
+importScripts(bridgeUrl);
+
+const ctx = self;
+const bridge = ctx.ngspiceBridge ?? null;
+
+if (!bridge || !bridge.initNgspice || !bridge.runOpNetlist || !bridge.resetSimulator) {
+  throw new Error("ngspice bridge failed to load. Check /src/sim/ngspice-bridge.js.");
+}
+
+ctx.postMessage({ type: "log", text: "Worker booted." });
+
+const fallbackNetlist = `* voltage divider
+V1 in 0 10
+R1 in out 10k
+R2 out 0 10k
+.op
+.end
+`;
+
+function post(message) {
+  ctx.postMessage(message);
+}
+
+function getBridgeLog() {
+  if (bridge && typeof bridge.getLogs === "function") {
+    const logText = bridge.getLogs();
+    if (logText && logText.trim().length) {
+      return logText;
+    }
+  }
+  return "";
+}
+
+ctx.onmessage = async (event) => {
+  const message = event.data;
+  if (!message) {
+    return;
+  }
+
+  try {
+    const requestId = typeof message.id === "string" ? message.id : undefined;
+    const requestKind = message.kind;
+
+    if (message.type === "init") {
+      post({ type: "log", text: "Init requested." });
+      await bridge.initNgspice();
+      post({ type: "ready", id: requestId });
+      return;
+    }
+
+    if (message.type === "reset") {
+      bridge.resetSimulator();
+      post({ type: "log", text: "Simulator reset.", id: requestId });
+      return;
+    }
+
+    if (message.type === "run") {
+      if (message.kind !== "op" && message.kind !== "dc" && message.kind !== "tran" && message.kind !== "ac") {
+        post({ type: "error", message: "Only OP, DC, TRAN, and AC are supported right now.", kind: requestKind, id: requestId });
+        return;
+      }
+      post({ type: "log", text: `Run ${requestKind ?? "unknown"} requested.`, kind: requestKind, id: requestId });
+      const netlist = message.netlist?.trim().length ? message.netlist : fallbackNetlist;
+      const plotHint = message.kind === "dc" ? "dc" : (message.kind === "tran" ? "tran" : (message.kind === "ac" ? "ac" : "op"));
+      const targetSignals = Array.isArray(message.signals)
+        ? message.signals
+        : (typeof message.signal === "string" ? [message.signal] : []);
+      let runNetlist;
+      if (message.kind === "dc" && typeof bridge.runDcNetlist === "function") {
+        runNetlist = bridge.runDcNetlist;
+      } else if (message.kind === "tran" && typeof bridge.runTranNetlist === "function") {
+        runNetlist = bridge.runTranNetlist;
+      } else if (message.kind === "ac" && typeof bridge.runAcNetlist === "function") {
+        runNetlist = bridge.runAcNetlist;
+      } else {
+        runNetlist = bridge.runOpNetlist;
+      }
+      const result = runNetlist(netlist, plotHint, targetSignals);
+      const vectorMap = result.vectors?.vectors ?? {};
+      const vectorNames = Object.keys(vectorMap);
+      const sweepCount = vectorNames.filter((name) => {
+        const data = vectorMap[name]?.data;
+        return Array.isArray(data) && data.length > 1;
+      }).length;
+      const plotNames = Array.isArray(result.plots) ? result.plots : [];
+      const plotPreview = plotNames.length ? `:${plotNames.slice(0, 4).join(",")}` : "";
+      const runSummary = [
+        `Run ${requestKind ?? "unknown"} done`,
+        `source=${result.exitCode ?? "?"}`,
+        `run=${result.runCode ?? "?"}`,
+        `load=${result.loadMethod ?? "source"}`,
+        result.usedDcCommand ? "dcCmd=1" : "dcCmd=0",
+        `plot=${result.vectors?.plot ?? ""}`,
+        `vectors=${vectorNames.length}`,
+        `sweeps=${sweepCount}`,
+        `plots=${plotNames.length}${plotPreview}`
+      ].join(" | ");
+      post({ type: "log", text: runSummary, kind: requestKind, id: requestId });
+      if (result.log) {
+        post({ type: "log", text: result.log, kind: requestKind, id: requestId });
+      }
+      if (result.vectors?.plot) {
+        const vecCount = Object.keys(result.vectors.vectors ?? {}).length;
+        post({ type: "log", text: `Plot: ${result.vectors.plot} (${vecCount} vectors)`, kind: requestKind, id: requestId });
+      }
+      if (!result.ok) {
+        post({
+          type: "error",
+          message: "ngspice returned a non-zero exit code.",
+          log: result.log,
+          kind: requestKind,
+          id: requestId
+        });
+        return;
+      }
+      if (message.kind === "dc") {
+        const dcResults = typeof bridge.extractDcResults === "function"
+          ? bridge.extractDcResults(result.vectors, netlist, targetSignals)
+          : { plot: result.vectors?.plot ?? "", x: [], traces: {}, signals: [], selected: [] };
+        if (!dcResults.x.length || !Object.keys(dcResults.traces ?? {}).length) {
+          post({
+            type: "error",
+            message: "DC sweep returned no data. Verify your netlist has a .dc statement.",
+            log: result.log,
+            kind: requestKind,
+            id: requestId
+          });
+          return;
+        }
+        post({ type: "result", kind: "dc", data: dcResults, id: requestId });
+        return;
+      }
+      if (message.kind === "tran") {
+        const tranResults = typeof bridge.extractTranResults === "function"
+          ? bridge.extractTranResults(result.vectors, netlist, targetSignals)
+          : { plot: result.vectors?.plot ?? "", x: [], traces: {}, signals: [], selected: [] };
+        if (!tranResults.x.length || !Object.keys(tranResults.traces ?? {}).length) {
+          post({
+            type: "error",
+            message: "Transient analysis returned no data. Verify your netlist has a .tran statement.",
+            log: result.log,
+            kind: requestKind,
+            id: requestId
+          });
+          return;
+        }
+        post({ type: "result", kind: "tran", data: tranResults, id: requestId });
+        return;
+      }
+      if (message.kind === "ac") {
+        const acResults = typeof bridge.extractAcResults === "function"
+          ? bridge.extractAcResults(result.vectors, netlist, targetSignals)
+          : { plot: result.vectors?.plot ?? "", freq: [], magnitude: {}, phase: {}, signals: [], selected: [] };
+        if (!acResults.freq.length || !Object.keys(acResults.magnitude ?? {}).length) {
+          post({
+            type: "error",
+            message: "AC analysis returned no data. Verify your netlist has a .ac statement.",
+            log: result.log,
+            kind: requestKind,
+            id: requestId
+          });
+          return;
+        }
+        post({ type: "result", kind: "ac", data: acResults, id: requestId });
+        return;
+      }
+      const opResults = typeof bridge.extractOpResults === "function"
+        ? bridge.extractOpResults(result.vectors)
+        : { plot: result.vectors?.plot ?? "", nodes: [], currents: [] };
+      post({ type: "result", kind: "op", data: opResults, id: requestId });
+    }
+  } catch (error) {
+    const messageText = error instanceof Error ? error.message : "Unknown error";
+    const errorLog = getBridgeLog();
+    post({
+      type: "error",
+      message: messageText,
+      log: errorLog || undefined,
+      kind: typeof message?.kind === "string" ? message.kind : undefined,
+      id: typeof message?.id === "string" ? message.id : undefined
+    });
+  }
+};
