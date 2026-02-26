@@ -42,8 +42,7 @@
   --shadow-inline: 0 10px 24px rgba(0, 0, 0, 0.14);
   --shadow-tooltip: 0 8px 18px rgba(0, 0, 0, 0.18);
   --layout-sidebar-width: 240px;
-  --layout-sidebar-min-width: 120px;
-  --layout-gap: 16px;
+  --layout-gap: 12px;
   --results-pane-divider-size: 10px;
   --results-pane-min-width: 320px;
   --touch-target-size: 44px;
@@ -98,7 +97,7 @@ h1 {
   justify-content: space-between;
   gap: var(--layout-gap);
   row-gap: var(--space-2);
-  padding: var(--space-6) var(--layout-gap) var(--space-5);
+  padding: var(--space-5) var(--layout-gap) var(--space-4);
   border-bottom: 1px solid var(--color-border-soft);
 }
 
@@ -116,23 +115,26 @@ h1 {
 }
 
 .title-bar-right {
+  align-items: flex-start;
   margin-left: auto;
   justify-content: flex-end;
+  flex-wrap: nowrap;
 }
 
 .title-status {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--space-2);
   min-width: 0;
+  white-space: nowrap;
 }
 
 .menu-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 0;
   min-width: 0;
 }
 
@@ -471,7 +473,7 @@ button.menu-item:disabled {
 
 .workspace-primary-strip {
   display: grid;
-  grid-template-columns: minmax(0, clamp(var(--layout-sidebar-min-width), 38%, var(--layout-sidebar-width))) minmax(0, 1fr);
+  grid-template-columns: var(--layout-sidebar-width) minmax(0, 1fr);
   column-gap: var(--layout-gap);
   align-items: start;
 }
@@ -562,7 +564,7 @@ button.workspace-tab {
 
 .workspace-split {
   display: grid;
-  grid-template-columns: minmax(0, clamp(var(--layout-sidebar-min-width), 38%, var(--layout-sidebar-width))) minmax(0, 1fr);
+  grid-template-columns: var(--layout-sidebar-width) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   column-gap: var(--layout-gap);
   row-gap: var(--space-3);
@@ -617,8 +619,9 @@ button.workspace-tab {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-left: auto;
+  flex-wrap: nowrap;
   flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .results-pane-action {
@@ -699,6 +702,38 @@ button.workspace-tab {
   padding-left: var(--layout-gap);
 }
 
+.results-pane-layout[data-results-pane-stacked="1"][data-results-pane-mode="split"] {
+  grid-template-columns: 1fr;
+  grid-template-rows:
+    minmax(0, calc((100% - var(--results-pane-divider-size)) * var(--results-pane-split-ratio)))
+    var(--results-pane-divider-size)
+    minmax(0, calc((100% - var(--results-pane-divider-size)) * (1 - var(--results-pane-split-ratio))));
+}
+
+.results-pane-layout[data-results-pane-stacked="1"][data-results-pane-mode="split"] .results-pane-schematic {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.results-pane-layout[data-results-pane-stacked="1"][data-results-pane-mode="split"] .results-pane-divider {
+  grid-column: 1;
+  grid-row: 2;
+  width: 100%;
+  height: var(--results-pane-divider-size);
+  cursor: row-resize;
+  border-left: 0;
+  border-right: 0;
+  border-top: 1px solid var(--color-border-soft);
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.results-pane-layout[data-results-pane-stacked="1"][data-results-pane-mode="split"] .results-pane-content {
+  grid-column: 1;
+  grid-row: 3;
+  padding-left: 0;
+  padding-top: var(--layout-gap);
+}
+
 .results-panel {
   display: flex;
   flex-direction: column;
@@ -708,7 +743,7 @@ button.workspace-tab {
 
 .results-pane-workspace {
   display: grid;
-  grid-template-columns: minmax(0, clamp(var(--layout-sidebar-min-width), 38%, var(--layout-sidebar-width))) minmax(0, 1fr);
+  grid-template-columns: var(--layout-sidebar-width) minmax(0, 1fr);
   gap: var(--layout-gap);
   align-items: stretch;
   height: 100%;
@@ -783,19 +818,7 @@ button.workspace-tab {
 }
 
 @media (max-width: 1024px) {
-  :root {
-    --layout-sidebar-width: 208px;
-    --layout-gap: 12px;
-  }
-  .title-bar {
-    padding: var(--space-5) var(--space-5) var(--space-4);
-  }
-  .workspace {
-    padding: 0 var(--space-5) var(--space-5);
-  }
-  .workspace-tools {
-    padding-right: var(--space-3);
-  }
+  /* Reserved for tablet-specific tweaks that do not change base layout width/margins. */
 }
 
 @media (max-width: 599px) {
@@ -846,12 +869,12 @@ button.workspace-tab {
     gap: var(--space-2);
   }
   .title-bar-left {
-    flex: 1 1 auto;
+    flex: 1 1 100%;
   }
   .title-bar-right {
-    flex: 0 1 auto;
-    margin-left: auto;
-    justify-content: flex-end;
+    flex: 0 1 100%;
+    margin-left: 0;
+    justify-content: flex-start;
   }
   .menu-bar {
     flex: 1 1 auto;
@@ -859,27 +882,7 @@ button.workspace-tab {
   .file-status {
     padding: 2px var(--space-3);
     font-size: 11px;
-    margin-left: auto;
     max-width: 100%;
-  }
-  .results-pane-layout[data-results-pane-mode="split"] {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(280px, 1fr) minmax(260px, 1fr);
-  }
-  .results-pane-layout[data-results-pane-mode="split"] .results-pane-schematic {
-    grid-column: 1;
-    grid-row: 1;
-  }
-  .results-pane-layout[data-results-pane-mode="split"] .results-pane-content {
-    grid-column: 1;
-    grid-row: 2;
-  }
-  .results-pane-layout[data-results-pane-mode="split"] .results-pane-divider {
-    display: none;
-  }
-  .results-pane-content {
-    padding-left: 0;
-    padding-top: var(--layout-gap);
   }
 }
 

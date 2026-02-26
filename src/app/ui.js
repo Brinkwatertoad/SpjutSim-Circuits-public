@@ -23,6 +23,8 @@ const DEFAULT_RESULTS_PANE_MODE = "hidden";
 const DEFAULT_RESULTS_PANE_SPLIT_RATIO = 0.5;
 const MIN_RESULTS_PANE_SPLIT_RATIO = 0.25;
 const MAX_RESULTS_PANE_SPLIT_RATIO = 0.75;
+const RESULTS_PANE_STACK_WIDTH_THRESHOLD = 900;
+const RESULTS_PANE_COMPACT_WIDTH_THRESHOLD = 600;
 
 const createSimulationConfig = () => ({
   activeKind: "op",
@@ -500,11 +502,11 @@ function createUI(container, state, actions) {
 
   const titleBarLeft = document.createElement("div");
   titleBarLeft.className = "title-bar-left";
-  titleBarLeft.append(title, menuBar, fileStatus);
+  titleBarLeft.append(title, menuBar);
 
   const titleBarRight = document.createElement("div");
   titleBarRight.className = "title-bar-right";
-  titleBarRight.append(statusWrap);
+  titleBarRight.append(fileStatus, statusWrap);
 
   titleBar.append(titleBarLeft, titleBarRight);
 
@@ -2840,22 +2842,55 @@ function createUI(container, state, actions) {
   workspaceHelp.append(helpPanel, workspaceHelpSpacer);
   schematicWorkspace.append(workspaceHelp);
 
+  const readResultsPaneResponsiveWidth = () => {
+    const candidates = [
+      Number(workspace?.getBoundingClientRect?.().width),
+      Number(container?.getBoundingClientRect?.().width),
+      Number(resultsPaneLayout?.getBoundingClientRect?.().width),
+      Number(window.innerWidth)
+    ];
+    for (const candidate of candidates) {
+      if (Number.isFinite(candidate) && candidate > 0) {
+        return candidate;
+      }
+    }
+    return 0;
+  };
+
+  const resolveResultsPaneResponsiveState = () => {
+    const width = readResultsPaneResponsiveWidth();
+    const dockedAllowed = width >= RESULTS_PANE_COMPACT_WIDTH_THRESHOLD;
+    const stacked = dockedAllowed && width <= RESULTS_PANE_STACK_WIDTH_THRESHOLD;
+    return { width, dockedAllowed, stacked };
+  };
+
   let resultsPaneLastVisibleMode = resultsPaneState.mode === "expanded" ? "expanded" : "split";
 
   applyResultsPaneState = (options = {}) => {
     if (!resultsPaneLayout) {
       return;
     }
+    const responsiveState = resolveResultsPaneResponsiveState();
     const normalized = normalizeResultsPaneState(resultsPaneState);
+    if (!responsiveState.dockedAllowed && normalized.mode === "split") {
+      normalized.mode = "expanded";
+    }
     resultsPaneState = normalized;
     const mode = normalized.mode;
     resultsPaneLayout.dataset.resultsPaneMode = mode;
+    resultsPaneLayout.dataset.resultsPaneStacked = responsiveState.stacked ? "1" : "0";
+    resultsPaneLayout.dataset.resultsPaneDockedAllowed = responsiveState.dockedAllowed ? "1" : "0";
     resultsPaneLayout.style.setProperty("--results-pane-split-ratio", String(normalized.splitRatio));
     if (workspace) {
       workspace.dataset.resultsPaneMode = mode;
+      workspace.dataset.resultsPaneStacked = responsiveState.stacked ? "1" : "0";
+      workspace.dataset.resultsPaneDockedAllowed = responsiveState.dockedAllowed ? "1" : "0";
     }
     if (mode !== "hidden") {
       resultsPaneLastVisibleMode = mode === "expanded" ? "expanded" : "split";
+    }
+    if (!responsiveState.dockedAllowed && resultsPaneLastVisibleMode === "split") {
+      resultsPaneLastVisibleMode = "expanded";
     }
     const isHidden = mode === "hidden";
     const isExpanded = mode === "expanded";
@@ -2865,13 +2900,25 @@ function createUI(container, state, actions) {
     toggleResultsPaneVisibilityButton.classList.toggle("active", !isHidden);
     toggleResultsPaneVisibilityButton.setAttribute("aria-pressed", isHidden ? "false" : "true");
 
-    const layoutTooltip = isExpanded ? "Docked Results" : "Full Results";
-    const layoutIcon = isExpanded ? "results-split" : "results-expand";
-    applyActionButtonIcon(toggleResultsPaneLayoutButton, layoutIcon, layoutTooltip);
-    toggleResultsPaneLayoutButton.disabled = isHidden;
-    toggleResultsPaneLayoutButton.classList.toggle("active", isExpanded);
-    toggleResultsPaneLayoutButton.setAttribute("aria-pressed", isExpanded ? "true" : "false");
-    toggleResultsPaneLayoutButton.setAttribute("aria-disabled", isHidden ? "true" : "false");
+    toggleResultsPaneLayoutButton.hidden = !responsiveState.dockedAllowed;
+    toggleResultsPaneLayoutButton.setAttribute("aria-hidden", responsiveState.dockedAllowed ? "false" : "true");
+    if (responsiveState.dockedAllowed) {
+      const layoutTooltip = isExpanded ? "Docked Results" : "Full Results";
+      const layoutIcon = isExpanded ? "results-split" : "results-expand";
+      applyActionButtonIcon(toggleResultsPaneLayoutButton, layoutIcon, layoutTooltip);
+      toggleResultsPaneLayoutButton.disabled = isHidden;
+      toggleResultsPaneLayoutButton.classList.toggle("active", isExpanded);
+      toggleResultsPaneLayoutButton.setAttribute("aria-pressed", isExpanded ? "true" : "false");
+      toggleResultsPaneLayoutButton.setAttribute("aria-disabled", isHidden ? "true" : "false");
+    } else {
+      toggleResultsPaneLayoutButton.disabled = true;
+      toggleResultsPaneLayoutButton.classList.remove("active");
+      toggleResultsPaneLayoutButton.setAttribute("aria-pressed", "false");
+      toggleResultsPaneLayoutButton.setAttribute("aria-disabled", "true");
+    }
+    if (resultsPaneDivider) {
+      resultsPaneDivider.setAttribute("aria-orientation", responsiveState.stacked ? "horizontal" : "vertical");
+    }
     const skipResize = options.skipResize === true;
     if (!skipResize && mode !== "hidden") {
       queuePlotResize();
@@ -2880,12 +2927,13 @@ function createUI(container, state, actions) {
 
   setResultsPaneMode = (mode, options = {}) => {
     const nextMode = normalizeResultsPaneMode(mode);
-    const changed = resultsPaneState.mode !== nextMode;
+    const previousMode = resultsPaneState.mode;
     resultsPaneState = {
       ...resultsPaneState,
       mode: nextMode
     };
     applyResultsPaneState();
+    const changed = previousMode !== resultsPaneState.mode;
     if (!changed) {
       return;
     }
@@ -2913,7 +2961,8 @@ function createUI(container, state, actions) {
 
   openResultsPaneForRun = () => {
     if (resultsPaneState.mode === "hidden") {
-      setResultsPaneMode("split");
+      const responsiveState = resolveResultsPaneResponsiveState();
+      setResultsPaneMode(responsiveState.dockedAllowed ? "split" : "expanded");
       return;
     }
     queuePlotResize();
@@ -2921,13 +2970,18 @@ function createUI(container, state, actions) {
 
   toggleResultsPaneVisibilityButton.addEventListener("click", () => {
     if (resultsPaneState.mode === "hidden") {
-      setResultsPaneMode(resultsPaneLastVisibleMode);
+      const responsiveState = resolveResultsPaneResponsiveState();
+      const visibleMode = responsiveState.dockedAllowed ? resultsPaneLastVisibleMode : "expanded";
+      setResultsPaneMode(visibleMode);
       return;
     }
     setResultsPaneMode("hidden");
   });
   toggleResultsPaneLayoutButton.addEventListener("click", () => {
     if (resultsPaneState.mode === "hidden") {
+      return;
+    }
+    if (toggleResultsPaneLayoutButton.hidden) {
       return;
     }
     if (resultsPaneState.mode === "expanded") {
@@ -2944,7 +2998,7 @@ function createUI(container, state, actions) {
     return Math.min(max, Math.max(min, value));
   };
 
-  const readResultsPaneDividerSize = () => {
+  const readResultsPaneDividerSize = (axis = "x") => {
     if (!resultsPaneLayout) {
       return 0;
     }
@@ -2954,23 +3008,49 @@ function createUI(container, state, actions) {
       return cssSize;
     }
     const dividerRect = resultsPaneDivider?.getBoundingClientRect?.();
-    const rectSize = Number(dividerRect?.width);
+    const rectSize = axis === "y"
+      ? Number(dividerRect?.height)
+      : Number(dividerRect?.width);
     if (Number.isFinite(rectSize) && rectSize >= 0) {
       return rectSize;
     }
     return 10;
   };
 
-  const resolveResultsPaneDragTarget = (clientX) => {
+  const resolveResultsPaneDragTarget = (clientX, clientY) => {
     if (!resultsPaneLayout) {
       return null;
     }
     const rect = resultsPaneLayout.getBoundingClientRect();
+    const isStacked = resultsPaneLayout.dataset.resultsPaneStacked === "1";
+    if (isStacked) {
+      const layoutHeight = Number(rect?.height);
+      if (!Number.isFinite(layoutHeight) || layoutHeight <= 0) {
+        return null;
+      }
+      const dividerSize = clampNumber(readResultsPaneDividerSize("y"), 0, layoutHeight);
+      const availableHeight = Math.max(1, layoutHeight - dividerSize);
+      const relativeCenterY = clampNumber(clientY - rect.top, 0, layoutHeight);
+      const topHeight = clampNumber(relativeCenterY - (dividerSize / 2), 0, availableHeight);
+      const bottomHeight = Math.max(0, availableHeight - topHeight);
+      const minimumResultsHeight = availableHeight * (1 - MAX_RESULTS_PANE_SPLIT_RATIO);
+      const minimumSchematicHeight = availableHeight * MIN_RESULTS_PANE_SPLIT_RATIO;
+      if (bottomHeight <= (minimumResultsHeight * 0.5)) {
+        return { mode: "hidden" };
+      }
+      if (topHeight <= (minimumSchematicHeight * 0.5)) {
+        return { mode: "expanded" };
+      }
+      return {
+        mode: "split",
+        splitRatio: topHeight / availableHeight
+      };
+    }
     const layoutWidth = Number(rect?.width);
     if (!Number.isFinite(layoutWidth) || layoutWidth <= 0) {
       return null;
     }
-    const dividerSize = clampNumber(readResultsPaneDividerSize(), 0, layoutWidth);
+    const dividerSize = clampNumber(readResultsPaneDividerSize("x"), 0, layoutWidth);
     const availableWidth = Math.max(1, layoutWidth - dividerSize);
     const relativeCenterX = clampNumber(clientX - rect.left, 0, layoutWidth);
     const leftWidth = clampNumber(relativeCenterX - (dividerSize / 2), 0, availableWidth);
@@ -3027,7 +3107,7 @@ function createUI(container, state, actions) {
     if (!isDraggingResultsDivider || event.pointerId !== resultsDividerPointerId || !resultsPaneLayout) {
       return;
     }
-    const target = resolveResultsPaneDragTarget(event.clientX);
+    const target = resolveResultsPaneDragTarget(event.clientX, event.clientY);
     applyResultsPaneDragTarget(target);
   });
   const finishResultsPaneDrag = (event) => {
@@ -3071,7 +3151,10 @@ function createUI(container, state, actions) {
   applyResultsPaneState({ skipResize: true });
 
   container.append(titleBar, workspace);
-  window.addEventListener("resize", updateHelpOffset);
+  window.addEventListener("resize", () => {
+    updateHelpOffset();
+    applyResultsPaneState({ skipResize: false });
+  });
 
   const formatRows = (rows, options = {}) =>
     rows.map((row) => {
