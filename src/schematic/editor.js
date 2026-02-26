@@ -13,12 +13,18 @@
   const GRID_MAJOR = "#d8d1c6";
   const CANVAS_BG = "#fbfaf7";
   const DEFAULT_VIEW = { x: 0, y: 0, width: 800, height: 500 };
+  const MIN_VIEW_WIDTH = 200;
+  const MAX_VIEW_WIDTH = 2000;
+  const MIN_VIEW_HEIGHT = 120;
+  const MAX_VIEW_HEIGHT = 1500;
   const DEFAULT_GRID = { size: 20, snap: true, visible: true };
   const PIN_HIT_RADIUS = 8;
   const WIRE_HIT_RADIUS = 10;
   const DRAG_DEADZONE_PX = 4;
   const DOUBLE_CLICK_INTERVAL_MS = 400;
   const DOUBLE_CLICK_DISTANCE_PX = 8;
+  const TOUCH_PINCH_MIN_DISTANCE_PX = 12;
+  const TOUCH_PINCH_DISTANCE_DEADZONE_PX = 4;
   const IDENTITY_TRANSFORM = { a: 1, b: 0, c: 0, d: 1 };
   const ROTATE_CW = { a: 0, b: -1, c: 1, d: 0 };
   const ROTATE_CCW = { a: 0, b: 1, c: -1, d: 0 };
@@ -1275,7 +1281,7 @@
     }
     const drawShape = symbolApi?.drawShape;
     const handled = typeof drawShape === "function"
-      ? drawShape(symbolCtx, type, group, { length: info.length, style })
+      ? drawShape(symbolCtx, type, group, { length: info.length, rotation: info.angle, style })
       : false;
     if (!handled) {
       appendLine(group, 0, 0, info.length, 0, style);
@@ -1689,6 +1695,9 @@
       placeTransform: { ...IDENTITY_TRANSFORM },
       drag: null,
       pan: null,
+      touchPointers: new Map(),
+      touchPinch: null,
+      touchCapturedPointerIds: new Set(),
       dragType: null,
       hoveredComponentId: null,
       hoveredWireId: null,
@@ -8592,13 +8601,206 @@
       notifyModelChange();
     };
 
+    const getPointerId = (event) => {
+      const pointerId = Number(event?.pointerId);
+      return Number.isFinite(pointerId) ? pointerId : null;
+    };
+
+    const isTouchPointer = (event) =>
+      String(event?.pointerType ?? "").trim().toLowerCase() === "touch";
+
+    const trackTouchPointer = (event) => {
+      if (!isTouchPointer(event)) {
+        return;
+      }
+      const pointerId = getPointerId(event);
+      if (pointerId === null) {
+        return;
+      }
+      state.touchPointers.set(pointerId, {
+        clientX: event.clientX,
+        clientY: event.clientY
+      });
+    };
+
+    const updateTrackedTouchPointer = (event) => {
+      if (!isTouchPointer(event)) {
+        return;
+      }
+      const pointerId = getPointerId(event);
+      if (pointerId === null || !state.touchPointers.has(pointerId)) {
+        return;
+      }
+      state.touchPointers.set(pointerId, {
+        clientX: event.clientX,
+        clientY: event.clientY
+      });
+    };
+
+    const untrackTouchPointer = (event) => {
+      if (!isTouchPointer(event)) {
+        return;
+      }
+      const pointerId = getPointerId(event);
+      if (pointerId === null) {
+        return;
+      }
+      state.touchPointers.delete(pointerId);
+    };
+
+    const captureTouchPointer = (event) => {
+      if (!isTouchPointer(event)) {
+        return;
+      }
+      const pointerId = getPointerId(event);
+      if (pointerId === null || state.touchCapturedPointerIds.has(pointerId)) {
+        return;
+      }
+      try {
+        if (typeof svg.setPointerCapture === "function") {
+          svg.setPointerCapture(pointerId);
+        }
+        state.touchCapturedPointerIds.add(pointerId);
+      } catch {
+        // Ignore capture failures for synthetic/non-active pointers.
+      }
+    };
+
+    const releaseTouchPointerCapture = (pointerId) => {
+      if (!Number.isFinite(pointerId)) {
+        return;
+      }
+      if (!state.touchCapturedPointerIds.has(pointerId)) {
+        return;
+      }
+      try {
+        if (typeof svg.releasePointerCapture === "function") {
+          svg.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // Ignore release failures for synthetic/non-captured pointers.
+      }
+      state.touchCapturedPointerIds.delete(pointerId);
+    };
+
     const beginPan = (event) => {
       state.pan = {
         startX: event.clientX,
         startY: event.clientY,
         viewX: state.view.x,
-        viewY: state.view.y
+        viewY: state.view.y,
+        pointerId: getPointerId(event)
       };
+    };
+
+    const beginTouchPinchIfEligible = () => {
+      if (state.touchPinch || state.touchPointers.size !== 2) {
+        return false;
+      }
+      if (state.tool.mode !== "select") {
+        return false;
+      }
+      if (state.drag || state.selectionBox || state.wireNode || state.wireHandle || state.probeDiffEndpointDrag) {
+        return false;
+      }
+      const entries = Array.from(state.touchPointers.entries());
+      const first = entries[0];
+      const second = entries[1];
+      if (!first || !second) {
+        return false;
+      }
+      const firstPoint = first[1];
+      const secondPoint = second[1];
+      const dx = secondPoint.clientX - firstPoint.clientX;
+      const dy = secondPoint.clientY - firstPoint.clientY;
+      const startDistance = Math.hypot(dx, dy);
+      if (!Number.isFinite(startDistance) || startDistance < TOUCH_PINCH_MIN_DISTANCE_PX) {
+        return false;
+      }
+      const midpointClientX = (firstPoint.clientX + secondPoint.clientX) / 2;
+      const midpointClientY = (firstPoint.clientY + secondPoint.clientY) / 2;
+      const anchorWorld = clientToWorld(midpointClientX, midpointClientY);
+      if (!anchorWorld) {
+        return false;
+      }
+      endPan();
+      state.touchPinch = {
+        pointerAId: first[0],
+        pointerBId: second[0],
+        startDistance,
+        startView: { ...state.view },
+        anchorWorld
+      };
+      state.lastSelectClick = null;
+      return true;
+    };
+
+    const updateTouchPinch = (event) => {
+      if (!state.touchPinch) {
+        return false;
+      }
+      const pointerId = getPointerId(event);
+      if (pointerId === null) {
+        return false;
+      }
+      if (pointerId !== state.touchPinch.pointerAId && pointerId !== state.touchPinch.pointerBId) {
+        return false;
+      }
+      const firstPoint = state.touchPointers.get(state.touchPinch.pointerAId);
+      const secondPoint = state.touchPointers.get(state.touchPinch.pointerBId);
+      if (!firstPoint || !secondPoint) {
+        state.touchPinch = null;
+        return false;
+      }
+      const dx = secondPoint.clientX - firstPoint.clientX;
+      const dy = secondPoint.clientY - firstPoint.clientY;
+      const distance = Math.hypot(dx, dy);
+      if (!Number.isFinite(distance) || distance < TOUCH_PINCH_MIN_DISTANCE_PX) {
+        return true;
+      }
+      if (Math.abs(distance - state.touchPinch.startDistance) < TOUCH_PINCH_DISTANCE_DEADZONE_PX) {
+        return true;
+      }
+      const zoomFactor = state.touchPinch.startDistance / distance;
+      const newWidth = Math.max(MIN_VIEW_WIDTH, Math.min(MAX_VIEW_WIDTH, state.touchPinch.startView.width * zoomFactor));
+      const newHeight = Math.max(MIN_VIEW_HEIGHT, Math.min(MAX_VIEW_HEIGHT, state.touchPinch.startView.height * zoomFactor));
+      const rect = svg.getBoundingClientRect();
+      if (!rect.width || !rect.height) {
+        return true;
+      }
+      const midpointClientX = (firstPoint.clientX + secondPoint.clientX) / 2;
+      const midpointClientY = (firstPoint.clientY + secondPoint.clientY) / 2;
+      const ratioX = Math.max(0, Math.min(1, (midpointClientX - rect.left) / rect.width));
+      const ratioY = Math.max(0, Math.min(1, (midpointClientY - rect.top) / rect.height));
+      state.view.width = newWidth;
+      state.view.height = newHeight;
+      state.view.x = state.touchPinch.anchorWorld.x - (ratioX * newWidth);
+      state.view.y = state.touchPinch.anchorWorld.y - (ratioY * newHeight);
+      notifyViewChange();
+      render();
+      return true;
+    };
+
+    const endTouchPinch = (event) => {
+      if (!state.touchPinch) {
+        return;
+      }
+      if (!event) {
+        state.touchPinch = null;
+        return;
+      }
+      const pointerId = getPointerId(event);
+      if (pointerId === null) {
+        state.touchPinch = null;
+        return;
+      }
+      if (pointerId === state.touchPinch.pointerAId || pointerId === state.touchPinch.pointerBId) {
+        state.touchPinch = null;
+        return;
+      }
+      if (!state.touchPointers.has(state.touchPinch.pointerAId) || !state.touchPointers.has(state.touchPinch.pointerBId)) {
+        state.touchPinch = null;
+      }
     };
 
     const invokeComponentEdit = (component) => {
@@ -8660,6 +8862,11 @@
       if (!state.pan) {
         return;
       }
+      const panPointerId = Number(state.pan.pointerId);
+      const eventPointerId = Number(event?.pointerId);
+      if (Number.isFinite(panPointerId) && Number.isFinite(eventPointerId) && panPointerId !== eventPointerId) {
+        return;
+      }
       const rect = svg.getBoundingClientRect();
       if (!rect.width || !rect.height) {
         return;
@@ -8672,7 +8879,15 @@
       render();
     };
 
-    const endPan = () => {
+    const endPan = (event) => {
+      if (!state.pan) {
+        return;
+      }
+      const panPointerId = Number(state.pan.pointerId);
+      const eventPointerId = Number(event?.pointerId);
+      if (Number.isFinite(panPointerId) && Number.isFinite(eventPointerId) && panPointerId !== eventPointerId) {
+        return;
+      }
       state.pan = null;
     };
 
@@ -9262,6 +9477,11 @@
         }
         return;
       }
+      if (isTouchPointer(event) && state.tool.mode === "select" && !hasAdditiveSelectModifier(event)) {
+        state.lastSelectClick = null;
+        beginPan(event);
+        return;
+      }
       state.selectionBox = {
         start: world,
         end: world,
@@ -9277,6 +9497,15 @@
     };
 
     const handlePointerDown = (event) => {
+      trackTouchPointer(event);
+      captureTouchPointer(event);
+      if (state.touchPinch && state.touchPointers.size !== 2) {
+        state.touchPinch = null;
+      }
+      if (beginTouchPinchIfEligible()) {
+        event.preventDefault();
+        return;
+      }
       if (event.button !== 0) {
         state.lastSelectClick = null;
         beginPan(event);
@@ -9308,6 +9537,9 @@
     };
 
     const handlePointerMoveActiveGesture = (event) => {
+      if (updateTouchPinch(event)) {
+        return true;
+      }
       if (state.pan) {
         updatePan(event);
         return true;
@@ -9420,6 +9652,7 @@
     };
 
     const handlePointerMove = (event) => {
+      updateTrackedTouchPointer(event);
       if (handlePointerMoveActiveGesture(event)) {
         return;
       }
@@ -9534,8 +9767,11 @@
     };
 
     const handlePointerUp = (event) => {
+      releaseTouchPointerCapture(getPointerId(event));
+      untrackTouchPointer(event);
+      endTouchPinch(event);
       if (state.pan) {
-        endPan();
+        endPan(event);
       }
       if (state.probeDiffEndpointDrag) {
         endProbeDiffEndpointDrag(event);
@@ -9562,8 +9798,8 @@
         return;
       }
       const zoomFactor = event.deltaY < 0 ? 0.9 : 1.1;
-      const newWidth = Math.max(200, Math.min(2000, state.view.width * zoomFactor));
-      const newHeight = Math.max(120, Math.min(1500, state.view.height * zoomFactor));
+      const newWidth = Math.max(MIN_VIEW_WIDTH, Math.min(MAX_VIEW_WIDTH, state.view.width * zoomFactor));
+      const newHeight = Math.max(MIN_VIEW_HEIGHT, Math.min(MAX_VIEW_HEIGHT, state.view.height * zoomFactor));
       const scaleX = newWidth / state.view.width;
       const scaleY = newHeight / state.view.height;
       state.view.x = world.x - (world.x - state.view.x) * scaleX;
@@ -10058,8 +10294,9 @@
     svg.addEventListener("pointerdown", handlePointerDown);
     svg.addEventListener("pointermove", handlePointerMove);
     svg.addEventListener("pointerup", handlePointerUp);
-    svg.addEventListener("pointerleave", () => {
-      handlePointerUp();
+    svg.addEventListener("pointercancel", handlePointerUp);
+    svg.addEventListener("pointerleave", (event) => {
+      handlePointerUp(event);
       clearPreview();
       clearWirePreview();
       setHoverTarget(null);

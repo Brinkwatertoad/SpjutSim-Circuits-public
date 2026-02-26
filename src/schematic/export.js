@@ -1398,7 +1398,11 @@
     }
     const drawShape = symbolApi?.drawShape;
     const handled = typeof drawShape === "function"
-      ? drawShape(symbolCtx, type, group, { length: info.length, style: { stroke: componentColor ?? STROKE, width: STROKE_WIDTH } })
+      ? drawShape(symbolCtx, type, group, {
+        length: info.length,
+        rotation: info.angle,
+        style: { stroke: componentColor ?? STROKE, width: STROKE_WIDTH }
+      })
       : false;
     if (!handled) {
       appendLine(group, 0, 0, info.length, 0);

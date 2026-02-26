@@ -9857,10 +9857,33 @@ function createUI(container, state, actions) {
     openFileInput.value = "";
   });
 
+  const TOUCH_CONTEXT_LONG_PRESS_MS = 520;
+  const TOUCH_CONTEXT_LONG_PRESS_MOVE_PX = 12;
+  let contextMenuTouchPress = null;
+
+  const getTouchPointerId = (event) => {
+    const pointerId = Number(event?.pointerId);
+    return Number.isFinite(pointerId) ? pointerId : null;
+  };
+
+  const clearTouchContextLongPress = (pointerId = null) => {
+    if (!contextMenuTouchPress) {
+      return;
+    }
+    if (pointerId !== null && contextMenuTouchPress.pointerId !== pointerId) {
+      return;
+    }
+    if (contextMenuTouchPress.timerId !== null) {
+      window.clearTimeout(contextMenuTouchPress.timerId);
+    }
+    contextMenuTouchPress = null;
+  };
+
   const showContextMenu = (event) => {
     if (!schematicMode) {
       return;
     }
+    clearTouchContextLongPress();
     event.preventDefault();
     if (schematicEditor) {
       const targetEl = event.target instanceof Element ? event.target : null;
@@ -9950,10 +9973,87 @@ function createUI(container, state, actions) {
   };
 
   const hideContextMenu = () => {
+    clearTouchContextLongPress();
     contextMenu.classList.remove("open");
   };
 
+  const beginTouchContextLongPress = (event) => {
+    if (!schematicMode) {
+      return;
+    }
+    if (String(event?.pointerType ?? "").trim().toLowerCase() !== "touch") {
+      return;
+    }
+    if (event.button !== 0) {
+      return;
+    }
+    const pointerId = getTouchPointerId(event);
+    if (pointerId === null) {
+      return;
+    }
+    if (contextMenuTouchPress && contextMenuTouchPress.pointerId !== pointerId) {
+      clearTouchContextLongPress();
+      return;
+    }
+    clearTouchContextLongPress(pointerId);
+    const startX = Number.isFinite(event.clientX) ? event.clientX : 0;
+    const startY = Number.isFinite(event.clientY) ? event.clientY : 0;
+    const startTarget = event.target;
+    const timerId = window.setTimeout(() => {
+      if (!contextMenuTouchPress || contextMenuTouchPress.pointerId !== pointerId) {
+        return;
+      }
+      contextMenuTouchPress = null;
+      showContextMenu({
+        preventDefault: () => { },
+        target: startTarget,
+        clientX: startX,
+        clientY: startY
+      });
+    }, TOUCH_CONTEXT_LONG_PRESS_MS);
+    contextMenuTouchPress = {
+      pointerId,
+      startX,
+      startY,
+      timerId
+    };
+  };
+
+  const cancelTouchContextLongPressOnMove = (event) => {
+    if (!contextMenuTouchPress) {
+      return;
+    }
+    const pointerId = getTouchPointerId(event);
+    if (pointerId === null) {
+      clearTouchContextLongPress();
+      return;
+    }
+    if (pointerId !== contextMenuTouchPress.pointerId) {
+      clearTouchContextLongPress();
+      return;
+    }
+    const dx = Number(event.clientX) - contextMenuTouchPress.startX;
+    const dy = Number(event.clientY) - contextMenuTouchPress.startY;
+    if ((dx * dx) + (dy * dy) > TOUCH_CONTEXT_LONG_PRESS_MOVE_PX * TOUCH_CONTEXT_LONG_PRESS_MOVE_PX) {
+      clearTouchContextLongPress(pointerId);
+    }
+  };
+
+  const endTouchContextLongPress = (event) => {
+    const pointerId = getTouchPointerId(event);
+    if (pointerId === null) {
+      clearTouchContextLongPress();
+      return;
+    }
+    clearTouchContextLongPress(pointerId);
+  };
+
   schematicCanvasWrap.addEventListener("contextmenu", showContextMenu);
+  schematicCanvasWrap.addEventListener("pointerdown", beginTouchContextLongPress);
+  schematicCanvasWrap.addEventListener("pointermove", cancelTouchContextLongPressOnMove);
+  schematicCanvasWrap.addEventListener("pointerup", endTouchContextLongPress);
+  schematicCanvasWrap.addEventListener("pointercancel", endTouchContextLongPress);
+  schematicCanvasWrap.addEventListener("pointerleave", endTouchContextLongPress);
   document.addEventListener("click", (event) => {
     if (!contextMenu.contains(event.target)) {
       hideContextMenu();

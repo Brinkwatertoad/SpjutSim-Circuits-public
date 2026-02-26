@@ -826,10 +826,20 @@
     ctx.line(group, 0, 0, center - radius, 0, stroke);
     ctx.line(group, center + radius, 0, length, 0, stroke);
     ctx.circle(group, center, 0, radius, { ...stroke, fill: resolveFill(style, ctx) });
-    const offset = Math.max(2, Math.min(radius - 2, radius * 0.55));
+    const offset = Math.max(2, Math.min(radius - 3, radius * 0.42));
     const symbolFill = resolveTextFill(style, ctx);
-    ctx.text(group, center - offset, 3, "+", { size: 10, anchor: "middle", fill: symbolFill });
-    ctx.text(group, center + offset, 3, "-", { size: 10, anchor: "middle", fill: symbolFill });
+    const glyphHalfSpan = Math.max(2, Math.min(radius - 4, radius * 0.3));
+    const glyphStroke = {
+      stroke: symbolFill,
+      width: Math.max(1.6, Math.min(1.4, stroke.width)),
+      cap: "round"
+    };
+    const plusX = center - offset;
+    const minusX = center + offset;
+    ctx.line(group, plusX - glyphHalfSpan, 0, plusX + glyphHalfSpan, 0, glyphStroke);
+    ctx.line(group, plusX, -glyphHalfSpan, plusX, glyphHalfSpan, glyphStroke);
+    // Keep minus centered and equal length to plus, rotated 90 degrees.
+    ctx.line(group, minusX, -glyphHalfSpan, minusX, glyphHalfSpan, glyphStroke);
   };
 
   const drawCurrentSourceSymbol = (ctx, group, length, style) => {
@@ -846,24 +856,39 @@
     ctx.path(group, arrowPath, stroke);
   };
 
-  const drawVoltmeterSymbol = (ctx, group, length, style) => {
-    const stroke = resolveStroke(style, ctx);
-    const radius = Math.min(12, length * 0.25);
-    const center = length / 2;
-    ctx.line(group, 0, 0, center - radius, 0, stroke);
-    ctx.line(group, center + radius, 0, length, 0, stroke);
-    ctx.circle(group, center, 0, radius, { ...stroke, fill: resolveFill(style, ctx) });
-    ctx.text(group, center, 2, "V", { size: 10, anchor: "middle", fill: resolveTextFill(style, ctx) });
+  const getMeterGlyphTextOptions = (ctx, style, center, rotation) => {
+    const options = {
+      size: 10,
+      anchor: "middle",
+      baseline: "middle",
+      fill: resolveTextFill(style, ctx)
+    };
+    if (Number.isFinite(rotation) && rotation % 360 !== 0) {
+      options.transform = `rotate(${-rotation} ${center} 0)`;
+    }
+    return options;
   };
 
-  const drawAmmeterSymbol = (ctx, group, length, style) => {
+  const drawVoltmeterSymbol = (ctx, group, length, style, options) => {
     const stroke = resolveStroke(style, ctx);
     const radius = Math.min(12, length * 0.25);
     const center = length / 2;
     ctx.line(group, 0, 0, center - radius, 0, stroke);
     ctx.line(group, center + radius, 0, length, 0, stroke);
     ctx.circle(group, center, 0, radius, { ...stroke, fill: resolveFill(style, ctx) });
-    ctx.text(group, center, 2, "A", { size: 10, anchor: "middle", fill: resolveTextFill(style, ctx) });
+    const rotation = Number(options?.rotation);
+    ctx.text(group, center, 0, "V", getMeterGlyphTextOptions(ctx, style, center, rotation));
+  };
+
+  const drawAmmeterSymbol = (ctx, group, length, style, options) => {
+    const stroke = resolveStroke(style, ctx);
+    const radius = Math.min(12, length * 0.25);
+    const center = length / 2;
+    ctx.line(group, 0, 0, center - radius, 0, stroke);
+    ctx.line(group, center + radius, 0, length, 0, stroke);
+    ctx.circle(group, center, 0, radius, { ...stroke, fill: resolveFill(style, ctx) });
+    const rotation = Number(options?.rotation);
+    ctx.text(group, center, 0, "A", getMeterGlyphTextOptions(ctx, style, center, rotation));
   };
 
   const drawProbeSymbol = (ctx, group, style) => {
@@ -880,7 +905,7 @@
     return true;
   };
 
-  const drawSymbol = (ctx, type, group, length, style) => {
+  const drawSymbol = (ctx, type, group, length, style, options) => {
     if (!ctx || !group || !Number.isFinite(length)) {
       return false;
     }
@@ -902,10 +927,10 @@
         drawCurrentSourceSymbol(ctx, group, length, style);
         return true;
       case "VM":
-        drawVoltmeterSymbol(ctx, group, length, style);
+        drawVoltmeterSymbol(ctx, group, length, style, options);
         return true;
       case "AM":
-        drawAmmeterSymbol(ctx, group, length, style);
+        drawAmmeterSymbol(ctx, group, length, style, options);
         return true;
       case "PV":
       case "PI":
@@ -932,7 +957,7 @@
       || normalized === "PI"
       || normalized === "PD"
       || normalized === "PP") {
-      return drawSymbol(ctx, normalized, group, 0, options?.style);
+      return drawSymbol(ctx, normalized, group, 0, options?.style, options);
     }
     if (normalized === "SW") {
       const plan = options?.plan ?? getSpdtSwitchRenderPlan(options?.pins, options?.value);
@@ -942,7 +967,7 @@
     if (!Number.isFinite(length)) {
       return false;
     }
-    return drawSymbol(ctx, normalized, group, length, options?.style);
+    return drawSymbol(ctx, normalized, group, length, options?.style, options);
   };
 
   const api = typeof self !== "undefined" ? (self.SpjutSimSchematic ?? {}) : {};

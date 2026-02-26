@@ -41,8 +41,8 @@
       type: "I",
       label: "Current Source",
       pins: [
-        { id: "+", name: "+", x: 0, y: -20 },
-        { id: "-", name: "-", x: 0, y: 20 }
+        { id: "+", name: "+", x: 0, y: 20 },
+        { id: "-", name: "-", x: 0, y: -20 }
       ]
     },
     SW: {
