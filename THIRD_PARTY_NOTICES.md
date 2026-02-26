@@ -1,7 +1,7 @@
 This project has a differenct LICENSE.md, but it also redistributes ngspice, which is distributed according to the [BSD 3-Clause License](https://opensource.org/license/BSD-3-Clause), as follows: 
 
 License text:
-Copyright (c) <ngspice copyright holders>
+Copyright (c) ngspice copyright holders
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
 
