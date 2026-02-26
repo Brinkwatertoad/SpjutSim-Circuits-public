@@ -1714,7 +1714,8 @@
         undo: [],
         redo: []
       },
-      isRestoring: false
+      isRestoring: false,
+      skipViewSyncOnce: false
     };
     let renderRequestId = null;
     let scheduleRender = null;
@@ -4799,7 +4800,7 @@
 
     const getView = () => ({ ...state.view });
 
-    const setView = (next) => {
+    const setView = (next, options = {}) => {
       if (!next) {
         return;
       }
@@ -4817,6 +4818,7 @@
       state.view.y = y;
       state.view.width = width;
       state.view.height = height;
+      state.skipViewSyncOnce = options?.preserveAspect === false;
       render();
       notifyViewChange();
     };
@@ -5986,7 +5988,11 @@
         cancelAnimationFrame(renderRequestId);
         renderRequestId = null;
       }
-      syncViewToViewport();
+      const shouldSyncView = state.skipViewSyncOnce !== true;
+      state.skipViewSyncOnce = false;
+      if (shouldSyncView) {
+        syncViewToViewport();
+      }
       applyViewBox();
       renderGrid();
       const netColorState = resolveNetColorState();
@@ -8683,13 +8689,15 @@
       state.touchCapturedPointerIds.delete(pointerId);
     };
 
-    const beginPan = (event) => {
+    const beginPan = (event, options = {}) => {
       state.pan = {
         startX: event.clientX,
         startY: event.clientY,
         viewX: state.view.x,
         viewY: state.view.y,
-        pointerId: getPointerId(event)
+        pointerId: getPointerId(event),
+        moved: false,
+        clearSelectionOnTap: options.clearSelectionOnTap === true
       };
     };
 
@@ -8866,6 +8874,15 @@
       const eventPointerId = Number(event?.pointerId);
       if (Number.isFinite(panPointerId) && Number.isFinite(eventPointerId) && panPointerId !== eventPointerId) {
         return;
+      }
+      const clientDx = event.clientX - state.pan.startX;
+      const clientDy = event.clientY - state.pan.startY;
+      const movedEnough = (clientDx * clientDx) + (clientDy * clientDy) >= DRAG_DEADZONE_PX * DRAG_DEADZONE_PX;
+      if (state.pan.clearSelectionOnTap && !state.pan.moved && !movedEnough) {
+        return;
+      }
+      if (movedEnough) {
+        state.pan.moved = true;
       }
       const rect = svg.getBoundingClientRect();
       if (!rect.width || !rect.height) {
@@ -9479,7 +9496,7 @@
       }
       if (isTouchPointer(event) && state.tool.mode === "select" && !hasAdditiveSelectModifier(event)) {
         state.lastSelectClick = null;
-        beginPan(event);
+        beginPan(event, { clearSelectionOnTap: true });
         return;
       }
       state.selectionBox = {
@@ -9771,6 +9788,9 @@
       untrackTouchPointer(event);
       endTouchPinch(event);
       if (state.pan) {
+        if (state.pan.clearSelectionOnTap && !state.pan.moved) {
+          setSelectionWithWires([], []);
+        }
         endPan(event);
       }
       if (state.probeDiffEndpointDrag) {

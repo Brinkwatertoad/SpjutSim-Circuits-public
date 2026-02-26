@@ -476,6 +476,7 @@ function createUI(container, state, actions) {
   titleBar.dataset.titleBar = "1";
 
   const statusWrap = document.createElement("div");
+  statusWrap.className = "title-status";
   const statusLabel = document.createElement("span");
   statusLabel.textContent = "Status:";
   const statusEl = document.createElement("span");
@@ -2136,7 +2137,7 @@ function createUI(container, state, actions) {
   schematicToolsPanel.append(schematicControls);
   analysisToolsPanel.append(schematicSimulation);
   schematicTools.append(schematicToolsPanel, analysisToolsPanel);
-  schematicMain.append(schematicStatusBar);
+  schematicCanvasWrap.append(schematicStatusBar);
   schematicWorkspace.append(schematicTools, schematicMain);
   schematicPanel.append(schematicWorkspace);
 
@@ -2771,17 +2772,29 @@ function createUI(container, state, actions) {
   analysisWorkspaceTab.textContent = "Analysis";
   analysisWorkspaceTab.dataset.workspaceTab = "analysis";
   analysisWorkspaceTab.setAttribute("aria-selected", "false");
-  const setWorkspaceToolsTab = (tabId) => {
+  let workspaceToolsTab = "schematic";
+  let workspaceToolsVisible = true;
+  const setWorkspaceToolsTab = (tabId, options = {}) => {
     const nextTab = tabId === "analysis" ? "analysis" : "schematic";
-    const isToolsActive = nextTab === "schematic";
+    const toggleIfSame = options.toggleIfSame !== false;
+    if (workspaceToolsVisible && workspaceToolsTab === nextTab && toggleIfSame) {
+      workspaceToolsVisible = false;
+    } else {
+      workspaceToolsVisible = true;
+      workspaceToolsTab = nextTab;
+    }
+    const isToolsActive = workspaceToolsVisible && workspaceToolsTab === "schematic";
+    const isAnalysisActive = workspaceToolsVisible && workspaceToolsTab === "analysis";
     toolsWorkspaceTab.classList.toggle("active", isToolsActive);
     toolsWorkspaceTab.setAttribute("aria-selected", isToolsActive ? "true" : "false");
-    analysisWorkspaceTab.classList.toggle("active", !isToolsActive);
-    analysisWorkspaceTab.setAttribute("aria-selected", !isToolsActive ? "true" : "false");
+    analysisWorkspaceTab.classList.toggle("active", isAnalysisActive);
+    analysisWorkspaceTab.setAttribute("aria-selected", isAnalysisActive ? "true" : "false");
     schematicToolsPanel.hidden = !isToolsActive;
-    analysisToolsPanel.hidden = isToolsActive;
+    analysisToolsPanel.hidden = !isAnalysisActive;
     schematicControls.hidden = !isToolsActive;
-    schematicSimulation.hidden = isToolsActive;
+    schematicSimulation.hidden = !isAnalysisActive;
+    schematicWorkspace.dataset.workspaceToolsVisible = workspaceToolsVisible ? "1" : "0";
+    schematicWorkspace.dataset.workspaceToolsTab = workspaceToolsTab;
     updateHelpOffset();
   };
   toolsWorkspaceTab.addEventListener("click", () => {
@@ -3054,7 +3067,7 @@ function createUI(container, state, actions) {
   workspace.className = "workspace";
   workspace.append(workspaceHeader, workspacePanels);
   registerAllHelpTargets(workspace);
-  setWorkspaceToolsTab("schematic");
+  setWorkspaceToolsTab("schematic", { toggleIfSame: false });
   applyResultsPaneState({ skipResize: true });
 
   container.append(titleBar, workspace);
@@ -6375,7 +6388,7 @@ function createUI(container, state, actions) {
       applyResultsPaneState({ skipResize: true });
     }
     if (schematicEditor && typeof schematicEditor.setView === "function" && extracted.editor.view) {
-      schematicEditor.setView(extracted.editor.view);
+      schematicEditor.setView(extracted.editor.view, { preserveAspect: false });
     }
     if (schematicEditor && typeof schematicEditor.setSelectionWithWires === "function" && extracted.editor.selection) {
       const selection = extracted.editor.selection;
