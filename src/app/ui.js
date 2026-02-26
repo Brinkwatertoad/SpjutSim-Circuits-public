@@ -19,7 +19,7 @@ const simulationKinds = [
 const simulationKindIds = new Set(simulationKinds.map((entry) => entry.id));
 const PROBE_COMPONENT_TYPES = new Set(["PV", "PI", "PD", "PP"]);
 const RESULTS_PANE_MODES = new Set(["hidden", "split", "expanded"]);
-const DEFAULT_RESULTS_PANE_MODE = "split";
+const DEFAULT_RESULTS_PANE_MODE = "hidden";
 const DEFAULT_RESULTS_PANE_SPLIT_RATIO = 0.5;
 const MIN_RESULTS_PANE_SPLIT_RATIO = 0.25;
 const MAX_RESULTS_PANE_SPLIT_RATIO = 0.75;
@@ -60,6 +60,105 @@ const createSimulationConfig = () => ({
 let simulationConfig = createSimulationConfig();
 let latestSchematicCompile = null;
 const persistenceApi = typeof self !== "undefined" ? self.SpjutSimPersistence : null;
+
+const ABOUT_DIALOG_CONTENT = Object.freeze([
+  {
+    kind: "text",
+    text: "SpjutSim Circuits is a web-based electrical circuit schematic editor and simulator, aimed at students. This is an early version, so expect bugs, rough edges, and missing features."
+  },
+  {
+    kind: "text",
+    text: "I'm trying to make this program good, but it may be bad. Verify results independently; you're responsible for your designs and outcomes. Provided \"AS IS\" without warranties; no liability for damages. You use it at your own risk. Abandon hope, all ye who enter here."
+  },
+  {
+    kind: "link-line",
+    prefix: "",
+    linkText: "Copyright (c) 2026 Jakob Spjut.",
+    url: "https://github.com/Brinkwatertoad/SpjutSim-Circuits-public/blob/main/LICENSE.md",
+    suffix: " All rights reserved."
+  },
+  {
+    kind: "text",
+    text: "No license is granted to use, copy, modify, or distribute this repository's contents, except as necessary to access and use the accompanying website via a web browser."
+  },
+  {
+    kind: "link-line",
+    prefix: "Circuit simulation uses ngspice, which is available under the ",
+    linkText: "BSD-3-clause license",
+    url: "https://github.com/Brinkwatertoad/SpjutSim-Circuits-public/blob/main/THIRD_PARTY_NOTICES.md",
+    suffix: "."
+  }
+]);
+
+const setDialogOpen = (dialog, isOpen) => {
+  if (!(dialog instanceof HTMLElement)) {
+    return;
+  }
+  const shouldOpen = Boolean(isOpen);
+  dialog.hidden = !shouldOpen;
+  dialog.classList.toggle("hidden", !shouldOpen);
+};
+
+const buildAboutDialog = (container) => {
+  const aboutDialog = document.createElement("div");
+  aboutDialog.className = "modal-backdrop hidden";
+  aboutDialog.dataset.aboutDialog = "1";
+  aboutDialog.setAttribute("role", "dialog");
+  aboutDialog.setAttribute("aria-modal", "true");
+  aboutDialog.hidden = true;
+  const aboutPanel = document.createElement("div");
+  aboutPanel.className = "modal-dialog about-modal-dialog";
+  aboutPanel.dataset.aboutPanel = "1";
+  const aboutTitle = document.createElement("div");
+  aboutTitle.className = "modal-title";
+  aboutTitle.dataset.aboutTitle = "1";
+  aboutTitle.textContent = "About SpjutSim Circuits";
+  const aboutBody = document.createElement("div");
+  aboutBody.className = "modal-body about-modal-body";
+  aboutBody.dataset.aboutBody = "1";
+  ABOUT_DIALOG_CONTENT.forEach((entry) => {
+    const paragraph = document.createElement("p");
+    if (entry.kind === "link-line") {
+      if (entry.prefix) {
+        paragraph.append(document.createTextNode(entry.prefix));
+      }
+      const link = document.createElement("a");
+      link.href = entry.url;
+      link.textContent = entry.linkText;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      paragraph.append(link);
+      if (entry.suffix) {
+        paragraph.append(document.createTextNode(entry.suffix));
+      }
+    } else {
+      paragraph.textContent = entry.text;
+    }
+    aboutBody.appendChild(paragraph);
+  });
+  const aboutActions = document.createElement("div");
+  aboutActions.className = "modal-actions";
+  const aboutClose = document.createElement("button");
+  aboutClose.type = "button";
+  aboutClose.textContent = "Close";
+  aboutClose.dataset.aboutClose = "1";
+  aboutActions.append(aboutClose);
+  aboutPanel.append(aboutTitle, aboutBody, aboutActions);
+  aboutDialog.append(aboutPanel);
+  container.appendChild(aboutDialog);
+
+  const openAboutDialog = () => setDialogOpen(aboutDialog, true);
+  const closeAboutDialog = () => setDialogOpen(aboutDialog, false);
+
+  aboutDialog.addEventListener("click", (event) => {
+    if (event.target === aboutDialog) {
+      closeAboutDialog();
+    }
+  });
+  aboutClose.addEventListener("click", closeAboutDialog);
+
+  return { aboutDialog, openAboutDialog, closeAboutDialog };
+};
 
 /**
  * @param {HTMLElement} container
@@ -735,6 +834,14 @@ function createUI(container, state, actions) {
       el.setAttribute("stroke", "none");
       svg.appendChild(el);
     };
+    const circle = (cx, cy, r) => {
+      const el = document.createElementNS(svg.namespaceURI, "circle");
+      el.setAttribute("cx", String(cx));
+      el.setAttribute("cy", String(cy));
+      el.setAttribute("r", String(r));
+      Object.entries(strokeAttrs).forEach(([key, value]) => el.setAttribute(key, value));
+      svg.appendChild(el);
+    };
 
     switch (action) {
       case "undo":
@@ -812,6 +919,11 @@ function createUI(container, state, actions) {
         line(12, 5, 12, 19);
         line(8, 9, 8, 15);
         line(16, 9, 16, 15);
+        break;
+      case "info-view":
+        circle(12, 6, 1.2);
+        path("M12 10v6.4");
+        path("M12 16.4c0 1.6 1 2.6 2.6 2.6");
         break;
       default:
         return null;
@@ -1911,6 +2023,7 @@ function createUI(container, state, actions) {
   });
 
   let helpEnabled = true;
+  let workspaceHelpToggleButton = null;
   let selectedHelpTarget = null;
   const updateHelpMenuLabel = () => {
     const menuItem = document.querySelector("[data-menu-action=\"toggle-help\"]");
@@ -1918,20 +2031,15 @@ function createUI(container, state, actions) {
       menuItem.textContent = helpEnabled ? "Info View: On" : "Info View: Off";
     }
   };
+  const updateWorkspaceHelpToggleState = () => {
+    if (!(workspaceHelpToggleButton instanceof HTMLButtonElement)) {
+      return;
+    }
+    workspaceHelpToggleButton.classList.toggle("active", helpEnabled);
+    workspaceHelpToggleButton.setAttribute("aria-pressed", helpEnabled ? "true" : "false");
+  };
   const updateHelpOffset = () => {
-    if (!workspace) {
-      return;
-    }
-    if (!helpEnabled) {
-      workspace.style.setProperty("--workspace-help-offset", "0px");
-      return;
-    }
-    if (!workspaceHelp) {
-      return;
-    }
-    const helpHeight = workspaceHelp.getBoundingClientRect().height;
-    const offset = Number.isFinite(helpHeight) ? Math.ceil(helpHeight) : 0;
-    workspace.style.setProperty("--workspace-help-offset", `${offset}px`);
+    return;
   };
   const updateHelpPanelVisibility = () => {
     if (!helpEnabled) {
@@ -1947,7 +2055,11 @@ function createUI(container, state, actions) {
   const setHelpEnabled = (next) => {
     helpEnabled = Boolean(next);
     updateHelpMenuLabel();
+    updateWorkspaceHelpToggleState();
     updateHelpPanelVisibility();
+  };
+  const toggleHelpEnabled = () => {
+    setHelpEnabled(!helpEnabled);
   };
   const setHelpPanel = (target) => {
     if (!target) {
@@ -2678,7 +2790,16 @@ function createUI(container, state, actions) {
   analysisWorkspaceTab.addEventListener("click", () => {
     setWorkspaceToolsTab("analysis");
   });
-  workspaceTabs.append(toolsWorkspaceTab, analysisWorkspaceTab);
+  workspaceHelpToggleButton = document.createElement("button");
+  workspaceHelpToggleButton.type = "button";
+  workspaceHelpToggleButton.className = "secondary icon-button workspace-help-toggle";
+  workspaceHelpToggleButton.dataset.workspaceHelpToggle = "1";
+  applyActionButtonIcon(workspaceHelpToggleButton, "info-view", "Info View");
+  workspaceHelpToggleButton.addEventListener("click", () => {
+    toggleHelpEnabled();
+  });
+  workspaceTabs.append(toolsWorkspaceTab, analysisWorkspaceTab, workspaceHelpToggleButton);
+  updateWorkspaceHelpToggleState();
   const workspaceHeaderCommand = document.createElement("div");
   workspaceHeaderCommand.className = "workspace-header-command";
   workspaceHeaderCommand.dataset.workspaceHeaderCommand = "1";
@@ -2704,6 +2825,7 @@ function createUI(container, state, actions) {
   const workspaceHelpSpacer = document.createElement("div");
   workspaceHelpSpacer.className = "workspace-help-spacer";
   workspaceHelp.append(helpPanel, workspaceHelpSpacer);
+  schematicWorkspace.append(workspaceHelp);
 
   let resultsPaneLastVisibleMode = resultsPaneState.mode === "expanded" ? "expanded" : "split";
 
@@ -2930,7 +3052,7 @@ function createUI(container, state, actions) {
 
   workspace = document.createElement("div");
   workspace.className = "workspace";
-  workspace.append(workspaceHeader, workspacePanels, workspaceHelp);
+  workspace.append(workspaceHeader, workspacePanels);
   registerAllHelpTargets(workspace);
   setWorkspaceToolsTab("schematic");
   applyResultsPaneState({ skipResize: true });
@@ -5944,6 +6066,8 @@ function createUI(container, state, actions) {
     netlistSelectionLineIndexCacheSource = null;
     invalidateTraceLinkIndexCache();
     rebuildTraceNetColorMap();
+    renderOpResults(state.opResults);
+    refreshPlotResults();
     netlistPreview.value = latestSchematicCompile.netlist ?? "";
     const warnings = Array.isArray(latestSchematicCompile.warnings) ? latestSchematicCompile.warnings : [];
     netlistWarnings.textContent = warnings.length ? warnings.join("\n") : "";
@@ -6639,6 +6763,8 @@ function createUI(container, state, actions) {
     tran: new Map(),
     ac: new Map()
   };
+  const sharedTraceColorMap = new Map();
+  let nextSharedPaletteColorIndex = 0;
   const TRACE_COLOR_MODE_AUTO = "auto";
   const TRACE_COLOR_MODE_PALETTE = "palette";
   const TRACE_COLOR_MODE_FORCE_NET = "force-net";
@@ -6665,14 +6791,61 @@ function createUI(container, state, actions) {
     return "";
   };
 
+  const syncTokenColorAcrossAnalysisMaps = (token, color) => {
+    const normalizedToken = normalizeTraceTokenValue(token);
+    const normalizedColor = normalizeHexColor(color);
+    if (!normalizedToken || !normalizedColor) {
+      return;
+    }
+    [colorMaps.op, colorMaps.dc, colorMaps.tran, colorMaps.ac].forEach((map) => {
+      if (!(map instanceof Map)) {
+        return;
+      }
+      for (const [signal] of map.entries()) {
+        if (normalizeTraceTokenValue(signal) !== normalizedToken) {
+          continue;
+        }
+        map.set(signal, normalizedColor);
+      }
+    });
+  };
+
+  const assignSharedTraceColor = (signal, preferredColor = "") => {
+    const token = normalizeTraceTokenValue(signal);
+    const preferred = normalizeHexColor(preferredColor);
+    if (!token) {
+      return preferred;
+    }
+    if (preferred) {
+      const current = normalizeHexColor(sharedTraceColorMap.get(token));
+      if (current !== preferred) {
+        sharedTraceColorMap.set(token, preferred);
+        syncTokenColorAcrossAnalysisMaps(token, preferred);
+      }
+      return preferred;
+    }
+    const existing = normalizeHexColor(sharedTraceColorMap.get(token));
+    if (existing) {
+      return existing;
+    }
+    const fallback = normalizeHexColor(palette[nextSharedPaletteColorIndex % palette.length]);
+    nextSharedPaletteColorIndex += 1;
+    if (fallback) {
+      sharedTraceColorMap.set(token, fallback);
+      return fallback;
+    }
+    return "";
+  };
+
   const ensureColorMap = (map, signals) => {
     if (!map || !Array.isArray(signals)) {
       return;
     }
     signals.forEach((signal, index) => {
       const preferred = normalizeHexColor(resolveNetColorForTraceToken(signal));
-      if (preferred) {
-        map.set(signal, preferred);
+      const sharedColor = assignSharedTraceColor(signal, preferred);
+      if (sharedColor) {
+        map.set(signal, sharedColor);
         return;
       }
       if (!map.has(signal)) {
@@ -6704,6 +6877,10 @@ function createUI(container, state, actions) {
     const normalizedToken = normalizeTraceTokenValue(signalToken);
     if (!normalizedToken) {
       return "";
+    }
+    const sharedColor = normalizeHexColor(sharedTraceColorMap.get(normalizedToken));
+    if (sharedColor) {
+      return sharedColor;
     }
     const maps = [colorMaps.op, colorMaps.dc, colorMaps.tran, colorMaps.ac];
     for (const map of maps) {
@@ -7827,7 +8004,11 @@ function createUI(container, state, actions) {
       return;
     }
     if (action === "toggle-help") {
-      setHelpEnabled(!helpEnabled);
+      toggleHelpEnabled();
+      return;
+    }
+    if (action === "about") {
+      openAboutDialog();
       return;
     }
     if (action === "open") {
@@ -8094,7 +8275,7 @@ function createUI(container, state, actions) {
       if (action === "toggle-help") {
         return false;
       }
-      if (action === "open" || action === "save" || action === "save-as" || action === "new") {
+      if (action === "open" || action === "save" || action === "save-as" || action === "new" || action === "about") {
         return false;
       }
       if (action && action.startsWith(EXAMPLE_MENU_ACTION_PREFIX)) {
@@ -8325,7 +8506,7 @@ function createUI(container, state, actions) {
       label: "Help",
       items: [
         { id: "toggle-help", label: "Info View: On" },
-        { label: "About", disabled: true }
+        { id: "about", label: "About" }
       ],
       actionAttribute: "menuAction",
       showShortcuts: false
@@ -9250,6 +9431,8 @@ function createUI(container, state, actions) {
   exportDialog.append(exportPanel);
   container.appendChild(exportDialog);
 
+  const { openAboutDialog } = buildAboutDialog(container);
+
   const toFilenameLeaf = (value) => {
     const raw = String(value ?? "").trim();
     if (!raw) {
@@ -9475,13 +9658,11 @@ function createUI(container, state, actions) {
   const openJsonExportDialog = () => {
     filenameInput.value = getDefaultJsonName();
     includeCheck.checked = false;
-    saveDialog.hidden = false;
-    saveDialog.classList.remove("hidden");
+    setDialogOpen(saveDialog, true);
   };
 
   const closeJsonExportDialog = () => {
-    saveDialog.hidden = true;
-    saveDialog.classList.add("hidden");
+    setDialogOpen(saveDialog, false);
   };
 
   const confirmJsonExportDialog = async () => {
@@ -9603,13 +9784,11 @@ function createUI(container, state, actions) {
     scaleSelect.value = scaleValue;
     transparentCheck.checked = Boolean(exportPngPrefs.transparent);
     exportFilenameInput.value = buildSchematicFilename("png");
-    exportDialog.hidden = false;
-    exportDialog.classList.remove("hidden");
+    setDialogOpen(exportDialog, true);
   };
 
   const closeExportDialog = () => {
-    exportDialog.hidden = true;
-    exportDialog.classList.add("hidden");
+    setDialogOpen(exportDialog, false);
   };
 
   const closeActiveDialogs = () => {
@@ -9617,8 +9796,7 @@ function createUI(container, state, actions) {
     document.querySelectorAll(".modal-backdrop").forEach((dialog) => {
       const isHidden = dialog.hidden || dialog.classList.contains("hidden");
       if (!isHidden) {
-        dialog.hidden = true;
-        dialog.classList.add("hidden");
+        setDialogOpen(dialog, false);
         closed = true;
       }
     });
@@ -10341,7 +10519,8 @@ function createUI(container, state, actions) {
           value: display,
           measurementType: type === "VM" ? "voltage" : "current",
           isProbe: false,
-          highlightTokens: buildMeasurementHighlightTokens(meterSignals)
+          highlightTokens: buildMeasurementHighlightTokens(meterSignals),
+          signalColor: resolveTraceColorForSignals(meterSignals)
         });
         inlineMap.set(component.id, display);
         return;
@@ -10387,7 +10566,8 @@ function createUI(container, state, actions) {
           ? "power"
           : (type === "PI" ? "current" : "voltage"),
         isProbe: true,
-        highlightTokens: buildMeasurementHighlightTokens(probeSignals)
+        highlightTokens: buildMeasurementHighlightTokens(probeSignals),
+        signalColor: resolveTraceColorForSignals(probeSignals)
       });
       inlineMap.set(component.id, display);
     });
@@ -10439,6 +10619,14 @@ function createUI(container, state, actions) {
           }
         });
         const labelCell = document.createElement("td");
+        const rowColor = normalizeHexColor(entry?.signalColor);
+        if (rowColor) {
+          row.style.setProperty("--results-row-color", rowColor);
+        }
+        labelCell.className = "results-name-cell";
+        const swatch = document.createElement("span");
+        swatch.className = "results-row-swatch";
+        labelCell.appendChild(swatch);
         const text = document.createElement("span");
         text.className = "measurement-row-text";
         const label = document.createElement("span");

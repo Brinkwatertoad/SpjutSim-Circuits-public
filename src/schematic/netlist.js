@@ -303,6 +303,45 @@
     };
   };
 
+  const getNetlistIdKey = (value) => normalizeId(value).toUpperCase();
+
+  const allocateUniqueNetlistId = (candidateId, usedKeys, nextSuffixByBaseKey) => {
+    const baseId = normalizeId(candidateId) || "X";
+    const baseKey = getNetlistIdKey(baseId);
+    if (!usedKeys.has(baseKey)) {
+      usedKeys.add(baseKey);
+      if (!nextSuffixByBaseKey.has(baseKey)) {
+        nextSuffixByBaseKey.set(baseKey, 2);
+      }
+      return baseId;
+    }
+    let suffix = nextSuffixByBaseKey.get(baseKey) ?? 2;
+    while (true) {
+      const nextId = `${baseId}_${suffix}`;
+      const nextKey = getNetlistIdKey(nextId);
+      suffix += 1;
+      if (usedKeys.has(nextKey)) {
+        continue;
+      }
+      usedKeys.add(nextKey);
+      nextSuffixByBaseKey.set(baseKey, suffix);
+      return nextId;
+    }
+  };
+
+  const withUniqueNetlistId = (lineText, usedKeys, nextSuffixByBaseKey) => {
+    const text = String(lineText ?? "").trim();
+    if (!text) {
+      return "";
+    }
+    const segments = text.split(/\s+/);
+    if (!segments.length) {
+      return "";
+    }
+    segments[0] = allocateUniqueNetlistId(segments[0], usedKeys, nextSuffixByBaseKey);
+    return segments.join(" ");
+  };
+
   const buildSaveDirective = (saveSignals, fallbackTokens) => {
     const tokens = Array.isArray(saveSignals)
       ? saveSignals.map((entry) => String(entry ?? "").trim()).filter(Boolean)
@@ -425,6 +464,8 @@
     const lineMap = [];
     const warnings = [];
     const componentLines = {};
+    const usedNetlistIdKeys = new Set();
+    const nextNetlistIdSuffixByBaseKey = new Map();
     const pushLine = (text, metadata) => {
       lines.push(text);
       if (metadata) {
@@ -505,9 +546,9 @@
         }
       }
       if (line && line.trim()) {
-        const trimmedLine = line.trim();
+        const trimmedLine = withUniqueNetlistId(line, usedNetlistIdKeys, nextNetlistIdSuffixByBaseKey);
         pushLine(trimmedLine, buildComponentLineMetadata(component, type, trimmedLine));
-        const segments = line.trim().split(/\s+/);
+        const segments = trimmedLine.split(/\s+/);
         lineId = segments[0] ?? null;
         lineValue = segments[segments.length - 1] ?? null;
         componentLines[component.id] = {
@@ -522,7 +563,7 @@
         if (!extraLine || !extraLine.trim()) {
           return;
         }
-        const trimmedExtraLine = extraLine.trim();
+        const trimmedExtraLine = withUniqueNetlistId(extraLine, usedNetlistIdKeys, nextNetlistIdSuffixByBaseKey);
         pushLine(trimmedExtraLine, buildComponentLineMetadata(component, type, trimmedExtraLine));
       });
     });

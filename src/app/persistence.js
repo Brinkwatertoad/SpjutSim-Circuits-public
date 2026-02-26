@@ -18,7 +18,7 @@
   const DB_VERSION = 1;
   const STORE_NAME = "autosave";
   const RESULTS_PANE_MODES = new Set(["hidden", "split", "expanded"]);
-  const DEFAULT_RESULTS_PANE_MODE = "split";
+  const DEFAULT_RESULTS_PANE_MODE = "hidden";
   const DEFAULT_RESULTS_PANE_SPLIT_RATIO = 0.5;
   const MIN_RESULTS_PANE_SPLIT_RATIO = 0.25;
   const MAX_RESULTS_PANE_SPLIT_RATIO = 0.75;
