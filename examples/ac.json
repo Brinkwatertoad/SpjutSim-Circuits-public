@@ -1,0 +1,129 @@
+{
+  "schema": "spjutsim/schematic",
+  "version": 1,
+  "title": "AC: RC Lowpass",
+  "createdAt": "2026-02-11T00:00:00.000Z",
+  "updatedAt": "2026-02-11T00:00:00.000Z",
+  "schematic": {
+    "components": [
+      {
+        "id": "V1",
+        "type": "V",
+        "value": "ac 1",
+        "pins": [
+          { "id": "1", "name": "1", "x": 40, "y": 40 },
+          { "id": "2", "name": "2", "x": 40, "y": 80 }
+        ]
+      },
+      {
+        "id": "R1",
+        "type": "R",
+        "value": "1k",
+        "pins": [
+          { "id": "1", "name": "1", "x": 80, "y": 40 },
+          { "id": "2", "name": "2", "x": 120, "y": 40 }
+        ]
+      },
+      {
+        "id": "C1",
+        "type": "C",
+        "value": "1u",
+        "pins": [
+          { "id": "1", "name": "1", "x": 140, "y": 40 },
+          { "id": "2", "name": "2", "x": 140, "y": 80 }
+        ]
+      },
+      {
+        "id": "GND1",
+        "type": "GND",
+        "value": "",
+        "pins": [
+          { "id": "1", "name": "1", "x": 140, "y": 120 }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "W_IN",
+        "points": [
+          { "x": 40, "y": 40 },
+          { "x": 80, "y": 40 }
+        ]
+      },
+      {
+        "id": "W_R1_TO_NODE",
+        "points": [
+          { "x": 120, "y": 40 },
+          { "x": 140, "y": 40 }
+        ]
+      },
+      {
+        "id": "W_NODE_GND",
+        "points": [
+          { "x": 140, "y": 80 },
+          { "x": 140, "y": 120 }
+        ]
+      },
+      {
+        "id": "W_V1_GND",
+        "points": [
+          { "x": 40, "y": 80 },
+          { "x": 40, "y": 120 },
+          { "x": 140, "y": 120 }
+        ]
+      }
+    ]
+  },
+  "editor": {
+    "view": null,
+    "selection": {
+      "componentIds": [],
+      "wireIds": []
+    },
+    "grid": {
+      "size": 20,
+      "snap": true,
+      "visible": true
+    }
+  },
+  "simulation": {
+    "config": {
+      "activeKind": "ac",
+      "op": {},
+      "dc": { "source": "V1", "start": "0", "stop": "10", "step": "1" },
+      "tran": {
+        "source": "V1",
+        "sourceMode": "pulse",
+        "sourceValue": "pulse(0 5 1m 1u 1u 5m 10m)",
+        "dcValue": "5",
+        "pulseLow": "0",
+        "pulseHigh": "5",
+        "pulseDelay": "1m",
+        "pulseRise": "1u",
+        "pulseFall": "1u",
+        "pulseWidth": "5m",
+        "pulsePeriod": "10m",
+        "sineOffset": "0",
+        "sineAmplitude": "1",
+        "sineFreq": "1k",
+        "sineDelay": "",
+        "sineDamping": "",
+        "sinePhase": "",
+        "pwlPoints": "0 0\n1m 5\n2m 0",
+        "customValue": "",
+        "start": "0",
+        "stop": "10m",
+        "step": "0.1m",
+        "maxStep": ""
+      },
+      "ac": { "source": "V1", "sourceValue": "ac 1", "sweep": "dec", "points": "10", "start": "1", "stop": "100k" },
+      "save": { "signals": ["all"] }
+    },
+    "preamble": ""
+  },
+  "ui": {
+    "plot": {
+      "showGrid": false
+    }
+  }
+}

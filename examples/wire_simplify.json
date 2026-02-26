@@ -1,0 +1,176 @@
+{
+  "schema": "spjutsim/schematic",
+  "version": 1,
+  "title": "OP: Wire Simplify Playground",
+  "createdAt": "2026-02-11T00:00:00.000Z",
+  "updatedAt": "2026-02-11T00:00:00.000Z",
+  "schematic": {
+    "components": [
+      {
+        "id": "V1",
+        "type": "V",
+        "value": "10",
+        "pins": [
+          { "id": "1", "name": "1", "x": 40, "y": 60 },
+          { "id": "2", "name": "2", "x": 40, "y": 100 }
+        ]
+      },
+      {
+        "id": "R1",
+        "type": "R",
+        "value": "1k",
+        "pins": [
+          { "id": "1", "name": "1", "x": 80, "y": 60 },
+          { "id": "2", "name": "2", "x": 120, "y": 60 }
+        ]
+      },
+      {
+        "id": "R2",
+        "type": "R",
+        "value": "2k",
+        "pins": [
+          { "id": "1", "name": "1", "x": 160, "y": 60 },
+          { "id": "2", "name": "2", "x": 200, "y": 60 }
+        ]
+      },
+      {
+        "id": "R3",
+        "type": "R",
+        "value": "2k",
+        "pins": [
+          { "id": "1", "name": "1", "x": 240, "y": 60 },
+          { "id": "2", "name": "2", "x": 240, "y": 100 }
+        ]
+      },
+      {
+        "id": "C1",
+        "type": "C",
+        "value": "100n",
+        "pins": [
+          { "id": "1", "name": "1", "x": 120, "y": 60 },
+          { "id": "2", "name": "2", "x": 120, "y": 100 }
+        ]
+      },
+      {
+        "id": "GND1",
+        "type": "GND",
+        "value": "",
+        "pins": [
+          { "id": "1", "name": "1", "x": 140, "y": 180 }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "W_IN_ZIG",
+        "points": [
+          { "x": 40, "y": 60 },
+          { "x": 40, "y": 40 },
+          { "x": 100, "y": 40 },
+          { "x": 100, "y": 60 },
+          { "x": 80, "y": 60 }
+        ]
+      },
+      {
+        "id": "W_MID_ZIG",
+        "points": [
+          { "x": 120, "y": 60 },
+          { "x": 120, "y": 80 },
+          { "x": 180, "y": 80 },
+          { "x": 180, "y": 60 },
+          { "x": 160, "y": 60 }
+        ]
+      },
+      {
+        "id": "W_OUT_ZIG",
+        "points": [
+          { "x": 200, "y": 60 },
+          { "x": 200, "y": 40 },
+          { "x": 260, "y": 40 },
+          { "x": 260, "y": 60 },
+          { "x": 240, "y": 60 }
+        ]
+      },
+      {
+        "id": "W_GND_LEFT",
+        "points": [
+          { "x": 40, "y": 100 },
+          { "x": 40, "y": 140 },
+          { "x": 120, "y": 140 },
+          { "x": 120, "y": 100 }
+        ]
+      },
+      {
+        "id": "W_GND_RIGHT",
+        "points": [
+          { "x": 120, "y": 100 },
+          { "x": 120, "y": 120 },
+          { "x": 260, "y": 120 },
+          { "x": 260, "y": 100 },
+          { "x": 240, "y": 100 }
+        ]
+      },
+      {
+        "id": "W_GND_SYMBOL",
+        "points": [
+          { "x": 120, "y": 100 },
+          { "x": 100, "y": 100 },
+          { "x": 100, "y": 180 },
+          { "x": 140, "y": 180 }
+        ]
+      }
+    ]
+  },
+  "editor": {
+    "view": null,
+    "selection": {
+      "componentIds": [],
+      "wireIds": []
+    },
+    "grid": {
+      "size": 20,
+      "snap": true,
+      "visible": true
+    }
+  },
+  "simulation": {
+    "config": {
+      "activeKind": "op",
+      "op": {},
+      "dc": { "source": "V1", "start": "0", "stop": "10", "step": "1" },
+      "tran": {
+        "source": "V1",
+        "sourceMode": "pulse",
+        "sourceValue": "pulse(0 5 1m 1u 1u 5m 10m)",
+        "dcValue": "5",
+        "pulseLow": "0",
+        "pulseHigh": "5",
+        "pulseDelay": "1m",
+        "pulseRise": "1u",
+        "pulseFall": "1u",
+        "pulseWidth": "5m",
+        "pulsePeriod": "10m",
+        "sineOffset": "0",
+        "sineAmplitude": "1",
+        "sineFreq": "1k",
+        "sineDelay": "",
+        "sineDamping": "",
+        "sinePhase": "",
+        "pwlPoints": "0 0\n1m 5\n2m 0",
+        "customValue": "",
+        "start": "0",
+        "stop": "10m",
+        "step": "0.1m",
+        "maxStep": ""
+      },
+      "ac": { "source": "V1", "sourceValue": "", "sweep": "dec", "points": "10", "start": "1", "stop": "100k" },
+      "save": { "signals": ["all"] }
+    },
+    "preamble": ""
+  },
+  "ui": {
+    "plot": {
+      "showGrid": false
+    }
+  }
+}

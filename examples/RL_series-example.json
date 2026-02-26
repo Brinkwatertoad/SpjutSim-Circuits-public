@@ -1,0 +1,223 @@
+{
+  "schema": "spjutsim/schematic",
+  "version": 1,
+  "title": "",
+  "createdAt": "2026-02-09T03:20:35.499Z",
+  "updatedAt": "2026-02-11T15:56:28.731Z",
+  "schematic": {
+    "components": [
+      {
+        "id": "V1",
+        "name": "V1",
+        "type": "V",
+        "value": "",
+        "pins": [
+          {
+            "id": "+",
+            "name": "+",
+            "x": 100,
+            "y": -10
+          },
+          {
+            "id": "-",
+            "name": "-",
+            "x": 100,
+            "y": 30
+          }
+        ],
+        "rotation": 0
+      },
+      {
+        "id": "R1",
+        "name": "R1",
+        "type": "R",
+        "value": "100",
+        "pins": [
+          {
+            "id": "1",
+            "name": "1",
+            "x": 130,
+            "y": -40
+          },
+          {
+            "id": "2",
+            "name": "2",
+            "x": 170,
+            "y": -40
+          }
+        ],
+        "rotation": 0
+      },
+      {
+        "id": "L1",
+        "name": "L1",
+        "type": "L",
+        "value": "10m",
+        "pins": [
+          {
+            "id": "1",
+            "name": "1",
+            "x": 200,
+            "y": -10
+          },
+          {
+            "id": "2",
+            "name": "2",
+            "x": 200,
+            "y": 30
+          }
+        ],
+        "rotation": 0
+      },
+      {
+        "id": "GND1",
+        "name": "GND1",
+        "type": "GND",
+        "value": "",
+        "pins": [
+          {
+            "id": "0",
+            "name": "0",
+            "x": 150,
+            "y": 60
+          }
+        ],
+        "rotation": 0
+      }
+    ],
+    "wires": [
+      {
+        "id": "W1",
+        "points": [
+          {
+            "x": 170,
+            "y": -40
+          },
+          {
+            "x": 200,
+            "y": -40
+          },
+          {
+            "x": 200,
+            "y": -10
+          }
+        ]
+      },
+      {
+        "id": "W2",
+        "points": [
+          {
+            "x": 100,
+            "y": -10
+          },
+          {
+            "x": 100,
+            "y": -40
+          },
+          {
+            "x": 130,
+            "y": -40
+          }
+        ]
+      },
+      {
+        "id": "W3",
+        "points": [
+          {
+            "x": 100,
+            "y": 30
+          },
+          {
+            "x": 100,
+            "y": 60
+          },
+          {
+            "x": 150,
+            "y": 60
+          },
+          {
+            "x": 200,
+            "y": 60
+          },
+          {
+            "x": 200,
+            "y": 30
+          }
+        ]
+      }
+    ]
+  },
+  "editor": {
+    "view": {
+      "x": 18.736319151339956,
+      "y": -147.03812830274921,
+      "width": 262.5273616973201,
+      "height": 314.07625660549843
+    },
+    "selection": {
+      "componentIds": [],
+      "wireIds": []
+    },
+    "grid": {
+      "size": 10,
+      "snap": true,
+      "visible": true
+    }
+  },
+  "simulation": {
+    "config": {
+      "activeKind": "op",
+      "op": {},
+      "dc": {
+        "source": "V1",
+        "start": "0",
+        "stop": "10",
+        "step": "1"
+      },
+      "tran": {
+        "source": "V1",
+        "sourceMode": "pulse",
+        "sourceValue": "pulse(0 5 1m 1u 1u 5m 10m)",
+        "dcValue": "5",
+        "pulseLow": "0",
+        "pulseHigh": "5",
+        "pulseDelay": "1m",
+        "pulseRise": "1u",
+        "pulseFall": "1u",
+        "pulseWidth": "5m",
+        "pulsePeriod": "10m",
+        "sineOffset": "0",
+        "sineAmplitude": "1",
+        "sineFreq": "1k",
+        "sineDelay": "",
+        "sineDamping": "",
+        "sinePhase": "",
+        "pwlPoints": "0 0\n1m 5\n2m 0",
+        "customValue": "",
+        "start": "0",
+        "stop": "10m",
+        "step": "0.1m",
+        "maxStep": ""
+      },
+      "ac": {
+        "source": "V1",
+        "sourceValue": "ac 1",
+        "sweep": "dec",
+        "points": "10",
+        "start": "1",
+        "stop": "100k"
+      },
+      "save": {
+        "signals": [
+          "all"
+        ]
+      }
+    },
+    "preamble": ""
+  },
+  "ui": {
+    "plot": {
+      "showGrid": false
+    }
+  }
+}
