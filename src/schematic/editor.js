@@ -8705,9 +8705,6 @@
       if (state.touchPinch || state.touchPointers.size !== 2) {
         return false;
       }
-      if (state.tool.mode !== "select") {
-        return false;
-      }
       if (state.drag || state.selectionBox || state.wireNode || state.wireHandle || state.probeDiffEndpointDrag) {
         return false;
       }
@@ -8736,9 +8733,13 @@
         pointerAId: first[0],
         pointerBId: second[0],
         startDistance,
+        startMidpointClientX: midpointClientX,
+        startMidpointClientY: midpointClientY,
         startView: { ...state.view },
         anchorWorld
       };
+      state.wireStart = null;
+      state.wirePreview = null;
       state.lastSelectClick = null;
       return true;
     };
@@ -8766,18 +8767,25 @@
       if (!Number.isFinite(distance) || distance < TOUCH_PINCH_MIN_DISTANCE_PX) {
         return true;
       }
-      if (Math.abs(distance - state.touchPinch.startDistance) < TOUCH_PINCH_DISTANCE_DEADZONE_PX) {
+      const midpointClientX = (firstPoint.clientX + secondPoint.clientX) / 2;
+      const midpointClientY = (firstPoint.clientY + secondPoint.clientY) / 2;
+      const midpointDx = midpointClientX - state.touchPinch.startMidpointClientX;
+      const midpointDy = midpointClientY - state.touchPinch.startMidpointClientY;
+      const midpointMovedEnough = (midpointDx * midpointDx) + (midpointDy * midpointDy)
+        >= TOUCH_PINCH_DISTANCE_DEADZONE_PX * TOUCH_PINCH_DISTANCE_DEADZONE_PX;
+      const distanceDelta = Math.abs(distance - state.touchPinch.startDistance);
+      if (distanceDelta < TOUCH_PINCH_DISTANCE_DEADZONE_PX && !midpointMovedEnough) {
         return true;
       }
-      const zoomFactor = state.touchPinch.startDistance / distance;
+      const zoomFactor = distanceDelta < TOUCH_PINCH_DISTANCE_DEADZONE_PX
+        ? 1
+        : (state.touchPinch.startDistance / distance);
       const newWidth = Math.max(MIN_VIEW_WIDTH, Math.min(MAX_VIEW_WIDTH, state.touchPinch.startView.width * zoomFactor));
       const newHeight = Math.max(MIN_VIEW_HEIGHT, Math.min(MAX_VIEW_HEIGHT, state.touchPinch.startView.height * zoomFactor));
       const rect = svg.getBoundingClientRect();
       if (!rect.width || !rect.height) {
         return true;
       }
-      const midpointClientX = (firstPoint.clientX + secondPoint.clientX) / 2;
-      const midpointClientY = (firstPoint.clientY + secondPoint.clientY) / 2;
       const ratioX = Math.max(0, Math.min(1, (midpointClientX - rect.left) / rect.width));
       const ratioY = Math.max(0, Math.min(1, (midpointClientY - rect.top) / rect.height));
       state.view.width = newWidth;
@@ -9525,7 +9533,6 @@
       }
       if (event.button !== 0) {
         state.lastSelectClick = null;
-        beginPan(event);
         return;
       }
       const world = clientToWorld(event.clientX, event.clientY);

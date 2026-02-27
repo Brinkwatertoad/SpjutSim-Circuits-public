@@ -478,6 +478,37 @@ button.menu-item:disabled {
   align-items: start;
 }
 
+.workspace-primary-strip[data-workspace-header-compact="1"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  row-gap: var(--space-2);
+}
+
+.workspace-primary-strip[data-workspace-header-compact="1"] .workspace-header-command {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+  justify-content: stretch;
+  row-gap: var(--space-1);
+}
+
+.workspace-primary-strip[data-workspace-header-compact="1"] .workspace-header-command .schematic-command-bar {
+  flex: 1 1 100%;
+  width: 100%;
+}
+
+.workspace-primary-strip[data-workspace-header-compact="1"] .workspace-tabs {
+  grid-column: 1;
+  grid-row: 2;
+  width: 100%;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+}
+
+.workspace-primary-strip[data-workspace-header-compact="1"] .workspace-tabs .results-pane-actions {
+  margin-left: 0;
+}
+
 .workspace-tabs {
   display: flex;
   flex-wrap: wrap;

@@ -923,6 +923,17 @@ function createUI(container, state, actions) {
         line(8, 9, 8, 15);
         line(16, 9, 16, 15);
         break;
+      case "schematic-show":
+        rect(4, 5, 16, 14, 1);
+        line(12, 5, 12, 19);
+        line(8, 9, 8, 15);
+        break;
+      case "schematic-hide":
+        rect(4, 5, 16, 14, 1);
+        line(12, 5, 12, 19);
+        line(6.5, 9.5, 9.5, 12.5);
+        line(9.5, 9.5, 6.5, 12.5);
+        break;
       case "info-view":
         circle(12, 6, 1.2);
         path("M12 10v6.4");
@@ -2779,7 +2790,11 @@ function createUI(container, state, actions) {
   const setWorkspaceToolsTab = (tabId, options = {}) => {
     const nextTab = tabId === "analysis" ? "analysis" : "schematic";
     const toggleIfSame = options.toggleIfSame !== false;
-    if (workspaceToolsVisible && workspaceToolsTab === nextTab && toggleIfSame) {
+    const shouldRestoreSchematicFromExpanded = nextTab === "schematic" && resultsPaneState.mode === "expanded";
+    if (shouldRestoreSchematicFromExpanded) {
+      workspaceToolsVisible = true;
+      workspaceToolsTab = "schematic";
+    } else if (workspaceToolsVisible && workspaceToolsTab === nextTab && toggleIfSame) {
       workspaceToolsVisible = false;
     } else {
       workspaceToolsVisible = true;
@@ -2797,6 +2812,10 @@ function createUI(container, state, actions) {
     schematicSimulation.hidden = !isAnalysisActive;
     schematicWorkspace.dataset.workspaceToolsVisible = workspaceToolsVisible ? "1" : "0";
     schematicWorkspace.dataset.workspaceToolsTab = workspaceToolsTab;
+    if (shouldRestoreSchematicFromExpanded) {
+      const responsiveState = resolveResultsPaneResponsiveState();
+      setResultsPaneMode(responsiveState.dockedAllowed ? "split" : "hidden");
+    }
     updateHelpOffset();
   };
   toolsWorkspaceTab.addEventListener("click", () => {
@@ -2828,9 +2847,22 @@ function createUI(container, state, actions) {
     return button;
   };
   const toggleResultsPaneVisibilityButton = createResultsPaneActionButton("visibility");
-  const toggleResultsPaneLayoutButton = createResultsPaneActionButton("layout");
-  resultsPaneActions.append(toggleResultsPaneLayoutButton, toggleResultsPaneVisibilityButton);
+  const toggleResultsPaneSchematicButton = createResultsPaneActionButton("schematic");
+  resultsPaneActions.append(toggleResultsPaneSchematicButton, toggleResultsPaneVisibilityButton);
   workspaceHeaderCommand.append(schematicCommandBar, resultsPaneActions);
+  const syncWorkspaceHeaderResponsiveLayout = (responsiveState) => {
+    const compactHeader = !(responsiveState?.dockedAllowed);
+    workspacePrimaryStrip.dataset.workspaceHeaderCompact = compactHeader ? "1" : "0";
+    if (compactHeader) {
+      if (resultsPaneActions.parentElement !== workspaceTabs) {
+        workspaceTabs.append(resultsPaneActions);
+      }
+      return;
+    }
+    if (resultsPaneActions.parentElement !== workspaceHeaderCommand) {
+      workspaceHeaderCommand.append(resultsPaneActions);
+    }
+  };
   const workspacePanels = document.createElement("div");
   workspacePanels.className = "workspace-panels";
   workspacePanels.append(schematicPanel);
@@ -2871,6 +2903,7 @@ function createUI(container, state, actions) {
       return;
     }
     const responsiveState = resolveResultsPaneResponsiveState();
+    syncWorkspaceHeaderResponsiveLayout(responsiveState);
     const normalized = normalizeResultsPaneState(resultsPaneState);
     if (!responsiveState.dockedAllowed && normalized.mode === "split") {
       normalized.mode = "expanded";
@@ -2893,29 +2926,22 @@ function createUI(container, state, actions) {
       resultsPaneLastVisibleMode = "expanded";
     }
     const isHidden = mode === "hidden";
-    const isExpanded = mode === "expanded";
     const visibilityTooltip = isHidden ? "Show Results" : "Hide Results";
     const visibilityIcon = isHidden ? "results-show" : "results-hide";
     applyActionButtonIcon(toggleResultsPaneVisibilityButton, visibilityIcon, visibilityTooltip);
     toggleResultsPaneVisibilityButton.classList.toggle("active", !isHidden);
     toggleResultsPaneVisibilityButton.setAttribute("aria-pressed", isHidden ? "false" : "true");
 
-    toggleResultsPaneLayoutButton.hidden = !responsiveState.dockedAllowed;
-    toggleResultsPaneLayoutButton.setAttribute("aria-hidden", responsiveState.dockedAllowed ? "false" : "true");
-    if (responsiveState.dockedAllowed) {
-      const layoutTooltip = isExpanded ? "Docked Results" : "Full Results";
-      const layoutIcon = isExpanded ? "results-split" : "results-expand";
-      applyActionButtonIcon(toggleResultsPaneLayoutButton, layoutIcon, layoutTooltip);
-      toggleResultsPaneLayoutButton.disabled = isHidden;
-      toggleResultsPaneLayoutButton.classList.toggle("active", isExpanded);
-      toggleResultsPaneLayoutButton.setAttribute("aria-pressed", isExpanded ? "true" : "false");
-      toggleResultsPaneLayoutButton.setAttribute("aria-disabled", isHidden ? "true" : "false");
-    } else {
-      toggleResultsPaneLayoutButton.disabled = true;
-      toggleResultsPaneLayoutButton.classList.remove("active");
-      toggleResultsPaneLayoutButton.setAttribute("aria-pressed", "false");
-      toggleResultsPaneLayoutButton.setAttribute("aria-disabled", "true");
-    }
+    const schematicVisible = mode !== "expanded";
+    const schematicTooltip = schematicVisible ? "Hide Schematic" : "Show Schematic";
+    const schematicIcon = schematicVisible ? "schematic-hide" : "schematic-show";
+    applyActionButtonIcon(toggleResultsPaneSchematicButton, schematicIcon, schematicTooltip);
+    toggleResultsPaneSchematicButton.hidden = false;
+    toggleResultsPaneSchematicButton.setAttribute("aria-hidden", "false");
+    toggleResultsPaneSchematicButton.disabled = false;
+    toggleResultsPaneSchematicButton.classList.toggle("active", schematicVisible);
+    toggleResultsPaneSchematicButton.setAttribute("aria-pressed", schematicVisible ? "true" : "false");
+    toggleResultsPaneSchematicButton.setAttribute("aria-disabled", "false");
     if (resultsPaneDivider) {
       resultsPaneDivider.setAttribute("aria-orientation", responsiveState.stacked ? "horizontal" : "vertical");
     }
@@ -2977,15 +3003,10 @@ function createUI(container, state, actions) {
     }
     setResultsPaneMode("hidden");
   });
-  toggleResultsPaneLayoutButton.addEventListener("click", () => {
-    if (resultsPaneState.mode === "hidden") {
-      return;
-    }
-    if (toggleResultsPaneLayoutButton.hidden) {
-      return;
-    }
+  toggleResultsPaneSchematicButton.addEventListener("click", () => {
+    const responsiveState = resolveResultsPaneResponsiveState();
     if (resultsPaneState.mode === "expanded") {
-      setResultsPaneMode("split");
+      setResultsPaneMode(responsiveState.dockedAllowed ? "split" : "hidden");
       return;
     }
     setResultsPaneMode("expanded");
@@ -10154,7 +10175,7 @@ function createUI(container, state, actions) {
     if (!contextMenu.contains(event.target)) {
       hideContextMenu();
     }
-    if (!titleBar.contains(event.target)) {
+    if (!menuBar.contains(event.target)) {
       closeMenuGroups();
     }
   });
