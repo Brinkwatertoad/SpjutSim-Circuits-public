@@ -9533,6 +9533,9 @@
       }
       if (event.button !== 0) {
         state.lastSelectClick = null;
+        if (event.button === 1) {
+          beginPan(event);
+        }
         return;
       }
       const world = clientToWorld(event.clientX, event.clientY);
