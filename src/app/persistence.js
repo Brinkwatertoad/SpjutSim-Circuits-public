@@ -6,13 +6,15 @@
     EXPORT_PNG_SCALE: "exportPngScale",
     EXPORT_PNG_TRANSPARENT: "exportPngTransparent",
     PLOT_FONT_SCALE: "plotFontScale",
-    PLOT_LINE_WIDTH: "plotLineWidth"
+    PLOT_LINE_WIDTH: "plotLineWidth",
+    PLOT_IP_DISPLAY: "plotIpDisplay"
   });
   const PREFERENCE_KEY_BY_NAME = Object.freeze({
     [PREFERENCE_NAMES.EXPORT_PNG_SCALE]: "spjutsim:export-png-scale",
     [PREFERENCE_NAMES.EXPORT_PNG_TRANSPARENT]: "spjutsim:export-png-transparent",
     [PREFERENCE_NAMES.PLOT_FONT_SCALE]: "spjutsim:plot-font-scale",
-    [PREFERENCE_NAMES.PLOT_LINE_WIDTH]: "spjutsim:plot-line-width"
+    [PREFERENCE_NAMES.PLOT_LINE_WIDTH]: "spjutsim:plot-line-width",
+    [PREFERENCE_NAMES.PLOT_IP_DISPLAY]: "spjutsim:plot-ip-display"
   });
   const DB_NAME = "spjutsim";
   const DB_VERSION = 1;
@@ -46,6 +48,11 @@
     const raw = readPreferenceRaw(name);
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  const readStringPreference = (name, fallback) => {
+    const raw = readPreferenceRaw(name);
+    return typeof raw === "string" ? raw : fallback;
   };
 
   const readBooleanPreference = (name, fallback) => {
@@ -352,6 +359,7 @@
     saveAutosave,
     loadAutosave,
     readNumberPreference,
+    readStringPreference,
     readBooleanPreference,
     writePreference,
     setRecentInfo,

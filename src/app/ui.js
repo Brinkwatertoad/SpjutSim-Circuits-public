@@ -18,7 +18,7 @@ const simulationKinds = [
 ];
 const simulationKindIds = new Set(simulationKinds.map((entry) => entry.id));
 const PROBE_COMPONENT_TYPES = new Set(["PV", "PI", "PD", "PP"]);
-const RESULTS_PANE_MODES = new Set(["hidden", "split", "expanded"]);
+const RESULTS_PANE_MODES = new Set(["hidden", "split", "expanded", "empty"]);
 const DEFAULT_RESULTS_PANE_MODE = "hidden";
 const DEFAULT_RESULTS_PANE_SPLIT_RATIO = 0.5;
 const MIN_RESULTS_PANE_SPLIT_RATIO = 0.25;
@@ -217,6 +217,7 @@ function createUI(container, state, actions) {
   let syncInlineComponentEditor = () => { };
   let inlineEditingComponentId = null;
   let probeSignalDisplayLabelMap = new Map();
+  let powerSignalTokens = new Set();
   let autoRunTimer = null;
   let autosaveTimer = null;
   let isRestoringDocument = false;
@@ -282,6 +283,7 @@ function createUI(container, state, actions) {
   })();
   const persistencePreferences = Object.freeze({
     readNumberPreference: requirePersistenceMethod("readNumberPreference"),
+    readStringPreference: requirePersistenceMethod("readStringPreference"),
     readBooleanPreference: requirePersistenceMethod("readBooleanPreference"),
     writePreference: requirePersistenceMethod("writePreference")
   });
@@ -477,17 +479,10 @@ function createUI(container, state, actions) {
   titleBar.className = "title-bar";
   titleBar.dataset.titleBar = "1";
 
-  const statusWrap = document.createElement("div");
-  statusWrap.className = "title-status";
-  const statusLabel = document.createElement("span");
-  statusLabel.textContent = "Status:";
   const statusEl = document.createElement("span");
   statusEl.className = "status";
   statusEl.textContent = state.status;
-  const saveStatusEl = document.createElement("span");
-  saveStatusEl.className = "status save-status";
-  saveStatusEl.dataset.saveStatus = "1";
-  statusWrap.append(statusLabel, statusEl, saveStatusEl);
+  statusEl.hidden = true;
 
   const menuBar = document.createElement("div");
   menuBar.className = "menu-bar";
@@ -504,11 +499,9 @@ function createUI(container, state, actions) {
   titleBarLeft.className = "title-bar-left";
   titleBarLeft.append(title, menuBar);
 
-  const titleBarRight = document.createElement("div");
-  titleBarRight.className = "title-bar-right";
-  titleBarRight.append(fileStatus, statusWrap);
+  // fileStatus is appended to titleBarLeft (after menuBar) once menu groups are built
 
-  titleBar.append(titleBarLeft, titleBarRight);
+  titleBar.append(titleBarLeft, statusEl);
 
   const resetButton = document.createElement("button");
   resetButton.className = "secondary";
@@ -607,6 +600,52 @@ function createUI(container, state, actions) {
     tooltip.style.display = "none";
   };
 
+  const helpTooltip = document.createElement("div");
+  helpTooltip.className = "tool-tooltip tool-tooltip-expanded";
+  helpTooltip.dataset.helpTooltip = "1";
+  helpTooltip.style.display = "none";
+  container.appendChild(helpTooltip);
+
+  const showHelpTooltipAt = (title, body, x, y) => {
+    if (!title && !body) {
+      return;
+    }
+    helpTooltip.innerHTML = "";
+    if (title) {
+      const titleEl = document.createElement("strong");
+      titleEl.textContent = title;
+      helpTooltip.appendChild(titleEl);
+    }
+    if (body) {
+      const bodyEl = document.createElement("div");
+      bodyEl.textContent = body;
+      if (title) {
+        bodyEl.style.marginTop = "4px";
+      }
+      helpTooltip.appendChild(bodyEl);
+    }
+    helpTooltip.style.display = "block";
+    const offset = 12;
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const helpRect = helpTooltip.getBoundingClientRect();
+    const tooltipWidth = helpRect.width || helpTooltip.offsetWidth || 0;
+    const tooltipHeight = helpRect.height || helpTooltip.offsetHeight || 0;
+    const inset = 4;
+    const mouseX = Number.isFinite(x) ? x : 0;
+    const mouseY = Number.isFinite(y) ? y : 0;
+    const maxLeft = Math.max(inset, viewportWidth - tooltipWidth - inset);
+    const maxTop = Math.max(inset, viewportHeight - tooltipHeight - inset);
+    const left = Math.min(maxLeft, Math.max(inset, mouseX + offset));
+    const top = Math.min(maxTop, Math.max(inset, mouseY + offset));
+    helpTooltip.style.left = `${left}px`;
+    helpTooltip.style.top = `${top}px`;
+  };
+
+  const hideHelpTooltip = () => {
+    helpTooltip.style.display = "none";
+  };
+
   const POPOVER_VIEWPORT_MARGIN = 8;
   const POPOVER_ANCHOR_GAP = 6;
   const clampPopoverNumber = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -672,6 +711,9 @@ function createUI(container, state, actions) {
     el.dataset.tooltipBound = "1";
     const readTooltipText = () => String(el.dataset.tooltip ?? "").trim();
     el.addEventListener("mouseenter", (event) => {
+      if (helpEnabled && el.dataset.schematicHelpTitle) {
+        return;
+      }
       const currentText = readTooltipText();
       if (!currentText) {
         return;
@@ -679,6 +721,9 @@ function createUI(container, state, actions) {
       showTooltipAt(currentText, event.clientX, event.clientY);
     });
     el.addEventListener("mousemove", (event) => {
+      if (helpEnabled && el.dataset.schematicHelpTitle) {
+        return;
+      }
       if (tooltip.style.display === "none") {
         return;
       }
@@ -690,6 +735,9 @@ function createUI(container, state, actions) {
     });
     el.addEventListener("mouseleave", hideTooltip);
     el.addEventListener("focus", () => {
+      if (helpEnabled && el.dataset.schematicHelpTitle) {
+        return;
+      }
       const currentText = readTooltipText();
       if (!currentText) {
         return;
@@ -939,6 +987,20 @@ function createUI(container, state, actions) {
         path("M12 10v6.4");
         path("M12 16.4c0 1.6 1 2.6 2.6 2.6");
         break;
+      case "grid":
+        rect(4, 4, 16, 16);
+        line(9, 4, 9, 20);
+        line(14, 4, 14, 20);
+        line(4, 9, 20, 9);
+        line(4, 14, 20, 14);
+        break;
+      case "zoom-fit":
+        rect(3, 3, 18, 18, 1);
+        polyline("9 7 7 7 7 9");
+        polyline("7 15 7 17 9 17");
+        polyline("15 7 17 7 17 9");
+        polyline("17 15 17 17 15 17");
+        break;
       default:
         return null;
     }
@@ -1038,6 +1100,11 @@ function createUI(container, state, actions) {
       title: "Grid show",
       summary: "Toggle grid visibility.",
       definition: "Hide the grid without changing snap behavior."
+    },
+    zoomFit: {
+      title: "Zoom to fit",
+      summary: "Fit all circuit elements into view.",
+      definition: "Recenters and resizes the view so all placed components are visible."
     },
     undo: {
       title: "Undo (Ctrl+Z)",
@@ -1168,6 +1235,11 @@ function createUI(container, state, actions) {
       title: "Copy Netlist",
       summary: "Copy the full generated netlist to the clipboard.",
       definition: "Copies the exact netlist text shown in the generated preview to the clipboard so it can be pasted into external tools."
+    },
+    hoverInfo: {
+      title: "Hover Info (H)",
+      summary: "Show more descriptive hover explanations.",
+      definition: ""
     }
   };
 
@@ -1185,34 +1257,18 @@ function createUI(container, state, actions) {
     const displayName = isDirty ? `${name} *` : name;
     fileNameEl.textContent = displayName;
     fileStatus.dataset.dirty = isDirty ? "1" : "0";
-  };
-
-  const updateSaveStatus = () => {
-    if (isDirty) {
-      saveStatusEl.textContent = "Unsaved";
-      saveStatusEl.dataset.state = "unsaved";
-      return;
-    }
-    if (lastSavedAt) {
-      saveStatusEl.textContent = "Saved";
-      saveStatusEl.dataset.state = "saved";
-      return;
-    }
-    saveStatusEl.textContent = "Not saved";
-    saveStatusEl.dataset.state = "idle";
+    fileStatus.dataset.saveState = isDirty ? "unsaved" : (lastSavedAt ? "saved" : "new");
   };
 
   const markDocumentDirty = () => {
     isDirty = true;
     updateFileIndicators();
-    updateSaveStatus();
   };
 
   const markDocumentSaved = () => {
     isDirty = false;
     lastSavedAt = new Date().toISOString();
     updateFileIndicators();
-    updateSaveStatus();
   };
 
   const resetSaveIndicators = (dirty = true) => {
@@ -1221,7 +1277,6 @@ function createUI(container, state, actions) {
       lastSavedAt = "";
     }
     updateFileIndicators();
-    updateSaveStatus();
   };
 
   const isProbeType = (type) => {
@@ -1286,12 +1341,20 @@ function createUI(container, state, actions) {
     }
     return Math.min(Math.max(Math.round(value), 1), 6);
   };
+  const PLOT_IP_DISPLAY_MODES = new Set(["same", "split"]);
+  const normalizePlotIPDisplayMode = (value) => {
+    const mode = String(value ?? "").trim().toLowerCase();
+    return PLOT_IP_DISPLAY_MODES.has(mode) ? mode : "same";
+  };
   const plotPrefs = {
     fontScale: clampPlotFontScale(
       persistencePreferences.readNumberPreference(persistencePreferenceNames.PLOT_FONT_SCALE, 1)
     ),
     lineWidth: clampPlotLineWidth(
       persistencePreferences.readNumberPreference(persistencePreferenceNames.PLOT_LINE_WIDTH, 1)
+    ),
+    ipDisplay: normalizePlotIPDisplayMode(
+      persistencePreferences.readStringPreference(persistencePreferenceNames.PLOT_IP_DISPLAY, "same")
     )
   };
   const EXPORT_PADDING = 16;
@@ -1305,6 +1368,7 @@ function createUI(container, state, actions) {
   const persistPlotPrefs = () => {
     persistencePreferences.writePreference(persistencePreferenceNames.PLOT_FONT_SCALE, plotPrefs.fontScale);
     persistencePreferences.writePreference(persistencePreferenceNames.PLOT_LINE_WIDTH, plotPrefs.lineWidth);
+    persistencePreferences.writePreference(persistencePreferenceNames.PLOT_IP_DISPLAY, plotPrefs.ipDisplay);
   };
   const getExportScale = (displayScale) => {
     const safeDisplay = Number.isFinite(displayScale) && displayScale > 0 ? displayScale : 2;
@@ -1375,20 +1439,6 @@ function createUI(container, state, actions) {
   });
   const elementToolButtons = schematicToolButtons.filter((button) => button.dataset.schematicElementTool === "1");
 
-  const helpPanel = document.createElement("div");
-  helpPanel.className = "schematic-help-panel workspace-help-panel";
-  helpPanel.dataset.schematicHelpPanel = "1";
-  const helpTitle = document.createElement("div");
-  helpTitle.className = "schematic-help-title";
-  helpTitle.dataset.schematicHelpPanelTitle = "1";
-  const helpBody = document.createElement("div");
-  helpBody.className = "schematic-help-body";
-  helpBody.dataset.schematicHelpPanelBody = "1";
-  helpPanel.append(helpTitle, helpBody);
-
-  const schematicGridLabel = document.createElement("span");
-  schematicGridLabel.className = "schematic-status-label";
-  schematicGridLabel.textContent = "Grid:";
 
   const normalizeGridSize = (value) => {
     const numeric = Number(value);
@@ -1418,16 +1468,20 @@ function createUI(container, state, actions) {
   });
   gridSizeInput.value = String(schematicGrid.size);
 
-  const gridVisibleLabel = document.createElement("label");
-  gridVisibleLabel.className = "schematic-toggle";
-  const gridVisibleCheck = document.createElement("input");
-  gridVisibleCheck.type = "checkbox";
-  gridVisibleCheck.checked = schematicGrid.visible;
-  gridVisibleCheck.dataset.schematicGrid = "1";
-  gridVisibleLabel.dataset.schematicHelpTitle = helpEntries.gridShow.title;
-  gridVisibleLabel.dataset.schematicHelpSummary = helpEntries.gridShow.summary;
-  gridVisibleLabel.dataset.schematicHelpDefinition = helpEntries.gridShow.definition;
-  gridVisibleLabel.append(gridVisibleCheck, " Show");
+  const gridToggleButton = document.createElement("button");
+  gridToggleButton.className = "secondary icon-button schematic-grid-toggle";
+  gridToggleButton.dataset.schematicGrid = "1";
+  gridToggleButton.setAttribute("aria-pressed", schematicGrid.visible ? "true" : "false");
+  gridToggleButton.dataset.schematicHelpTitle = helpEntries.gridShow.title;
+  gridToggleButton.dataset.schematicHelpSummary = helpEntries.gridShow.summary;
+  gridToggleButton.dataset.schematicHelpDefinition = helpEntries.gridShow.definition;
+
+  const zoomFitButton = document.createElement("button");
+  zoomFitButton.className = "secondary icon-button schematic-zoom-fit";
+  zoomFitButton.dataset.schematicZoomFit = "1";
+  zoomFitButton.dataset.schematicHelpTitle = helpEntries.zoomFit.title;
+  zoomFitButton.dataset.schematicHelpSummary = helpEntries.zoomFit.summary;
+  zoomFitButton.dataset.schematicHelpDefinition = helpEntries.zoomFit.definition;
 
   const schematicCommandBar = document.createElement("div");
   schematicCommandBar.className = "schematic-command-bar";
@@ -1454,6 +1508,7 @@ function createUI(container, state, actions) {
   const runActionButton = document.createElement("button");
   runActionButton.className = "secondary icon-button schematic-action-button";
   runActionButton.dataset.schematicCommand = "run";
+  runActionButton.dataset.actionIntent = "run";
   runActionButton.dataset.schematicHelpTitle = helpEntries.runSimulation.title;
   runActionButton.dataset.schematicHelpSummary = helpEntries.runSimulation.summary;
   runActionButton.dataset.schematicHelpDefinition = helpEntries.runSimulation.definition;
@@ -1496,12 +1551,14 @@ function createUI(container, state, actions) {
   const deleteActionButton = document.createElement("button");
   deleteActionButton.className = "secondary icon-button schematic-action-button";
   deleteActionButton.dataset.schematicAction = "delete";
+  deleteActionButton.dataset.actionIntent = "danger";
   deleteActionButton.dataset.schematicHelpTitle = helpEntries.delete.title;
   deleteActionButton.dataset.schematicHelpSummary = helpEntries.delete.summary;
   deleteActionButton.dataset.schematicHelpDefinition = helpEntries.delete.definition;
   const clearProbesActionButton = document.createElement("button");
   clearProbesActionButton.className = "secondary icon-button schematic-action-button";
   clearProbesActionButton.dataset.schematicAction = "clear-probes";
+  clearProbesActionButton.dataset.actionIntent = "danger";
   clearProbesActionButton.dataset.schematicHelpTitle = helpEntries.clearProbes.title;
   clearProbesActionButton.dataset.schematicHelpSummary = helpEntries.clearProbes.summary;
   clearProbesActionButton.dataset.schematicHelpDefinition = helpEntries.clearProbes.definition;
@@ -1519,7 +1576,7 @@ function createUI(container, state, actions) {
   };
   applyActionButtonIcon(undoActionButton, "undo", "Undo (Ctrl+Z)");
   applyActionButtonIcon(redoActionButton, "redo", "Redo (Ctrl+Y)");
-  applyActionButtonIcon(runActionButton, "run", "Run (F5)");
+  applyActionButtonIcon(runActionButton, "run", "Run Simulation (F5)");
   applyActionButtonIcon(exportActionButton, "export", "Export");
   applyActionButtonIcon(rotateCwButton, "rotate-cw", "Rotate CW (Space)");
   applyActionButtonIcon(rotateCcwButton, "rotate-ccw", "Rotate CCW (Shift+Space)");
@@ -1528,6 +1585,8 @@ function createUI(container, state, actions) {
   applyActionButtonIcon(duplicateActionButton, "duplicate", "Duplicate");
   applyActionButtonIcon(deleteActionButton, "delete", "Delete (Del)");
   applyActionButtonIcon(clearProbesActionButton, "clear-probes", "Clear Probes");
+  applyActionButtonIcon(gridToggleButton, "grid", "Toggle Grid");
+  applyActionButtonIcon(zoomFitButton, "zoom-fit", "Zoom to Fit");
 
   const schematicStatusBar = document.createElement("div");
   schematicStatusBar.className = "schematic-status-bar";
@@ -1556,9 +1615,9 @@ function createUI(container, state, actions) {
     schematicCommandEdit
   );
   schematicStatusBar.append(
-    schematicGridLabel,
+    gridToggleButton,
     gridSizeInput,
-    gridVisibleLabel
+    zoomFitButton
   );
 
   const schematicCanvasWrap = document.createElement("div");
@@ -1574,6 +1633,7 @@ function createUI(container, state, actions) {
   schematicRunButton.className = "secondary";
   schematicRunButton.textContent = "Run Simulation";
   schematicRunButton.dataset.schematicAnalysisAction = "run";
+  schematicRunButton.dataset.actionIntent = "run";
   applyHelpEntry(schematicRunButton, helpEntries.runSimulation);
   resetButton.dataset.schematicAnalysisAction = "reset";
   applyHelpEntry(resetButton, helpEntries.resetSimulation);
@@ -2041,8 +2101,14 @@ function createUI(container, state, actions) {
   let selectedHelpTarget = null;
   const updateHelpMenuLabel = () => {
     const menuItem = document.querySelector("[data-menu-action=\"toggle-help\"]");
-    if (menuItem) {
-      menuItem.textContent = helpEnabled ? "Info View: On" : "Info View: Off";
+    if (!menuItem) {
+      return;
+    }
+    const labelSpan = menuItem.querySelector(".menu-item-label");
+    if (labelSpan) {
+      labelSpan.textContent = helpEnabled ? "Hover Info: On" : "Hover Info: Off";
+    } else {
+      menuItem.textContent = helpEnabled ? "Hover Info: On" : "Hover Info: Off";
     }
   };
   const updateWorkspaceHelpToggleState = () => {
@@ -2052,19 +2118,10 @@ function createUI(container, state, actions) {
     workspaceHelpToggleButton.classList.toggle("active", helpEnabled);
     workspaceHelpToggleButton.setAttribute("aria-pressed", helpEnabled ? "true" : "false");
   };
-  const updateHelpOffset = () => {
-    return;
-  };
   const updateHelpPanelVisibility = () => {
     if (!helpEnabled) {
-      helpPanel.hidden = true;
-      workspaceHelp.hidden = true;
-      updateHelpOffset();
-      return;
+      hideHelpTooltip();
     }
-    helpPanel.hidden = false;
-    workspaceHelp.hidden = false;
-    updateHelpOffset();
   };
   const setHelpEnabled = (next) => {
     helpEnabled = Boolean(next);
@@ -2075,11 +2132,12 @@ function createUI(container, state, actions) {
   const toggleHelpEnabled = () => {
     setHelpEnabled(!helpEnabled);
   };
+  let currentHelpTitle = "";
+  let currentHelpBody = "";
   const setHelpPanel = (target) => {
     if (!target) {
-      helpTitle.textContent = "Info View";
-      helpBody.textContent = "Hover or select a tool or control to see details.";
-      updateHelpOffset();
+      currentHelpTitle = "";
+      currentHelpBody = "";
       return;
     }
     const title = target.dataset.schematicHelpTitle;
@@ -2088,11 +2146,9 @@ function createUI(container, state, actions) {
     if (!title && !summary && !definition) {
       return;
     }
-    helpTitle.textContent = title ?? "Tool help";
-    helpBody.textContent = [summary, definition].filter(Boolean).join(" ");
-    updateHelpOffset();
+    currentHelpTitle = title ?? "";
+    currentHelpBody = [summary, definition].filter(Boolean).join(" ");
   };
-  setHelpPanel(null);
 
   const registerHelpTarget = (target) => {
     if (!target) {
@@ -2102,22 +2158,38 @@ function createUI(container, state, actions) {
       return;
     }
     target.dataset.schematicHelpRegistered = "1";
-    const updateHelp = () => {
+    target.addEventListener("mouseenter", (event) => {
       if (!helpEnabled) {
         return;
       }
       setHelpPanel(target);
-    };
-    target.addEventListener("mouseenter", updateHelp);
-    target.addEventListener("mouseover", updateHelp);
-    target.addEventListener("focus", updateHelp);
+      showHelpTooltipAt(currentHelpTitle, currentHelpBody, event.clientX, event.clientY);
+    });
+    target.addEventListener("mousemove", (event) => {
+      if (!helpEnabled || helpTooltip.style.display === "none") {
+        return;
+      }
+      showHelpTooltipAt(currentHelpTitle, currentHelpBody, event.clientX, event.clientY);
+    });
     target.addEventListener("mouseleave", () => {
+      hideHelpTooltip();
       if (!helpEnabled) {
         return;
       }
       if (selectedHelpTarget && selectedHelpTarget !== target) {
         setHelpPanel(selectedHelpTarget);
       }
+    });
+    target.addEventListener("focus", () => {
+      if (!helpEnabled) {
+        return;
+      }
+      setHelpPanel(target);
+      const rect = target.getBoundingClientRect();
+      showHelpTooltipAt(currentHelpTitle, currentHelpBody, rect.left + rect.width / 2, rect.top);
+    });
+    target.addEventListener("blur", () => {
+      hideHelpTooltip();
     });
   };
   const registerAllHelpTargets = (root) => {
@@ -2140,22 +2212,22 @@ function createUI(container, state, actions) {
   const schematicToolsPanel = document.createElement("div");
   schematicToolsPanel.className = "workspace-tools-panel workspace-tools-panel-schematic";
   schematicToolsPanel.dataset.workspaceToolsPanel = "schematic";
-  const analysisToolsPanel = document.createElement("div");
-  analysisToolsPanel.className = "workspace-tools-panel workspace-tools-panel-analysis";
-  analysisToolsPanel.dataset.workspaceToolsPanel = "analysis";
-  analysisToolsPanel.hidden = true;
   schematicSimulation.hidden = true;
   const schematicMain = document.createElement("div");
   schematicMain.className = "workspace-main";
+  const simPanel = document.createElement("div");
+  simPanel.className = "workspace-sim-panel";
+  simPanel.hidden = true;
+  simPanel.append(schematicSimulation);
   schematicToolsPanel.append(schematicControls);
-  analysisToolsPanel.append(schematicSimulation);
-  schematicTools.append(schematicToolsPanel, analysisToolsPanel);
+  schematicTools.append(schematicToolsPanel);
   schematicCanvasWrap.append(schematicStatusBar);
-  schematicWorkspace.append(schematicTools, schematicMain);
+  schematicWorkspace.append(schematicTools, schematicMain, simPanel);
   schematicPanel.append(schematicWorkspace);
 
   const errorEl = document.createElement("div");
   errorEl.className = "section";
+  errorEl.hidden = true;
 
   const plotFontOptions = [
     { value: 0.8, label: "80%" },
@@ -2241,6 +2313,29 @@ function createUI(container, state, actions) {
     syncPlotStyleControls();
     refreshPlotResults();
   };
+  const plotIPDisplayModeOptions = [
+    { value: "same", label: "Same plot" },
+    { value: "split", label: "Separate plots" }
+  ];
+  const plotIPDisplaySelects = [];
+  const syncPlotDisplayControls = () => {
+    const ipValue = plotPrefs.ipDisplay;
+    plotIPDisplaySelects.forEach((select) => {
+      if (select.value !== ipValue) {
+        select.value = ipValue;
+      }
+    });
+  };
+  const setPlotIPDisplay = (value) => {
+    const next = normalizePlotIPDisplayMode(value);
+    if (next === plotPrefs.ipDisplay) {
+      return;
+    }
+    plotPrefs.ipDisplay = next;
+    persistPlotPrefs();
+    syncPlotDisplayControls();
+    refreshPlotResults();
+  };
   const createPlotStyleControls = () => {
     const fontLabel = document.createElement("label");
     const fontSelect = document.createElement("select");
@@ -2271,8 +2366,26 @@ function createUI(container, state, actions) {
     });
     plotLineSelects.push(lineSelect);
     lineLabel.append("Line width: ", lineSelect);
+
+    const ipDisplayLabel = document.createElement("label");
+    const ipDisplaySelect = document.createElement("select");
+    ipDisplaySelect.dataset.plotIpDisplay = "1";
+    plotIPDisplayModeOptions.forEach((option) => {
+      const item = document.createElement("option");
+      item.value = option.value;
+      item.textContent = option.label;
+      ipDisplaySelect.append(item);
+    });
+    ipDisplaySelect.value = plotPrefs.ipDisplay;
+    ipDisplaySelect.addEventListener("change", () => {
+      setPlotIPDisplay(ipDisplaySelect.value);
+    });
+    plotIPDisplaySelects.push(ipDisplaySelect);
+    ipDisplayLabel.append("I/P traces: ", ipDisplaySelect);
+
     syncPlotStyleControls();
-    return { fontLabel, lineLabel };
+    syncPlotDisplayControls();
+    return { fontLabel, lineLabel, ipDisplayLabel };
   };
 
   const createPlotSettingsPopover = (kind, contentNodes) => {
@@ -2391,13 +2504,12 @@ function createUI(container, state, actions) {
     });
     gridLabel.append(gridCheck, " Show Grid");
 
-    const signalLabel = document.createElement("span");
-    signalLabel.textContent = "Signals: ";
     const signalSelect = document.createElement("select");
     signalSelect.className = "sample-select analysis-signal-select";
     signalSelect.multiple = true;
     signalSelect.size = 4;
     signalSelect.dataset.signalSelect = options.kind;
+    signalSelect.hidden = true;
     signalSelect.addEventListener("change", () => {
       const selected = dedupeSignalList(getSelectedSignals(signalSelect));
       if (!selected.length) {
@@ -2407,12 +2519,31 @@ function createUI(container, state, actions) {
       options.onSignalChange(selected);
     });
 
+    const signalCheckboxList = document.createElement("div");
+    signalCheckboxList.className = "signal-checkbox-list";
+    signalCheckboxList.dataset.signalCheckboxList = options.kind;
+    signalCheckboxList.addEventListener("change", (e) => {
+      if (e.target?.type !== "checkbox") {
+        return;
+      }
+      const cb = e.target;
+      const opt = Array.from(signalSelect.options).find((o) => o.value === cb.value);
+      if (opt) {
+        opt.selected = cb.checked;
+        signalSelect.dispatchEvent(new Event("change"));
+      }
+    });
+
     const plotStyle = createPlotStyleControls();
-    const plotSettings = createPlotSettingsPopover(options.kind, [
+    const settingsContentNodes = [
       gridLabel,
       plotStyle.fontLabel,
       plotStyle.lineLabel
-    ]);
+    ];
+    if (options.includeDisplayModeControls) {
+      settingsContentNodes.push(plotStyle.ipDisplayLabel);
+    }
+    const plotSettings = createPlotSettingsPopover(options.kind, settingsContentNodes);
     const exportButton = document.createElement("button");
     exportButton.className = "secondary";
     exportButton.textContent = "Export PNG";
@@ -2424,7 +2555,7 @@ function createUI(container, state, actions) {
     applyHelpEntry(exportCsvButton, options.exportCsvHelp);
 
     controls.append(
-      signalLabel,
+      signalCheckboxList,
       signalSelect,
       plotSettings.wrap,
       exportButton,
@@ -2432,7 +2563,29 @@ function createUI(container, state, actions) {
     );
 
     const plotBundle = createPlotCanvasBundle(options.kind);
-    section.append(controls, meta, plotBundle.wrap);
+
+    // Secondary canvas bundles for split mode (current and power)
+    const currentPlotBundle = options.includeDisplayModeControls
+      ? createPlotCanvasBundle(options.kind + "-current", options.kind)
+      : null;
+    const powerPlotBundle = options.includeDisplayModeControls
+      ? createPlotCanvasBundle(options.kind + "-power", options.kind)
+      : null;
+    if (currentPlotBundle) {
+      currentPlotBundle.wrap.hidden = true;
+    }
+    if (powerPlotBundle) {
+      powerPlotBundle.wrap.hidden = true;
+    }
+
+    const sectionChildren = [controls, meta, plotBundle.wrap];
+    if (currentPlotBundle) {
+      sectionChildren.push(currentPlotBundle.wrap);
+    }
+    if (powerPlotBundle) {
+      sectionChildren.push(powerPlotBundle.wrap);
+    }
+    section.append(...sectionChildren);
 
     return {
       section,
@@ -2444,7 +2597,15 @@ function createUI(container, state, actions) {
       canvas: plotBundle.canvas,
       wrap: plotBundle.wrap,
       overlay: plotBundle.overlay,
-      tooltip: plotBundle.tooltip
+      tooltip: plotBundle.tooltip,
+      currentCanvas: currentPlotBundle?.canvas ?? null,
+      currentWrap: currentPlotBundle?.wrap ?? null,
+      currentOverlay: currentPlotBundle?.overlay ?? null,
+      currentTooltip: currentPlotBundle?.tooltip ?? null,
+      powerCanvas: powerPlotBundle?.canvas ?? null,
+      powerWrap: powerPlotBundle?.wrap ?? null,
+      powerOverlay: powerPlotBundle?.overlay ?? null,
+      powerTooltip: powerPlotBundle?.tooltip ?? null
     };
   };
 
@@ -2493,6 +2654,7 @@ function createUI(container, state, actions) {
   clearProbesButton.type = "button";
   clearProbesButton.className = "secondary measurement-clear-probes";
   clearProbesButton.dataset.probeClearAll = "1";
+  clearProbesButton.dataset.actionIntent = "danger";
   clearProbesButton.textContent = "Clear Probes";
   clearProbesButton.hidden = true;
   const measurementsList = document.createElement("table");
@@ -2506,6 +2668,7 @@ function createUI(container, state, actions) {
     kind: "dc",
     metaClass: "dc-meta",
     exportCsvHelp: helpEntries.exportCsvDc,
+    includeDisplayModeControls: true,
     onGridChange: () => {
       renderDcResults(state.dcResults);
     },
@@ -2528,13 +2691,22 @@ function createUI(container, state, actions) {
     canvas: dcCanvas,
     wrap: dcPlotWrap,
     overlay: dcOverlay,
-    tooltip: dcTooltip
+    tooltip: dcTooltip,
+    currentCanvas: dcCurrentCanvas,
+    currentWrap: dcCurrentWrap,
+    currentOverlay: dcCurrentOverlay,
+    currentTooltip: dcCurrentTooltip,
+    powerCanvas: dcPowerCanvas,
+    powerWrap: dcPowerWrap,
+    powerOverlay: dcPowerOverlay,
+    powerTooltip: dcPowerTooltip
   } = dcPlotSection;
 
   const tranPlotSection = createSinglePlotSection({
     kind: "tran",
     metaClass: "tran-meta",
     exportCsvHelp: helpEntries.exportCsvTran,
+    includeDisplayModeControls: true,
     onGridChange: () => {
       renderDcResults(state.dcResults);
       renderTranResults(state.tranResults);
@@ -2558,7 +2730,15 @@ function createUI(container, state, actions) {
     canvas: tranCanvas,
     wrap: tranPlotWrap,
     overlay: tranOverlay,
-    tooltip: tranTooltip
+    tooltip: tranTooltip,
+    currentCanvas: tranCurrentCanvas,
+    currentWrap: tranCurrentWrap,
+    currentOverlay: tranCurrentOverlay,
+    currentTooltip: tranCurrentTooltip,
+    powerCanvas: tranPowerCanvas,
+    powerWrap: tranPowerWrap,
+    powerOverlay: tranPowerOverlay,
+    powerTooltip: tranPowerTooltip
   } = tranPlotSection;
 
   // AC Section (dual plots: magnitude + phase)
@@ -2586,13 +2766,12 @@ function createUI(container, state, actions) {
   gridLabelA.append(gridCheckA, " Show Grid");
 
   // Signal for AC
-  const signalLabelA = document.createElement("span");
-  signalLabelA.textContent = "Signals: ";
   const signalSelectA = document.createElement("select");
   signalSelectA.className = "sample-select analysis-signal-select";
   signalSelectA.multiple = true;
   signalSelectA.size = 4;
   signalSelectA.dataset.signalSelect = "ac";
+  signalSelectA.hidden = true;
   signalSelectA.addEventListener("change", () => {
     const selected = dedupeSignalList(getSelectedSignals(signalSelectA));
     if (!selected.length) {
@@ -2605,6 +2784,21 @@ function createUI(container, state, actions) {
     setActiveTab("ac");
     renderAcResults(state.acResults);
     queueAutosave(false);
+  });
+
+  const signalCheckboxListA = document.createElement("div");
+  signalCheckboxListA.className = "signal-checkbox-list";
+  signalCheckboxListA.dataset.signalCheckboxList = "ac";
+  signalCheckboxListA.addEventListener("change", (e) => {
+    if (e.target?.type !== "checkbox") {
+      return;
+    }
+    const cb = e.target;
+    const opt = Array.from(signalSelectA.options).find((o) => o.value === cb.value);
+    if (opt) {
+      opt.selected = cb.checked;
+      signalSelectA.dispatchEvent(new Event("change"));
+    }
   });
   const acPlotStyle = createPlotStyleControls();
   const acPlotSettings = createPlotSettingsPopover("ac", [
@@ -2628,7 +2822,7 @@ function createUI(container, state, actions) {
   applyHelpEntry(acExportCsvButton, helpEntries.exportCsvAc);
 
   acControls.append(
-    signalLabelA,
+    signalCheckboxListA,
     signalSelectA,
     acPlotSettings.wrap,
     acExportMagButton,
@@ -2763,7 +2957,10 @@ function createUI(container, state, actions) {
   const resultsPaneContent = document.createElement("div");
   resultsPaneContent.className = "results-pane-content";
   resultsPaneContent.append(resultsPanel);
-  resultsPaneLayout.append(schematicCanvasPane, resultsPaneDivider, resultsPaneContent);
+  const resultsPaneEmptyPlaceholder = document.createElement("div");
+  resultsPaneEmptyPlaceholder.className = "results-pane-empty-placeholder";
+  resultsPaneEmptyPlaceholder.textContent = "Select Schematic or Results to view.";
+  resultsPaneLayout.append(schematicCanvasPane, resultsPaneDivider, resultsPaneContent, resultsPaneEmptyPlaceholder);
   schematicMain.prepend(resultsPaneLayout);
 
   const workspaceHeader = document.createElement("div");
@@ -2775,104 +2972,101 @@ function createUI(container, state, actions) {
   workspaceTabs.className = "workspace-tabs";
   const toolsWorkspaceTab = document.createElement("button");
   toolsWorkspaceTab.type = "button";
-  toolsWorkspaceTab.className = "workspace-tab active";
+  toolsWorkspaceTab.className = "workspace-tab workspace-tab-flat-right active";
   toolsWorkspaceTab.textContent = "Tools";
   toolsWorkspaceTab.dataset.workspaceTab = "schematic";
   toolsWorkspaceTab.setAttribute("aria-selected", "true");
-  const analysisWorkspaceTab = document.createElement("button");
-  analysisWorkspaceTab.type = "button";
-  analysisWorkspaceTab.className = "workspace-tab";
-  analysisWorkspaceTab.textContent = "Analysis";
-  analysisWorkspaceTab.dataset.workspaceTab = "analysis";
-  analysisWorkspaceTab.setAttribute("aria-selected", "false");
-  let workspaceToolsTab = "schematic";
   let workspaceToolsVisible = true;
-  const setWorkspaceToolsTab = (tabId, options = {}) => {
-    const nextTab = tabId === "analysis" ? "analysis" : "schematic";
-    const toggleIfSame = options.toggleIfSame !== false;
-    const shouldRestoreSchematicFromExpanded = nextTab === "schematic" && resultsPaneState.mode === "expanded";
-    if (shouldRestoreSchematicFromExpanded) {
-      workspaceToolsVisible = true;
-      workspaceToolsTab = "schematic";
-    } else if (workspaceToolsVisible && workspaceToolsTab === nextTab && toggleIfSame) {
-      workspaceToolsVisible = false;
-    } else {
-      workspaceToolsVisible = true;
-      workspaceToolsTab = nextTab;
-    }
-    const isToolsActive = workspaceToolsVisible && workspaceToolsTab === "schematic";
-    const isAnalysisActive = workspaceToolsVisible && workspaceToolsTab === "analysis";
-    toolsWorkspaceTab.classList.toggle("active", isToolsActive);
-    toolsWorkspaceTab.setAttribute("aria-selected", isToolsActive ? "true" : "false");
-    analysisWorkspaceTab.classList.toggle("active", isAnalysisActive);
-    analysisWorkspaceTab.setAttribute("aria-selected", isAnalysisActive ? "true" : "false");
-    schematicToolsPanel.hidden = !isToolsActive;
-    analysisToolsPanel.hidden = !isAnalysisActive;
-    schematicControls.hidden = !isToolsActive;
-    schematicSimulation.hidden = !isAnalysisActive;
-    schematicWorkspace.dataset.workspaceToolsVisible = workspaceToolsVisible ? "1" : "0";
-    schematicWorkspace.dataset.workspaceToolsTab = workspaceToolsTab;
-    if (shouldRestoreSchematicFromExpanded) {
-      const responsiveState = resolveResultsPaneResponsiveState();
-      setResultsPaneMode(responsiveState.dockedAllowed ? "split" : "hidden");
-    }
-    updateHelpOffset();
+  let simPanelVisible = false;
+  const setWorkspaceToolsVisible = (visible) => {
+    workspaceToolsVisible = visible;
+    toolsWorkspaceTab.classList.toggle("active", visible);
+    toolsWorkspaceTab.setAttribute("aria-selected", visible ? "true" : "false");
+    schematicToolsPanel.hidden = !visible;
+    schematicControls.hidden = !visible;
+    schematicWorkspace.dataset.workspaceToolsVisible = visible ? "1" : "0";
+
+  };
+  const setSimPanelVisible = (visible) => {
+    simPanelVisible = visible;
+    simPanel.hidden = !visible;
+    schematicSimulation.hidden = !visible;
+    simToggleButton.classList.toggle("active", visible);
+    simToggleButton.setAttribute("aria-selected", visible ? "true" : "false");
+    schematicWorkspace.dataset.simPanelVisible = visible ? "1" : "0";
+    queuePlotResize();
+
   };
   toolsWorkspaceTab.addEventListener("click", () => {
-    setWorkspaceToolsTab("schematic");
-  });
-  analysisWorkspaceTab.addEventListener("click", () => {
-    setWorkspaceToolsTab("analysis");
+    const turningOn = !workspaceToolsVisible;
+    setWorkspaceToolsVisible(turningOn);
+    if (turningOn) {
+      const schematicVisible = resultsPaneState.mode === "split" || resultsPaneState.mode === "hidden";
+      if (!schematicVisible) {
+        const narrow = !resolveResultsPaneResponsiveState().dockedAllowed;
+        const resultsVisible = resultsPaneState.mode === "expanded";
+        // At narrow widths schematic and results are exclusive — showing schematic hides results
+        setResultsPaneMode(!narrow && resultsVisible ? "split" : "hidden");
+      }
+    }
   });
   workspaceHelpToggleButton = document.createElement("button");
   workspaceHelpToggleButton.type = "button";
   workspaceHelpToggleButton.className = "secondary icon-button workspace-help-toggle";
   workspaceHelpToggleButton.dataset.workspaceHelpToggle = "1";
-  applyActionButtonIcon(workspaceHelpToggleButton, "info-view", "Info View");
+  applyActionButtonIcon(workspaceHelpToggleButton, "info-view", "Hover Info (H)");
   workspaceHelpToggleButton.addEventListener("click", () => {
     toggleHelpEnabled();
   });
-  workspaceTabs.append(toolsWorkspaceTab, analysisWorkspaceTab, workspaceHelpToggleButton);
+  const toggleResultsPaneSchematicButton = document.createElement("button");
+  toggleResultsPaneSchematicButton.type = "button";
+  toggleResultsPaneSchematicButton.className = "workspace-tab workspace-tab-flat-left";
+  toggleResultsPaneSchematicButton.textContent = "Schematic";
+  toggleResultsPaneSchematicButton.dataset.resultsPaneAction = "schematic";
+  toggleResultsPaneSchematicButton.setAttribute("aria-pressed", "true");
+  applyCustomTooltip(toggleResultsPaneSchematicButton, "Show/hide schematic");
+  workspaceTabs.append(toolsWorkspaceTab, toggleResultsPaneSchematicButton);
   updateWorkspaceHelpToggleState();
   const workspaceHeaderCommand = document.createElement("div");
   workspaceHeaderCommand.className = "workspace-header-command";
   workspaceHeaderCommand.dataset.workspaceHeaderCommand = "1";
   const resultsPaneActions = document.createElement("div");
   resultsPaneActions.className = "results-pane-actions";
-  const createResultsPaneActionButton = (actionId) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "secondary icon-button results-pane-action";
-    button.dataset.resultsPaneAction = actionId;
-    return button;
-  };
-  const toggleResultsPaneVisibilityButton = createResultsPaneActionButton("visibility");
-  const toggleResultsPaneSchematicButton = createResultsPaneActionButton("schematic");
-  resultsPaneActions.append(toggleResultsPaneSchematicButton, toggleResultsPaneVisibilityButton);
-  workspaceHeaderCommand.append(schematicCommandBar, resultsPaneActions);
+  const toggleResultsPaneVisibilityButton = document.createElement("button");
+  toggleResultsPaneVisibilityButton.type = "button";
+  toggleResultsPaneVisibilityButton.className = "workspace-tab workspace-tab-flat-right";
+  toggleResultsPaneVisibilityButton.textContent = "Results";
+  toggleResultsPaneVisibilityButton.dataset.resultsPaneAction = "visibility";
+  toggleResultsPaneVisibilityButton.setAttribute("aria-pressed", "false");
+  applyCustomTooltip(toggleResultsPaneVisibilityButton, "Show/hide results");
+  const simToggleButton = document.createElement("button");
+  simToggleButton.type = "button";
+  simToggleButton.className = "workspace-tab workspace-tab-flat-left";
+  simToggleButton.textContent = "Sim";
+  simToggleButton.dataset.workspaceTab = "sim";
+  simToggleButton.setAttribute("aria-selected", "false");
+  applyCustomTooltip(simToggleButton, "Simulation settings");
+  simToggleButton.addEventListener("click", () => {
+    setSimPanelVisible(!simPanelVisible);
+  });
+  resultsPaneActions.append(toggleResultsPaneVisibilityButton);
+  workspaceHeaderCommand.append(schematicCommandBar, resultsPaneActions, simToggleButton);
   const syncWorkspaceHeaderResponsiveLayout = (responsiveState) => {
     const compactHeader = !(responsiveState?.dockedAllowed);
     workspacePrimaryStrip.dataset.workspaceHeaderCompact = compactHeader ? "1" : "0";
     if (compactHeader) {
       if (resultsPaneActions.parentElement !== workspaceTabs) {
-        workspaceTabs.append(resultsPaneActions);
+        workspaceTabs.append(resultsPaneActions, simToggleButton);
       }
       return;
     }
     if (resultsPaneActions.parentElement !== workspaceHeaderCommand) {
-      workspaceHeaderCommand.append(resultsPaneActions);
+      workspaceHeaderCommand.append(resultsPaneActions, simToggleButton);
     }
   };
   const workspacePanels = document.createElement("div");
   workspacePanels.className = "workspace-panels";
   workspacePanels.append(schematicPanel);
-  const workspaceHelp = document.createElement("div");
-  workspaceHelp.className = "workspace-help";
-  workspaceHelp.dataset.workspaceHelp = "1";
-  const workspaceHelpSpacer = document.createElement("div");
-  workspaceHelpSpacer.className = "workspace-help-spacer";
-  workspaceHelp.append(helpPanel, workspaceHelpSpacer);
-  schematicWorkspace.append(workspaceHelp);
 
   const readResultsPaneResponsiveWidth = () => {
     const candidates = [
@@ -2905,48 +3099,39 @@ function createUI(container, state, actions) {
     const responsiveState = resolveResultsPaneResponsiveState();
     syncWorkspaceHeaderResponsiveLayout(responsiveState);
     const normalized = normalizeResultsPaneState(resultsPaneState);
-    if (!responsiveState.dockedAllowed && normalized.mode === "split") {
-      normalized.mode = "expanded";
-    }
     resultsPaneState = normalized;
     const mode = normalized.mode;
-    resultsPaneLayout.dataset.resultsPaneMode = mode;
+    // At narrow widths, disallow split — display as results-only
+    const effectiveMode = (!responsiveState.dockedAllowed && mode === "split") ? "expanded" : mode;
+    resultsPaneLayout.dataset.resultsPaneMode = effectiveMode;
     resultsPaneLayout.dataset.resultsPaneStacked = responsiveState.stacked ? "1" : "0";
     resultsPaneLayout.dataset.resultsPaneDockedAllowed = responsiveState.dockedAllowed ? "1" : "0";
     resultsPaneLayout.style.setProperty("--results-pane-split-ratio", String(normalized.splitRatio));
     if (workspace) {
-      workspace.dataset.resultsPaneMode = mode;
+      workspace.dataset.resultsPaneMode = effectiveMode;
       workspace.dataset.resultsPaneStacked = responsiveState.stacked ? "1" : "0";
       workspace.dataset.resultsPaneDockedAllowed = responsiveState.dockedAllowed ? "1" : "0";
     }
-    if (mode !== "hidden") {
+    if (mode !== "hidden" && mode !== "empty") {
       resultsPaneLastVisibleMode = mode === "expanded" ? "expanded" : "split";
     }
     if (!responsiveState.dockedAllowed && resultsPaneLastVisibleMode === "split") {
       resultsPaneLastVisibleMode = "expanded";
     }
-    const isHidden = mode === "hidden";
-    const visibilityTooltip = isHidden ? "Show Results" : "Hide Results";
-    const visibilityIcon = isHidden ? "results-show" : "results-hide";
-    applyActionButtonIcon(toggleResultsPaneVisibilityButton, visibilityIcon, visibilityTooltip);
-    toggleResultsPaneVisibilityButton.classList.toggle("active", !isHidden);
-    toggleResultsPaneVisibilityButton.setAttribute("aria-pressed", isHidden ? "false" : "true");
+    const resultsVisible = effectiveMode === "split" || effectiveMode === "expanded";
+    toggleResultsPaneVisibilityButton.classList.toggle("active", resultsVisible);
+    toggleResultsPaneVisibilityButton.setAttribute("aria-pressed", resultsVisible ? "true" : "false");
+    applyCustomTooltip(toggleResultsPaneVisibilityButton, resultsVisible ? "Hide results" : "Show results");
 
-    const schematicVisible = mode !== "expanded";
-    const schematicTooltip = schematicVisible ? "Hide Schematic" : "Show Schematic";
-    const schematicIcon = schematicVisible ? "schematic-hide" : "schematic-show";
-    applyActionButtonIcon(toggleResultsPaneSchematicButton, schematicIcon, schematicTooltip);
-    toggleResultsPaneSchematicButton.hidden = false;
-    toggleResultsPaneSchematicButton.setAttribute("aria-hidden", "false");
-    toggleResultsPaneSchematicButton.disabled = false;
+    const schematicVisible = effectiveMode === "split" || effectiveMode === "hidden";
     toggleResultsPaneSchematicButton.classList.toggle("active", schematicVisible);
     toggleResultsPaneSchematicButton.setAttribute("aria-pressed", schematicVisible ? "true" : "false");
-    toggleResultsPaneSchematicButton.setAttribute("aria-disabled", "false");
+    applyCustomTooltip(toggleResultsPaneSchematicButton, schematicVisible ? "Hide schematic" : "Show schematic");
     if (resultsPaneDivider) {
       resultsPaneDivider.setAttribute("aria-orientation", responsiveState.stacked ? "horizontal" : "vertical");
     }
     const skipResize = options.skipResize === true;
-    if (!skipResize && mode !== "hidden") {
+    if (!skipResize && effectiveMode !== "hidden" && effectiveMode !== "empty") {
       queuePlotResize();
     }
   };
@@ -2991,25 +3176,40 @@ function createUI(container, state, actions) {
       setResultsPaneMode(responsiveState.dockedAllowed ? "split" : "expanded");
       return;
     }
+    if (resultsPaneState.mode === "empty") {
+      setResultsPaneMode("expanded");
+      return;
+    }
     queuePlotResize();
   };
 
+  const deriveResultsPaneMode = (schematic, results) => {
+    if (schematic && results) return "split";
+    if (schematic && !results) return "hidden";
+    if (!schematic && results) return "expanded";
+    return "empty";
+  };
   toggleResultsPaneVisibilityButton.addEventListener("click", () => {
-    if (resultsPaneState.mode === "hidden") {
-      const responsiveState = resolveResultsPaneResponsiveState();
-      const visibleMode = responsiveState.dockedAllowed ? resultsPaneLastVisibleMode : "expanded";
-      setResultsPaneMode(visibleMode);
-      return;
-    }
-    setResultsPaneMode("hidden");
+    const narrow = !resolveResultsPaneResponsiveState().dockedAllowed;
+    const rawMode = resultsPaneState.mode;
+    const effectiveMode = narrow && rawMode === "split" ? "expanded" : rawMode;
+    const currentResults = effectiveMode === "split" || effectiveMode === "expanded";
+    const currentSchematic = effectiveMode === "split" || effectiveMode === "hidden";
+    const nextResults = !currentResults;
+    // At narrow widths, enabling results disables schematic
+    const nextSchematic = narrow && nextResults ? false : currentSchematic;
+    setResultsPaneMode(deriveResultsPaneMode(nextSchematic, nextResults));
   });
   toggleResultsPaneSchematicButton.addEventListener("click", () => {
-    const responsiveState = resolveResultsPaneResponsiveState();
-    if (resultsPaneState.mode === "expanded") {
-      setResultsPaneMode(responsiveState.dockedAllowed ? "split" : "hidden");
-      return;
-    }
-    setResultsPaneMode("expanded");
+    const narrow = !resolveResultsPaneResponsiveState().dockedAllowed;
+    const rawMode = resultsPaneState.mode;
+    const effectiveMode = narrow && rawMode === "split" ? "expanded" : rawMode;
+    const currentResults = effectiveMode === "split" || effectiveMode === "expanded";
+    const currentSchematic = effectiveMode === "split" || effectiveMode === "hidden";
+    const nextSchematic = !currentSchematic;
+    // At narrow widths, enabling schematic disables results
+    const nextResults = narrow && nextSchematic ? false : currentResults;
+    setResultsPaneMode(deriveResultsPaneMode(nextSchematic, nextResults));
   });
 
   const clampNumber = (value, min, max) => {
@@ -3168,12 +3368,12 @@ function createUI(container, state, actions) {
   workspace.className = "workspace";
   workspace.append(workspaceHeader, workspacePanels);
   registerAllHelpTargets(workspace);
-  setWorkspaceToolsTab("schematic", { toggleIfSame: false });
+  setWorkspaceToolsVisible(true);
   applyResultsPaneState({ skipResize: true });
 
   container.append(titleBar, workspace);
   window.addEventListener("resize", () => {
-    updateHelpOffset();
+
     applyResultsPaneState({ skipResize: false });
   });
 
@@ -3674,6 +3874,21 @@ function createUI(container, state, actions) {
 
   const syncProbeSignalDisplayLabelMap = (compileInfo = latestSchematicCompile) => {
     probeSignalDisplayLabelMap = buildProbeSignalDisplayLabelMap(compileInfo ?? {});
+    // Build power token set from probe descriptors directly (avoids label-cache staleness)
+    const tokens = new Set();
+    const descriptors = Array.isArray(compileInfo?.probeDescriptors)
+      ? compileInfo.probeDescriptors
+      : (buildProbeDescriptors(compileInfo ?? {})?.descriptors ?? []);
+    for (const d of descriptors) {
+      if (String(d?.type ?? "").trim().toUpperCase() !== "PP") continue;
+      for (const s of (Array.isArray(d?.currentSignals) ? d.currentSignals : [])) {
+        const t = normalizeSignalToken(s);
+        if (t && t.startsWith("i:")) tokens.add(t);
+      }
+      const t = normalizeSignalToken(d?.signal);
+      if (t && t.startsWith("i:")) tokens.add(t);
+    }
+    powerSignalTokens = tokens;
   };
 
   const resolveProbeMeasurementLabel = (descriptor, component) => {
@@ -4345,6 +4560,83 @@ function createUI(container, state, actions) {
       isVoltage: token.startsWith("v:") || token.startsWith("vd:"),
       isCurrent: token.startsWith("i:")
     };
+  };
+
+  const isPowerSignalToken = (signal) => {
+    const token = normalizeSignalToken(signal);
+    if (!token || !token.startsWith("i:")) {
+      return false;
+    }
+    return powerSignalTokens.has(token);
+  };
+
+  // Compute power probe traces in-place: P = V * I (call once after simulation)
+  const computePowerTraces = (results) => {
+    if (!results || typeof results !== "object") return;
+    const traces = results.traces;
+    if (!traces || typeof traces !== "object") return;
+    const descriptors = Array.isArray(latestSchematicCompile?.probeDescriptors)
+      ? latestSchematicCompile.probeDescriptors
+      : [];
+    descriptors.forEach((descriptor) => {
+      if (String(descriptor?.type ?? "").trim().toUpperCase() !== "PP") return;
+      const voltageSignal = descriptor?.voltageSignal;
+      if (!voltageSignal) return;
+      const currentSignals = Array.isArray(descriptor?.currentSignals) ? descriptor.currentSignals : [];
+      // Find voltage trace
+      let voltageY = null;
+      for (const [key, values] of Object.entries(traces)) {
+        if (normalizeSignalToken(key) === normalizeSignalToken(voltageSignal)) {
+          voltageY = values;
+          break;
+        }
+      }
+      if (!voltageY || !Array.isArray(voltageY)) return;
+      // For each current signal that is a power probe, replace with P = V * I
+      currentSignals.forEach((currentSignal) => {
+        for (const [key, values] of Object.entries(traces)) {
+          if (normalizeSignalToken(key) !== normalizeSignalToken(currentSignal)) continue;
+          if (!Array.isArray(values)) continue;
+          if (!isPowerSignalToken(key)) continue;
+          const power = new Array(values.length);
+          for (let i = 0; i < values.length; i++) {
+            power[i] = (i < voltageY.length ? voltageY[i] : 0) * values[i];
+          }
+          traces[key] = power;
+        }
+      });
+    });
+  };
+
+  const classifySeriesSignalType = (signal) => {
+    const token = normalizeSignalToken(signal);
+    if (!token) {
+      return "voltage";
+    }
+    if (token.startsWith("v:") || token.startsWith("vd:")) {
+      return "voltage";
+    }
+    if (token.startsWith("i:")) {
+      return isPowerSignalToken(signal) ? "power" : "current";
+    }
+    return "voltage";
+  };
+
+  const splitSeriesByType = (series) => {
+    const voltage = [];
+    const current = [];
+    const power = [];
+    series.forEach((entry) => {
+      const type = classifySeriesSignalType(entry.signal ?? "");
+      if (type === "current") {
+        current.push(entry);
+      } else if (type === "power") {
+        power.push(entry);
+      } else {
+        voltage.push(entry);
+      }
+    });
+    return { voltage, current, power };
   };
 
   const collectComponentIdsByType = (componentIds, predicate) => {
@@ -5174,6 +5466,31 @@ function createUI(container, state, actions) {
     return dedupeSignalList(namedSignals.concat(probeSignals));
   };
 
+  const syncSignalCheckboxList = (listEl, selectEl) => {
+    const optionValues = Array.from(selectEl.options).map((o) => o.value);
+    const currentValues = Array.from(listEl.querySelectorAll("input[type='checkbox']")).map((cb) => cb.value);
+    if (optionValues.join("|") !== currentValues.join("|")) {
+      listEl.innerHTML = "";
+      Array.from(selectEl.options).forEach((option) => {
+        const label = document.createElement("label");
+        label.className = "signal-checkbox-item";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = option.value;
+        cb.checked = option.selected;
+        label.append(cb, " ", option.textContent);
+        listEl.append(label);
+      });
+    } else {
+      const inputs = listEl.querySelectorAll("input[type='checkbox']");
+      Array.from(selectEl.options).forEach((option, i) => {
+        if (inputs[i]) {
+          inputs[i].checked = option.selected;
+        }
+      });
+    }
+  };
+
   const updateSignalSelect = (select, signals, selected, options) => {
     const preferredSignals = Array.isArray(options?.preferredSignals) ? options.preferredSignals : [];
     const nextSignals = prioritizeSignals(signals, preferredSignals);
@@ -5205,6 +5522,10 @@ function createUI(container, state, actions) {
     Array.from(select.options).forEach((option) => {
       option.selected = chosenKeys.has(normalizeSignalToken(option.value));
     });
+    const checkboxList = select.parentElement?.querySelector(`[data-signal-checkbox-list="${select.dataset.signalSelect}"]`);
+    if (checkboxList) {
+      syncSignalCheckboxList(checkboxList, select);
+    }
     return chosen;
   };
 
@@ -5244,7 +5565,6 @@ function createUI(container, state, actions) {
     schematicGrid.size = size;
     schematicGrid.snap = true;
     gridSizeInput.value = String(size);
-    schematicGrid.visible = gridVisibleCheck.checked;
     if (schematicEditor && typeof schematicEditor.setGrid === "function") {
       schematicEditor.setGrid(schematicGrid);
     }
@@ -6475,7 +6795,7 @@ function createUI(container, state, actions) {
       schematicGrid.snap = true;
       schematicGrid.visible = Boolean(grid.visible);
       gridSizeInput.value = String(schematicGrid.size);
-      gridVisibleCheck.checked = schematicGrid.visible;
+      gridToggleButton.setAttribute("aria-pressed", schematicGrid.visible ? "true" : "false");
       if (schematicEditor && typeof schematicEditor.setGrid === "function") {
         schematicEditor.setGrid(schematicGrid);
       }
@@ -7315,7 +7635,13 @@ function createUI(container, state, actions) {
 
       let snappedX = xValue;
       let bestDelta = Infinity;
-      state.series.forEach((entry) => {
+      const allHoverSeries = state.series.slice();
+      if (Array.isArray(state.rightAxes)) {
+        state.rightAxes.forEach((ra) => {
+          if (Array.isArray(ra?.series)) ra.series.forEach((s) => allHoverSeries.push(s));
+        });
+      }
+      allHoverSeries.forEach((entry) => {
         const idx = findNearestIndex(entry.x, xValue);
         if (idx < 0 || idx >= entry.x.length) {
           return;
@@ -7371,6 +7697,35 @@ function createUI(container, state, actions) {
           signal
         });
       });
+      if (Array.isArray(state.rightAxes)) {
+        state.rightAxes.forEach((rightAxis) => {
+          if (!Array.isArray(rightAxis?.series)) return;
+          const raYMin = rightAxis.yMin;
+          const raYMax = rightAxis.yMax;
+          const mapRaY = (value) => {
+            if (!Number.isFinite(value)) return null;
+            const denom = raYMax - raYMin;
+            const t = denom === 0 ? 0 : (value - raYMin) / denom;
+            return state.plotBottom - t * (state.plotBottom - state.plotTop);
+          };
+          rightAxis.series.forEach((entry, index) => {
+            const idx = findNearestIndex(entry.x, snappedX);
+            if (idx < 0 || idx >= entry.y.length) return;
+            const label = entry.label ?? `Trace ${index + 1}`;
+            const signal = entry.signal ?? label;
+            const value = entry.y[idx];
+            lines.push(`${label}: ${formatHoverNumber(value)}`);
+            points.push({
+              x: entry.x[idx],
+              y: value,
+              screenY: mapRaY(value),
+              color: entry.color,
+              label,
+              signal
+            });
+          });
+        });
+      }
       tooltip.textContent = lines.join("\n");
 
       const plotLeftCss = state.plotLeft;
@@ -7533,7 +7888,7 @@ function createUI(container, state, actions) {
           ctx.lineWidth = 2;
           points.forEach((point, index) => {
             const x = mapX(point.x);
-            const y = mapY(point.y);
+            const y = Number.isFinite(point.screenY) ? point.screenY : mapY(point.y);
             if (x === null || y === null) {
               return;
             }
@@ -7583,82 +7938,19 @@ function createUI(container, state, actions) {
     canvas.addEventListener("click", handleClick);
   };
 
-  const getPlotExportScale = () => {
-    const overrideScale = Number(self.SpjutSimExportScale);
-    if (Number.isFinite(overrideScale) && overrideScale > 0) {
-      return overrideScale;
+  const getPlotExportApi = () => {
+    const api = typeof self !== "undefined" ? self.SpjutSimPlotExport : null;
+    if (!api) {
+      throw new Error("SpjutSimPlotExport not found. Ensure src/plot/export.js is loaded.");
     }
-    const deviceScale = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-    return Math.max(2, deviceScale);
+    return api;
   };
 
-  const getPlotCssSize = (canvas) => {
-    if (!canvas) {
-      return { width: 0, height: 0 };
-    }
-    const state = canvas._plotState;
-    const rect = canvas.getBoundingClientRect();
-    const fallbackScale = state?.pixelRatio ?? 1;
-    const width = rect.width || canvas.clientWidth || (canvas.width ? canvas.width / fallbackScale : state?.cssWidth ?? 0);
-    const height = rect.height || canvas.clientHeight || (canvas.height ? canvas.height / fallbackScale : state?.cssHeight ?? 0);
-    return {
-      width: Number.isFinite(width) ? width : 0,
-      height: Number.isFinite(height) ? height : 0
-    };
-  };
-
-  const buildPlotExportConfig = (canvas) => {
-    const state = canvas?._plotState;
-    if (!state) {
-      return null;
-    }
-    return {
-      series: state.series,
-      grid: state.grid,
-      xLabel: state.xLabel,
-      yLabel: state.yLabel,
-      xScale: state.xScaleType,
-      yScale: state.yScaleType,
-      xTickFormat: state.xTickFormat ?? null,
-      fontScale: state.fontScale ?? plotPrefs.fontScale,
-      lineWidth: state.lineWidth ?? plotPrefs.lineWidth
-    };
-  };
-
-  const exportPlotPng = (canvas, filename) => {
-    if (!canvas) {
-      return;
-    }
-    const plot = typeof self !== "undefined" ? self.SpjutSimPlot : null;
-    const config = buildPlotExportConfig(canvas);
-    if (!plot || typeof plot.renderPlot !== "function" || !config) {
-      return;
-    }
-    const { width, height } = getPlotCssSize(canvas);
-    if (!width || !height) {
-      return;
-    }
-    const scale = getPlotExportScale();
-    const exportCanvasEl = document.createElement("canvas");
-    plot.renderPlot(exportCanvasEl, {
-      ...config,
-      width,
-      height,
-      pixelRatio: scale
-    });
-    const link = document.createElement("a");
-    canvas._exportState = {
-      type: "plot-png",
-      scale,
-      width: exportCanvasEl.width,
-      height: exportCanvasEl.height,
-      hiDpi: scale > 1,
-      filename
-    };
-    link.href = exportCanvasEl.toDataURL("image/png");
-    link.download = filename;
-    link.click();
-  };
+  const getPlotCssSize = (canvas) => getPlotExportApi().getPlotCssSize(canvas);
+  const exportPlotPng = (canvas, filename) =>
+    getPlotExportApi().exportPlotPng(canvas, filename, plotPrefs.fontScale, plotPrefs.lineWidth);
+  const exportVisiblePlotPngs = (canvases, baseFilename) =>
+    getPlotExportApi().exportVisiblePlotPngs(canvases, baseFilename, plotPrefs.fontScale, plotPrefs.lineWidth);
 
   const exportOpCsv = () => {
     const nodes = Array.isArray(state.opResults?.nodes) ? state.opResults.nodes : [];
@@ -7920,12 +8212,44 @@ function createUI(container, state, actions) {
     onLeave: handlePlotLeave,
     onClick: handlePlotClickSignals
   });
+  if (dcCurrentCanvas && dcCurrentOverlay && dcCurrentTooltip) {
+    attachPlotTooltip(dcCurrentCanvas, dcCurrentOverlay, dcCurrentTooltip, {
+      xLabel: "Sweep (V)",
+      onHover: handlePlotHoverSignals,
+      onLeave: handlePlotLeave,
+      onClick: handlePlotClickSignals
+    });
+  }
+  if (dcPowerCanvas && dcPowerOverlay && dcPowerTooltip) {
+    attachPlotTooltip(dcPowerCanvas, dcPowerOverlay, dcPowerTooltip, {
+      xLabel: "Sweep (V)",
+      onHover: handlePlotHoverSignals,
+      onLeave: handlePlotLeave,
+      onClick: handlePlotClickSignals
+    });
+  }
   attachPlotTooltip(tranCanvas, tranOverlay, tranTooltip, {
     xLabel: "Time",
     onHover: handlePlotHoverSignals,
     onLeave: handlePlotLeave,
     onClick: handlePlotClickSignals
   });
+  if (tranCurrentCanvas && tranCurrentOverlay && tranCurrentTooltip) {
+    attachPlotTooltip(tranCurrentCanvas, tranCurrentOverlay, tranCurrentTooltip, {
+      xLabel: "Time",
+      onHover: handlePlotHoverSignals,
+      onLeave: handlePlotLeave,
+      onClick: handlePlotClickSignals
+    });
+  }
+  if (tranPowerCanvas && tranPowerOverlay && tranPowerTooltip) {
+    attachPlotTooltip(tranPowerCanvas, tranPowerOverlay, tranPowerTooltip, {
+      xLabel: "Time",
+      onHover: handlePlotHoverSignals,
+      onLeave: handlePlotLeave,
+      onClick: handlePlotClickSignals
+    });
+  }
   attachPlotTooltip(acMagCanvas, acMagOverlay, acTooltip, {
     xLabel: "Frequency (Hz)",
     onHover: handlePlotHoverSignals,
@@ -7955,9 +8279,70 @@ function createUI(container, state, actions) {
     syncSchematicGrid();
     queueAutosave();
   });
-  gridVisibleCheck.addEventListener("change", () => {
+  gridToggleButton.addEventListener("click", () => {
+    schematicGrid.visible = !schematicGrid.visible;
+    gridToggleButton.setAttribute("aria-pressed", schematicGrid.visible ? "true" : "false");
     syncSchematicGrid();
     queueAutosave();
+  });
+
+  zoomFitButton.addEventListener("click", () => {
+    if (!schematicEditor) {
+      return;
+    }
+    const model = typeof schematicEditor.getModel === "function" ? schematicEditor.getModel() : null;
+    const components = Array.isArray(model?.components) ? model.components : [];
+    const wires = Array.isArray(model?.wires) ? model.wires : [];
+    if (!components.length && !wires.length) {
+      if (typeof schematicEditor.resetView === "function") {
+        schematicEditor.resetView();
+      }
+      return;
+    }
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    const expandBounds = (x, y) => {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) { return; }
+      if (x < minX) { minX = x; }
+      if (x > maxX) { maxX = x; }
+      if (y < minY) { minY = y; }
+      if (y > maxY) { maxY = y; }
+    };
+    components.forEach((comp) => {
+      (Array.isArray(comp.pins) ? comp.pins : []).forEach((pt) => expandBounds(pt.x, pt.y));
+    });
+    wires.forEach((wire) => {
+      (Array.isArray(wire.points) ? wire.points : []).forEach((pt) => expandBounds(pt.x, pt.y));
+    });
+    if (!Number.isFinite(minX)) {
+      if (typeof schematicEditor.resetView === "function") {
+        schematicEditor.resetView();
+      }
+      return;
+    }
+    if (typeof schematicEditor.setView !== "function" || typeof schematicEditor.getView !== "function") {
+      return;
+    }
+    // Use the editor's current view to get the SVG's actual aspect ratio
+    // (syncViewToViewport keeps height fixed and adjusts width to match the SVG element).
+    const currentView = schematicEditor.getView();
+    const svgRatio = (currentView.width && currentView.height)
+      ? currentView.width / currentView.height
+      : 1.5;
+    const contentW = maxX - minX;
+    const contentH = maxY - minY;
+    const PAD_WORLD = 40;
+    const heightForH = contentH + PAD_WORLD * 2;
+    const heightForW = (contentW + PAD_WORLD * 2) / svgRatio;
+    const viewH = Math.max(heightForH, heightForW, 1);
+    const viewW = viewH * svgRatio;
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    schematicEditor.setView({
+      x: centerX - viewW / 2,
+      y: centerY - viewH / 2,
+      width: viewW,
+      height: viewH
+    });
   });
 
   const clearAllProbes = () => {
@@ -8138,10 +8523,6 @@ function createUI(container, state, actions) {
     }
     if (action === "save-as") {
       void handleSaveAction(true);
-      return;
-    }
-    if (action === "export-json") {
-      openJsonExportDialog();
       return;
     }
     if (action === "new") {
@@ -8356,6 +8737,11 @@ function createUI(container, state, actions) {
       runSchematicAction("delete");
       return;
     }
+    if (key === "h") {
+      event.preventDefault();
+      toggleHelpEnabled();
+      return;
+    }
     const toolMap = {
       r: "R",
       c: "C",
@@ -8556,21 +8942,32 @@ function createUI(container, state, actions) {
       });
       list.appendChild(item);
     });
+    const openThisMenu = () => {
+      updateMenuActionState();
+      wrapper.classList.add("open");
+      positionPopoverInViewport(list, button.getBoundingClientRect(), {
+        align: "start",
+        gap: 0
+      });
+      requestAnimationFrame(() => {
+        positionPopoverInViewport(list, button.getBoundingClientRect(), {
+          align: "start",
+          gap: 0
+        });
+      });
+    };
     button.addEventListener("click", (event) => {
       event.stopPropagation();
       const isOpen = wrapper.classList.contains("open");
       closeMenuGroups();
       if (!isOpen) {
-        updateMenuActionState();
-        wrapper.classList.add("open");
-        positionPopoverInViewport(list, button.getBoundingClientRect(), {
-          align: "start"
-        });
-        requestAnimationFrame(() => {
-          positionPopoverInViewport(list, button.getBoundingClientRect(), {
-            align: "start"
-          });
-        });
+        openThisMenu();
+      }
+    });
+    button.addEventListener("mouseenter", () => {
+      if (menuBar.querySelector(".menu-group.open") && !wrapper.classList.contains("open")) {
+        closeMenuGroups();
+        openThisMenu();
       }
     });
     const repositionList = () => {
@@ -8578,7 +8975,8 @@ function createUI(container, state, actions) {
         return;
       }
       positionPopoverInViewport(list, button.getBoundingClientRect(), {
-        align: "start"
+        align: "start",
+        gap: 0
       });
     };
     window.addEventListener("resize", repositionList);
@@ -8597,7 +8995,6 @@ function createUI(container, state, actions) {
         { id: "save", label: "Save", shortcut: "Ctrl+S" },
         { id: "save-as", label: "Save As...", shortcut: "Ctrl+Shift+S" },
         { divider: true, id: "exports" },
-        { id: "export-json", label: "Export JSON..." },
         { id: "export-svg", label: "Export SVG" },
         { id: "export-png", label: "Export PNG..." }
       ],
@@ -8622,17 +9019,21 @@ function createUI(container, state, actions) {
       id: "help",
       label: "Help",
       items: [
-        { id: "toggle-help", label: "Info View: On" },
+        { id: "toggle-help", label: "Hover Info: On", shortcut: "H" },
         { id: "about", label: "About" }
       ],
       actionAttribute: "menuAction",
-      showShortcuts: false
+      showShortcuts: true
     }
   ];
 
   menuGroups.forEach((group) => {
     menuBar.appendChild(buildMenuGroup(group));
   });
+  applyHelpEntry(workspaceHelpToggleButton, helpEntries.hoverInfo);
+  menuBar.appendChild(workspaceHelpToggleButton);
+  menuBar.appendChild(fileStatus);
+  registerHelpTarget(workspaceHelpToggleButton);
   updateHelpMenuLabel();
   void initializeExamplesMenu();
 
@@ -9550,79 +9951,17 @@ function createUI(container, state, actions) {
 
   const { openAboutDialog } = buildAboutDialog(container);
 
-  const toFilenameLeaf = (value) => {
-    const raw = String(value ?? "").trim();
-    if (!raw) {
-      return "";
-    }
-    const pieces = raw.split(/[\\/]+/);
-    return pieces[pieces.length - 1] || "";
-  };
-
-  const withFilenameExtension = (value, extension, fallbackBase = "schematic") => {
-    const normalizedExtension = String(extension ?? "").trim().replace(/^\./, "").toLowerCase() || "txt";
-    const safeFallbackBase = toFilenameLeaf(fallbackBase) || "schematic";
-    const safeBase = toFilenameLeaf(value) || safeFallbackBase;
-    const suffix = `.${normalizedExtension}`;
-    return safeBase.toLowerCase().endsWith(suffix) ? safeBase : `${safeBase}${suffix}`;
-  };
-
-  const stripFilenameExtension = (value) => {
-    const leaf = toFilenameLeaf(value);
-    if (!leaf) {
-      return "";
-    }
-    return leaf.replace(/\.[^./\\]+$/, "");
-  };
-
+  const toFilenameLeaf = (value) => getPlotExportApi().toFilenameLeaf(value);
+  const withFilenameExtension = (value, extension, fallbackBase) =>
+    getPlotExportApi().withFilenameExtension(value, extension, fallbackBase);
+  const stripFilenameExtension = (value) => getPlotExportApi().stripFilenameExtension(value);
   const normalizeJsonFilename = (value) => withFilenameExtension(value, "json", "schematic");
-
-  const downloadTextFile = (filename, text, mimeType = "application/json") => {
-    const blob = new Blob([text], { type: mimeType });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 0);
-  };
-
-  const downloadCsvFile = (filename, text) => {
-    downloadTextFile(filename, text, "text/csv");
-  };
-
-  const csvEscape = (value) => {
-    if (value === null || value === undefined) {
-      return "";
-    }
-    let text = String(value);
-    if (text.includes("\"")) {
-      text = text.replace(/\"/g, "\"\"");
-    }
-    if (text.includes(",") || text.includes("\n")) {
-      text = `"${text}"`;
-    }
-    return text;
-  };
-
-  const buildCsvText = (headers, rows) => {
-    const lines = [];
-    lines.push(headers.map(csvEscape).join(","));
-    rows.forEach((row) => {
-      lines.push(row.map(csvEscape).join(","));
-    });
-    return lines.join("\n");
-  };
-
-  const getSignalUnit = (signal) => {
-    if (!signal) {
-      return "";
-    }
-    const text = String(signal).trim().toLowerCase();
-    if (text.startsWith("i(") || text.endsWith("#branch")) {
-      return "A";
-    }
-    return "V";
-  };
+  const downloadTextFile = (filename, text, mimeType) => getPlotExportApi().downloadTextFile(filename, text, mimeType);
+  const downloadCsvFile = (filename, text) => getPlotExportApi().downloadCsvFile(filename, text);
+  const csvEscape = (value) => getPlotExportApi().csvEscape(value);
+  const buildCsvText = (headers, rows) => getPlotExportApi().buildCsvText(headers, rows);
+  const signalTypeUnits = getPlotExportApi().signalTypeUnits;
+  const getSignalUnit = (signal) => getPlotExportApi().getSignalUnit(signal, classifySeriesSignalType);
 
   const getDcSweepUnit = () => {
     const source = String(simulationConfig.dc?.source ?? "").trim().toUpperCase();
@@ -10175,7 +10514,8 @@ function createUI(container, state, actions) {
     if (!contextMenu.contains(event.target)) {
       hideContextMenu();
     }
-    if (!menuBar.contains(event.target)) {
+    const clickedMenuGroup = event.target?.closest?.(".menu-group");
+    if (!clickedMenuGroup) {
       closeMenuGroups();
     }
   });
@@ -10193,9 +10533,17 @@ function createUI(container, state, actions) {
   });
 
   opExportCsvButton.addEventListener("click", exportOpCsv);
-  dcExportButton.addEventListener("click", () => exportPlotPng(dcCanvas, buildPlotPngFilename("dc")));
+  dcExportButton.addEventListener("click", () => exportVisiblePlotPngs([
+    { canvas: dcCanvas, suffix: "voltage" },
+    { canvas: dcCurrentCanvas, wrap: dcCurrentWrap, suffix: "current" },
+    { canvas: dcPowerCanvas, wrap: dcPowerWrap, suffix: "power" }
+  ], buildPlotPngFilename("dc")));
   dcExportCsvButton.addEventListener("click", exportDcCsv);
-  tranExportButton.addEventListener("click", () => exportPlotPng(tranCanvas, buildPlotPngFilename("tran")));
+  tranExportButton.addEventListener("click", () => exportVisiblePlotPngs([
+    { canvas: tranCanvas, suffix: "voltage" },
+    { canvas: tranCurrentCanvas, wrap: tranCurrentWrap, suffix: "current" },
+    { canvas: tranPowerCanvas, wrap: tranPowerWrap, suffix: "power" }
+  ], buildPlotPngFilename("tran")));
   tranExportCsvButton.addEventListener("click", exportTranCsv);
   acExportMagButton.addEventListener("click", () => exportPlotPng(acMagCanvas, buildPlotPngFilename("ac-magnitude")));
   acExportPhaseButton.addEventListener("click", () => exportPlotPng(acPhaseCanvas, buildPlotPngFilename("ac-phase")));
@@ -10238,6 +10586,10 @@ function createUI(container, state, actions) {
     colorMap,
     metaEl,
     canvasEl,
+    currentCanvasEl,
+    currentWrapEl,
+    powerCanvasEl,
+    powerWrapEl,
     xLabel,
     yLabel,
     xTickFormat
@@ -10273,18 +10625,143 @@ function createUI(container, state, actions) {
     ensureColorMap(colorMap, results?.signals);
     const series = buildSeries(xValues, traces, colorMap, selected);
     metaEl.textContent = selected.length ? `Traces: ${selected.map((signal) => formatSignalLabel(signal)).join(", ")}` : "";
+
+    const hasDisplayModeControls = Boolean(currentCanvasEl && currentWrapEl);
     if (!plot || typeof plot.renderPlot !== "function") {
       canvasEl.getContext("2d")?.clearRect(0, 0, canvasEl.width, canvasEl.height);
+      if (currentCanvasEl) {
+        currentCanvasEl.getContext("2d")?.clearRect(0, 0, currentCanvasEl.width, currentCanvasEl.height);
+      }
+      if (powerCanvasEl) {
+        powerCanvasEl.getContext("2d")?.clearRect(0, 0, powerCanvasEl.width, powerCanvasEl.height);
+      }
+      if (currentWrapEl) {
+        currentWrapEl.hidden = true;
+      }
+      if (powerWrapEl) {
+        powerWrapEl.hidden = true;
+      }
       return;
     }
-    plot.renderPlot(canvasEl, {
-      series,
+
+    if (!hasDisplayModeControls) {
+      // Simple mode: render all on one canvas (no display mode controls)
+      plot.renderPlot(canvasEl, {
+        series,
+        grid: showGrid,
+        fontScale: plotPrefs.fontScale,
+        lineWidth: plotPrefs.lineWidth,
+        xLabel,
+        yLabel,
+        ...(xTickFormat ? { xTickFormat } : {})
+      });
+      return;
+    }
+
+    // Split series by type
+    const split = splitSeriesByType(series);
+    const ipMode = plotPrefs.ipDisplay;
+
+    // Count enabled trace types
+    const enabledTypes = [];
+    if (split.voltage.length > 0) enabledTypes.push("voltage");
+    if (split.current.length > 0) enabledTypes.push("current");
+    if (split.power.length > 0) enabledTypes.push("power");
+
+    const typeColors = { voltage: "#0f62fe", current: "#ff832b", power: "#198038" };
+    const typeLabels = { voltage: "Voltage", current: "Current", power: "Power" };
+    const typeUnits = signalTypeUnits;
+    const dashPatterns = [[], [8, 4], [2, 3], [8, 3, 2, 3]];
+
+    // Priority order for left axis: voltage > current > power
+    const typePriority = ["voltage", "current", "power"];
+
+    const plotBase = {
       grid: showGrid,
       fontScale: plotPrefs.fontScale,
       lineWidth: plotPrefs.lineWidth,
-      xLabel,
-      yLabel,
       ...(xTickFormat ? { xTickFormat } : {})
+    };
+
+    // Single type or same-plot with only one type: render one plot, normal colors
+    if (enabledTypes.length <= 1) {
+      const type = enabledTypes[0] ?? "voltage";
+      const typeSeries = split[type] ?? [];
+      if (currentWrapEl) currentWrapEl.hidden = true;
+      if (powerWrapEl) powerWrapEl.hidden = true;
+      plot.renderPlot(canvasEl, {
+        ...plotBase,
+        series: typeSeries,
+        xLabel,
+        yLabel: `${typeLabels[type]} (${typeUnits[type]})`
+      });
+      return;
+    }
+
+    // Multiple types enabled
+    if (ipMode === "same") {
+      // Same plot mode: left axis = highest priority type, right axes = others
+      // Apply type-based colors and dash patterns
+      const applyTypeStyle = (seriesList, type) => {
+        const color = typeColors[type];
+        return seriesList.map((s, i) => ({
+          ...s,
+          color,
+          dashPattern: dashPatterns[i % dashPatterns.length]
+        }));
+      };
+
+      // Determine left axis type (highest priority present)
+      const leftType = typePriority.find((t) => enabledTypes.includes(t)) ?? "voltage";
+      const leftSeries = applyTypeStyle(split[leftType], leftType);
+
+      // Build right axes for remaining types (in priority order)
+      const rightAxes = [];
+      typePriority.forEach((type) => {
+        if (type === leftType || !enabledTypes.includes(type)) return;
+        const styledSeries = applyTypeStyle(split[type], type);
+        rightAxes.push({
+          series: styledSeries,
+          yLabel: `${typeLabels[type]} (${typeUnits[type]})`,
+          color: typeColors[type]
+        });
+      });
+
+      if (currentWrapEl) currentWrapEl.hidden = true;
+      if (powerWrapEl) powerWrapEl.hidden = true;
+      plot.renderPlot(canvasEl, {
+        ...plotBase,
+        series: leftSeries,
+        rightAxes: rightAxes.length > 0 ? rightAxes : undefined,
+        xLabel,
+        yLabel: `${typeLabels[leftType]} (${typeUnits[leftType]})`,
+        yAxisColor: typeColors[leftType]
+      });
+      return;
+    }
+
+    // Separate plots mode: render each type on its own canvas
+    // Map types to canvases: first type → main canvas, second → current canvas, third → power canvas
+    const canvases = [
+      { canvas: canvasEl, wrap: null },
+      { canvas: currentCanvasEl, wrap: currentWrapEl },
+      { canvas: powerCanvasEl, wrap: powerWrapEl }
+    ];
+
+    // Set visibility for all wraps first so layout can settle
+    if (currentWrapEl) currentWrapEl.hidden = enabledTypes.length < 2;
+    if (powerWrapEl) powerWrapEl.hidden = enabledTypes.length < 3;
+
+    // Render each enabled type
+    enabledTypes.forEach((type, idx) => {
+      const target = canvases[idx];
+      if (!target?.canvas) return;
+      plot.renderPlot(target.canvas, {
+        ...plotBase,
+        series: split[type],
+        xLabel,
+        yLabel: `${typeLabels[type]} (${typeUnits[type]})`
+      });
     });
   };
 
@@ -10295,6 +10772,10 @@ function createUI(container, state, actions) {
       colorMap: colorMaps.dc,
       metaEl: dcMeta,
       canvasEl: dcCanvas,
+      currentCanvasEl: dcCurrentCanvas,
+      currentWrapEl: dcCurrentWrap,
+      powerCanvasEl: dcPowerCanvas,
+      powerWrapEl: dcPowerWrap,
       xLabel: "Sweep (V)",
       yLabel: "Voltage (V)"
     });
@@ -10309,6 +10790,10 @@ function createUI(container, state, actions) {
       colorMap: colorMaps.tran,
       metaEl: tranMeta,
       canvasEl: tranCanvas,
+      currentCanvasEl: tranCurrentCanvas,
+      currentWrapEl: tranCurrentWrap,
+      powerCanvasEl: tranPowerCanvas,
+      powerWrapEl: tranPowerWrap,
       xLabel: "Time",
       xTickFormat: "time",
       yLabel: "Voltage (V)"
@@ -10408,7 +10893,7 @@ function createUI(container, state, actions) {
     const plotResizeObserver = new ResizeObserver(() => {
       queuePlotResize();
     });
-    [dcPlotWrap, tranPlotWrap, acMagWrap, acPhaseWrap].forEach((wrap) => {
+    [dcPlotWrap, tranPlotWrap, acMagWrap, acPhaseWrap, dcCurrentWrap, dcPowerWrap, tranCurrentWrap, tranPowerWrap].forEach((wrap) => {
       if (wrap) {
         plotResizeObserver.observe(wrap);
       }
@@ -10911,7 +11396,9 @@ function createUI(container, state, actions) {
       statusEl.textContent = status;
     },
     setError: (message) => {
-      errorEl.textContent = message ?? "";
+      const text = message ?? "";
+      errorEl.textContent = text;
+      errorEl.hidden = !text;
     },
     setLog: (lines) => {
       logEl.textContent = lines.join("\n");
@@ -10935,6 +11422,7 @@ function createUI(container, state, actions) {
       state.dcResults = results;
       lastRunKind = "dc";
       syncProbeSignalDisplayLabelMap();
+      computePowerTraces(results);
       renderDcResults(results);
       refreshMeasurements();
       syncTraceHighlightsFromSchematicSelection();
@@ -10944,6 +11432,7 @@ function createUI(container, state, actions) {
       state.tranResults = results;
       lastRunKind = "tran";
       syncProbeSignalDisplayLabelMap();
+      computePowerTraces(results);
       renderTranResults(results);
       refreshMeasurements();
       syncTraceHighlightsFromSchematicSelection();

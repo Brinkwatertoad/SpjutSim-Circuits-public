@@ -77,6 +77,34 @@
     return value.toPrecision(4);
   };
 
+  const buildValueFormatter = (min, max) => {
+    const span = Math.max(Math.abs(min || 0), Math.abs(max || 0));
+    let prefix = "";
+    let scale = 1;
+    if (span >= 1e9) {
+      prefix = "G"; scale = 1e9;
+    } else if (span >= 1e6) {
+      prefix = "M"; scale = 1e6;
+    } else if (span >= 1e3) {
+      prefix = "k"; scale = 1e3;
+    } else if (span >= 1) {
+      prefix = ""; scale = 1;
+    } else if (span >= 1e-3) {
+      prefix = "m"; scale = 1e-3;
+    } else if (span >= 1e-6) {
+      prefix = "\u03BC"; scale = 1e-6;
+    } else if (span >= 1e-9) {
+      prefix = "n"; scale = 1e-9;
+    } else if (span > 0) {
+      prefix = "p"; scale = 1e-12;
+    }
+    return {
+      prefix,
+      scale,
+      format: (value) => formatNumber(value / scale)
+    };
+  };
+
   const buildTimeFormatter = (min, max) => {
     const span = Math.max(Math.abs(min || 0), Math.abs(max || 0));
     let unit = "s";
@@ -176,6 +204,7 @@
     normalize,
     buildLinearScale,
     buildLogScale,
-    buildTimeFormatter
+    buildTimeFormatter,
+    buildValueFormatter
   };
 })();
