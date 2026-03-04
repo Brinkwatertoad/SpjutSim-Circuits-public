@@ -441,6 +441,84 @@
     return { lines, errors };
   };
 
+  const buildSwitchNetlistLines = (component, context) => {
+    const pinNetMap = context?.pinNetMap;
+    const parseSpdtSwitchValue = context?.parseSpdtSwitchValue;
+    const compileErrors = Array.isArray(context?.compileErrors) ? context.compileErrors : [];
+    const resolvedPins = resolveSpdtPins(component);
+    if (!resolvedPins) {
+      compileErrors.push(`Switch '${component.id}' is missing C/A/B pins.`);
+      return null;
+    }
+    let parsedSwitch = null;
+    try {
+      parsedSwitch = parseSpdtSwitchValue(component.value);
+    } catch (error) {
+      const reason = String(error?.message ?? error ?? "Invalid switch value.");
+      compileErrors.push(`Switch '${component.id}' value parse error: ${reason}`);
+      return null;
+    }
+    const activeThrow = String(parsedSwitch?.activeThrow ?? "A").toUpperCase() === "B" ? "B" : "A";
+    const inactiveThrow = activeThrow === "A" ? "B" : "A";
+    const centerNet = getNetForPin(pinNetMap, component.id, resolvedPins.C.id);
+    const activePin = resolvedPins[activeThrow];
+    const inactivePin = resolvedPins[inactiveThrow];
+    const activeNet = activePin ? getNetForPin(pinNetMap, component.id, activePin.id) : null;
+    const inactiveNet = inactivePin ? getNetForPin(pinNetMap, component.id, inactivePin.id) : null;
+    const baseId = normalizeId(component.id);
+    const activeLineId = ensurePrefixedId("R", `${baseId}${activeThrow}` || activeThrow);
+    const activeValue = normalizeSpiceValue(String(parsedSwitch?.ron ?? "0"));
+    const line = (centerNet && activeNet && activeValue)
+      ? `${activeLineId} ${centerNet} ${activeNet} ${activeValue}`
+      : null;
+    const additionalLines = [];
+    const roffValueRaw = parsedSwitch?.roff;
+    if (roffValueRaw !== null && roffValueRaw !== undefined) {
+      const inactiveLineId = ensurePrefixedId("R", `${baseId}${inactiveThrow}` || inactiveThrow);
+      const inactiveValue = normalizeSpiceValue(String(roffValueRaw));
+      if (centerNet && inactiveNet && inactiveValue) {
+        additionalLines.push(`${inactiveLineId} ${centerNet} ${inactiveNet} ${inactiveValue}`);
+      }
+    }
+    return { line, additionalLines };
+  };
+
+  const COMPONENT_NETLIST_LINE_BUILDERS = Object.freeze({
+    R: (component, context) => ({
+      line: buildLine(component, context?.pinNetMap, "1k", "R"),
+      additionalLines: []
+    }),
+    C: (component, context) => ({
+      line: buildLine(component, context?.pinNetMap, "1u", "C"),
+      additionalLines: []
+    }),
+    L: (component, context) => ({
+      line: buildLine(component, context?.pinNetMap, "1m", "L"),
+      additionalLines: []
+    }),
+    V: (component, context) => ({
+      line: buildLine(component, context?.pinNetMap, "1", "V"),
+      additionalLines: []
+    }),
+    I: (component, context) => ({
+      line: buildLine(component, context?.pinNetMap, "1", "I"),
+      additionalLines: []
+    }),
+    VM: (component, context) => ({
+      line: component?.value
+        ? buildPrefixedLine(component, context?.pinNetMap, "1M", "R")
+        : null,
+      additionalLines: []
+    }),
+    AM: (component, context) => ({
+      line: component?.value
+        ? buildPrefixedLine(component, context?.pinNetMap, "0", "R")
+        : buildPrefixedLine(component, context?.pinNetMap, "0", "V"),
+      additionalLines: []
+    }),
+    SW: (component, context) => buildSwitchNetlistLines(component, context)
+  });
+
   /**
    * @param {SchematicModel} model
    * @param {{ title?: string }} [options]
@@ -485,78 +563,30 @@
       if (!isElectrical || type === "GND" || type === "NET") {
         return;
       }
-      let line = null;
-      let lineId = null;
-      let lineValue = null;
-      const additionalLines = [];
-      if (type === "R") {
-        line = buildLine(component, pinNetMap, "1k", "R");
-      } else if (type === "C") {
-        line = buildLine(component, pinNetMap, "1u", "C");
-      } else if (type === "L") {
-        line = buildLine(component, pinNetMap, "1m", "L");
-      } else if (type === "V") {
-        line = buildLine(component, pinNetMap, "1", "V");
-      } else if (type === "I") {
-        line = buildLine(component, pinNetMap, "1", "I");
-      } else if (type === "VM") {
-        if (component.value) {
-          line = buildPrefixedLine(component, pinNetMap, "1M", "R");
-        }
-      } else if (type === "AM") {
-        if (component.value) {
-          line = buildPrefixedLine(component, pinNetMap, "0", "R");
-        } else {
-          line = buildPrefixedLine(component, pinNetMap, "0", "V");
-        }
-      } else if (type === "SW") {
-        const resolvedPins = resolveSpdtPins(component);
-        if (!resolvedPins) {
-          compileErrors.push(`Switch '${component.id}' is missing C/A/B pins.`);
-          return;
-        }
-        let parsedSwitch = null;
-        try {
-          parsedSwitch = parseSpdtSwitchValue(component.value);
-        } catch (error) {
-          const reason = String(error?.message ?? error ?? "Invalid switch value.");
-          compileErrors.push(`Switch '${component.id}' value parse error: ${reason}`);
-          return;
-        }
-        const activeThrow = String(parsedSwitch?.activeThrow ?? "A").toUpperCase() === "B" ? "B" : "A";
-        const inactiveThrow = activeThrow === "A" ? "B" : "A";
-        const centerNet = getNetForPin(pinNetMap, component.id, resolvedPins.C.id);
-        const activePin = resolvedPins[activeThrow];
-        const inactivePin = resolvedPins[inactiveThrow];
-        const activeNet = activePin ? getNetForPin(pinNetMap, component.id, activePin.id) : null;
-        const inactiveNet = inactivePin ? getNetForPin(pinNetMap, component.id, inactivePin.id) : null;
-        const baseId = normalizeId(component.id);
-        const activeLineId = ensurePrefixedId("R", `${baseId}${activeThrow}` || activeThrow);
-        const activeValue = normalizeSpiceValue(String(parsedSwitch?.ron ?? "0"));
-        if (centerNet && activeNet && activeValue) {
-          line = `${activeLineId} ${centerNet} ${activeNet} ${activeValue}`;
-        }
-        const roffValueRaw = parsedSwitch?.roff;
-        if (roffValueRaw !== null && roffValueRaw !== undefined) {
-          const inactiveLineId = ensurePrefixedId("R", `${baseId}${inactiveThrow}` || inactiveThrow);
-          const inactiveValue = normalizeSpiceValue(String(roffValueRaw));
-          if (centerNet && inactiveNet && inactiveValue) {
-            additionalLines.push(`${inactiveLineId} ${centerNet} ${inactiveNet} ${inactiveValue}`);
-          }
-        }
+      const builder = COMPONENT_NETLIST_LINE_BUILDERS[type];
+      if (typeof builder !== "function") {
+        return;
       }
+      const built = builder(component, {
+        pinNetMap,
+        parseSpdtSwitchValue,
+        compileErrors
+      });
+      if (!built) {
+        return;
+      }
+      const line = String(built?.line ?? "");
+      const additionalLines = Array.isArray(built?.additionalLines) ? built.additionalLines : [];
       if (line && line.trim()) {
         const trimmedLine = withUniqueNetlistId(line, usedNetlistIdKeys, nextNetlistIdSuffixByBaseKey);
         pushLine(trimmedLine, buildComponentLineMetadata(component, type, trimmedLine));
         const segments = trimmedLine.split(/\s+/);
-        lineId = segments[0] ?? null;
-        lineValue = segments[segments.length - 1] ?? null;
         componentLines[component.id] = {
           type,
-          netlistId: lineId,
+          netlistId: segments[0] ?? null,
           netA: segments[1] ?? null,
           netB: segments[2] ?? null,
-          value: lineValue
+          value: segments[segments.length - 1] ?? null
         };
       }
       additionalLines.forEach((extraLine) => {

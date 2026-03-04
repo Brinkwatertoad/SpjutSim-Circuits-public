@@ -1,6 +1,6 @@
 /**
  * @typedef {{ id: string, name: string, x: number, y: number }} Pin
- * @typedef {{ id: string, name?: string, type: string, value?: string, netColor?: string, textOnly?: boolean, textFont?: string, textSize?: number, textBold?: boolean, textItalic?: boolean, textUnderline?: boolean, rotation?: number, labelRotation?: number, probeDiffRotations?: { "P+"?: number, "P-"?: number }, pins: Pin[] }} Component
+ * @typedef {{ id: string, name?: string, type: string, value?: string, groundVariant?: string, resistorStyle?: string, netColor?: string, textOnly?: boolean, textFont?: string, textSize?: number, textBold?: boolean, textItalic?: boolean, textUnderline?: boolean, rotation?: number, labelRotation?: number, probeDiffRotations?: { "P+"?: number, "P-"?: number }, pins: Pin[] }} Component
  * @typedef {{ id: string, points: { x: number, y: number }[] }} Wire
  * @typedef {{ components: Component[], wires: Wire[] }} SchematicModel
  * @typedef {{ id: string, nodes: { x: number, y: number }[], pins: { componentId: string, pinId: string, name: string, x: number, y: number }[] }} Net
@@ -27,8 +27,6 @@
     "#5722a1"
   ]);
   const NET_COLOR_SET = new Set(NET_COLOR_PALETTE);
-  const PROBE_COMPONENT_TYPES = new Set(["PV", "PI", "PD", "PP"]);
-  const NON_ELECTRICAL_COMPONENT_TYPES = new Set(["TEXT", ...PROBE_COMPONENT_TYPES]);
   const TEXT_FONT_OPTIONS = Object.freeze([
     "Segoe UI",
     "Arial",
@@ -51,6 +49,10 @@
     label: "#1d1d1f",
     value: "#5b5750"
   });
+  const GROUND_VARIANTS = Object.freeze(["earth", "chassis", "signal"]);
+  const GROUND_VARIANT_SET = new Set(GROUND_VARIANTS);
+  const RESISTOR_STYLES = Object.freeze(["zigzag", "box"]);
+  const RESISTOR_STYLE_SET = new Set(RESISTOR_STYLES);
   const COMPONENT_VALUE_UNITS = Object.freeze({
     R: "\u03a9",
     C: "F",
@@ -95,6 +97,28 @@
 
   const coordKey = (point) => `${point.x},${point.y}`;
   const normalizeNodeLabelKey = (value) => String(value ?? "").trim().toLowerCase();
+  const normalizeGroundVariant = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (GROUND_VARIANT_SET.has(normalized)) {
+      return normalized;
+    }
+    if (normalized === "signal-ground" || normalized === "signalground" || normalized === "signal_ground") {
+      return "signal";
+    }
+    return "earth";
+  };
+  const listGroundVariants = () => GROUND_VARIANTS.slice();
+  const normalizeResistorStyle = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (RESISTOR_STYLE_SET.has(normalized)) {
+      return normalized;
+    }
+    if (normalized === "spring" || normalized === "zig-zag" || normalized === "zig_zag") {
+      return "zigzag";
+    }
+    return "zigzag";
+  };
+  const listResistorStyles = () => RESISTOR_STYLES.slice();
 
   const normalizeNetColor = (value) => {
     if (typeof value !== "string") {
@@ -107,14 +131,23 @@
     return NET_COLOR_SET.has(trimmed) ? trimmed : null;
   };
 
+  const requireElementClassificationMethod = (name) => {
+    const api = typeof self !== "undefined" ? (self.SpjutSimSchematic ?? {}) : {};
+    const method = api?.[name];
+    if (typeof method !== "function"
+      || method === isElectricalComponentType
+      || method === isProbeComponentType) {
+      throw new Error(`Schematic API missing '${name}'. Check src/schematic/elements.js load order.`);
+    }
+    return method.bind(api);
+  };
+
   const isElectricalComponentType = (type) => {
-    const normalized = String(type ?? "").toUpperCase();
-    return !NON_ELECTRICAL_COMPONENT_TYPES.has(normalized);
+    return requireElementClassificationMethod("isElectricalComponentType")(type);
   };
 
   const isProbeComponentType = (type) => {
-    const normalized = String(type ?? "").toUpperCase();
-    return PROBE_COMPONENT_TYPES.has(normalized);
+    return requireElementClassificationMethod("isProbeComponentType")(type);
   };
 
   const normalizeTextFont = (value) => {
@@ -463,6 +496,12 @@
     if (type === "PD") {
       normalized.probeDiffRotations = normalizeProbeDiffRotations(component.probeDiffRotations, rotation);
     }
+    if (type === "GND") {
+      normalized.groundVariant = normalizeGroundVariant(component.groundVariant);
+    }
+    if (type === "R") {
+      normalized.resistorStyle = normalizeResistorStyle(component.resistorStyle);
+    }
     const netColor = normalizeNetColor(component.netColor);
     if (netColor) {
       normalized.netColor = netColor;
@@ -761,6 +800,10 @@
     isProbeComponentType,
     getNetColorPalette: () => NET_COLOR_PALETTE.slice(),
     normalizeNetColor,
+    normalizeGroundVariant,
+    listGroundVariants,
+    normalizeResistorStyle,
+    listResistorStyles,
     resolveNetColors,
     getTextFontOptions: () => TEXT_FONT_OPTIONS.slice(),
     normalizeTextFont,

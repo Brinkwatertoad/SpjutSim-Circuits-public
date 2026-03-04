@@ -5,6 +5,7 @@
   const PREFERENCE_NAMES = Object.freeze({
     EXPORT_PNG_SCALE: "exportPngScale",
     EXPORT_PNG_TRANSPARENT: "exportPngTransparent",
+    EXPORT_DIAGRAM_FORMAT: "exportDiagramFormat",
     PLOT_FONT_SCALE: "plotFontScale",
     PLOT_LINE_WIDTH: "plotLineWidth",
     PLOT_IP_DISPLAY: "plotIpDisplay"
@@ -12,6 +13,7 @@
   const PREFERENCE_KEY_BY_NAME = Object.freeze({
     [PREFERENCE_NAMES.EXPORT_PNG_SCALE]: "spjutsim:export-png-scale",
     [PREFERENCE_NAMES.EXPORT_PNG_TRANSPARENT]: "spjutsim:export-png-transparent",
+    [PREFERENCE_NAMES.EXPORT_DIAGRAM_FORMAT]: "spjutsim:export-diagram-format",
     [PREFERENCE_NAMES.PLOT_FONT_SCALE]: "spjutsim:plot-font-scale",
     [PREFERENCE_NAMES.PLOT_LINE_WIDTH]: "spjutsim:plot-line-width",
     [PREFERENCE_NAMES.PLOT_IP_DISPLAY]: "spjutsim:plot-ip-display"
@@ -19,7 +21,7 @@
   const DB_NAME = "spjutsim";
   const DB_VERSION = 1;
   const STORE_NAME = "autosave";
-  const RESULTS_PANE_MODES = new Set(["hidden", "split", "expanded"]);
+  const RESULTS_PANE_MODES = new Set(["hidden", "split", "expanded", "empty"]);
   const DEFAULT_RESULTS_PANE_MODE = "hidden";
   const DEFAULT_RESULTS_PANE_SPLIT_RATIO = 0.5;
   const MIN_RESULTS_PANE_SPLIT_RATIO = 0.25;

@@ -1,5 +1,5 @@
 /**
- * @typedef {{ id: string, name?: string, type: string, value?: string, netColor?: string, textOnly?: boolean, textFont?: string, textSize?: number, textBold?: boolean, textItalic?: boolean, textUnderline?: boolean, rotation?: number, labelRotation?: number, probeDiffRotations?: { "P+"?: number, "P-"?: number }, pins: { id: string, name: string, x: number, y: number }[] }} Component
+ * @typedef {{ id: string, name?: string, type: string, value?: string, groundVariant?: string, resistorStyle?: string, netColor?: string, textOnly?: boolean, textFont?: string, textSize?: number, textBold?: boolean, textItalic?: boolean, textUnderline?: boolean, rotation?: number, labelRotation?: number, probeDiffRotations?: { "P+"?: number, "P-"?: number }, pins: { id: string, name: string, x: number, y: number }[] }} Component
  * @typedef {{ components: Component[], wires: { id: string, points: { x: number, y: number }[] }[] }} SchematicModel
  */
 
@@ -34,6 +34,7 @@
   const textStyleApi = Object.freeze({
     normalizeTextFont: requireSchematicMethod("normalizeTextFont"),
     normalizeTextSize: requireSchematicMethod("normalizeTextSize"),
+    normalizeResistorStyle: requireSchematicMethod("normalizeResistorStyle"),
     getDefaultTextStyle: requireSchematicMethod("getDefaultTextStyle"),
     getDefaultComponentTextColors: requireSchematicMethod("getDefaultComponentTextColors"),
     isElectricalComponentType: requireSchematicMethod("isElectricalComponentType"),
@@ -50,6 +51,7 @@
 
   const normalizeTextFontValue = (value) => textStyleApi.normalizeTextFont(value);
   const normalizeTextSizeValue = (value) => textStyleApi.normalizeTextSize(value);
+  const normalizeResistorStyleValue = (value) => textStyleApi.normalizeResistorStyle(value);
   const isElectricalComponentType = (type) => textStyleApi.isElectricalComponentType(type);
   const isProbeComponentType = (type) => textStyleApi.isProbeComponentType(type);
 
@@ -370,6 +372,42 @@
     return helper;
   };
 
+  const getGroundHelper = (name) => {
+    const helper = schematicApi?.[name];
+    if (typeof helper !== "function") {
+      throw new Error(`Ground helper '${name}' is unavailable. Ensure model.js and symbol-render.js load before export.js.`);
+    }
+    return helper;
+  };
+
+  const normalizeGroundVariantValue = (value) => {
+    const normalized = getGroundHelper("normalizeGroundVariant")(value);
+    if (typeof normalized !== "string" || !normalized.trim()) {
+      throw new Error("Ground variant helper returned invalid data.");
+    }
+    return normalized;
+  };
+
+  const getGroundExtents = (component) => {
+    const rotation = snapRotation(Number(component?.rotation ?? 0));
+    const extents = getGroundHelper("getGroundSymbolExtents")(rotation, component?.groundVariant);
+    if (
+      !extents
+      || !Number.isFinite(extents.minX)
+      || !Number.isFinite(extents.maxX)
+      || !Number.isFinite(extents.minY)
+      || !Number.isFinite(extents.maxY)
+    ) {
+      throw new Error("Ground extents helper returned invalid data.");
+    }
+    return {
+      minX: Number(extents.minX),
+      maxX: Number(extents.maxX),
+      minY: Number(extents.minY),
+      maxY: Number(extents.maxY)
+    };
+  };
+
   const getNamedNodeGeometry = (component) => {
     const text = getNamedNodeLabelText(component);
     const style = resolveNetLabelStyle();
@@ -455,6 +493,112 @@
       label.setAttribute("data-component-id", String(component.id));
     }
     return label;
+  };
+
+  const getAnnotationHelper = (name) => {
+    const helper = schematicApi?.[name];
+    if (typeof helper !== "function") {
+      throw new Error(`Annotation helper '${name}' is unavailable. Ensure symbol-render.js loads before export.js.`);
+    }
+    return helper;
+  };
+
+  const getAnnotationSymbolName = (type) => {
+    const symbol = getAnnotationHelper("getAnnotationSymbolName")(type);
+    if (symbol === null || symbol === undefined || symbol === "") {
+      return null;
+    }
+    return String(symbol);
+  };
+
+  const getAnnotationExtents = (component) => {
+    const type = String(component?.type ?? "").toUpperCase();
+    const rotation = snapRotation(Number(component?.rotation ?? 0));
+    const extents = getAnnotationHelper("getAnnotationExtents")(type, rotation);
+    if (
+      !extents
+      || !Number.isFinite(extents.minX)
+      || !Number.isFinite(extents.maxX)
+      || !Number.isFinite(extents.minY)
+      || !Number.isFinite(extents.maxY)
+    ) {
+      throw new Error("Annotation extents helper returned invalid data.");
+    }
+    return {
+      minX: Number(extents.minX),
+      maxX: Number(extents.maxX),
+      minY: Number(extents.minY),
+      maxY: Number(extents.maxY)
+    };
+  };
+
+  const getArrowAnnotationStyle = (value, options) => {
+    const style = getAnnotationHelper("parseArrowAnnotationStyle")(value, options);
+    if (
+      !style
+      || !Number.isFinite(Number(style.thickness))
+      || typeof style.lineType !== "string"
+      || !Number.isFinite(Number(style.opacity))
+      || !Number.isFinite(Number(style.opacityPercent))
+    ) {
+      throw new Error("Arrow annotation style helper returned invalid data.");
+    }
+    return {
+      thickness: Number(style.thickness),
+      lineType: String(style.lineType),
+      opacity: Number(style.opacity),
+      opacityPercent: Number(style.opacityPercent)
+    };
+  };
+
+  const getArrowThickness = (value) => getArrowAnnotationStyle(value).thickness;
+
+  const getArrowAnnotationDasharray = (lineType, thickness) => {
+    const dash = getAnnotationHelper("getArrowAnnotationDasharray")(lineType, thickness);
+    return String(dash ?? "");
+  };
+
+  const getTextAnnotationStyleValue = (value, options) => {
+    const style = getAnnotationHelper("parseTextAnnotationStyle")(value, options);
+    if (
+      !style
+      || !Number.isFinite(Number(style.opacity))
+      || !Number.isFinite(Number(style.opacityPercent))
+    ) {
+      throw new Error("Text annotation style helper returned invalid data.");
+    }
+    return {
+      opacity: Number(style.opacity),
+      opacityPercent: Number(style.opacityPercent)
+    };
+  };
+
+  const getBoxAnnotationStyle = (value, options) => {
+    const style = getAnnotationHelper("parseBoxAnnotationStyle")(value, options);
+    if (
+      !style
+      || !Number.isFinite(Number(style.thickness))
+      || typeof style.lineType !== "string"
+      || typeof style.fillEnabled !== "boolean"
+      || typeof style.fillColor !== "string"
+      || !Number.isFinite(Number(style.opacity))
+      || !Number.isFinite(Number(style.opacityPercent))
+    ) {
+      throw new Error("Box annotation style helper returned invalid data.");
+    }
+    return {
+      thickness: Number(style.thickness),
+      lineType: String(style.lineType),
+      fillEnabled: style.fillEnabled === true,
+      fillColor: String(style.fillColor),
+      opacity: Number(style.opacity),
+      opacityPercent: Number(style.opacityPercent)
+    };
+  };
+
+  const getBoxAnnotationDasharray = (lineType, thickness) => {
+    const dash = getAnnotationHelper("getBoxAnnotationDasharray")(lineType, thickness);
+    return String(dash ?? "");
   };
 
   const getProbeHelper = (name) => {
@@ -751,7 +895,35 @@
         return null;
       }
       const pin = pins[0];
-      return expandBounds(null, pin.x - 8, pin.y, pin.x + 8, pin.y + 16);
+      const extents = getGroundExtents(component);
+      const nearPad = 2;
+      const farPad = 6;
+      const crossPad = 3;
+      let minPadX = crossPad;
+      let maxPadX = crossPad;
+      let minPadY = crossPad;
+      let maxPadY = crossPad;
+      if (extents.minX === 0 && extents.maxX > 0) {
+        minPadX = nearPad;
+        maxPadX = farPad;
+      } else if (extents.maxX === 0 && extents.minX < 0) {
+        minPadX = farPad;
+        maxPadX = nearPad;
+      }
+      if (extents.minY === 0 && extents.maxY > 0) {
+        minPadY = nearPad;
+        maxPadY = farPad;
+      } else if (extents.maxY === 0 && extents.minY < 0) {
+        minPadY = farPad;
+        maxPadY = nearPad;
+      }
+      return expandBounds(
+        null,
+        pin.x + extents.minX - minPadX,
+        pin.y + extents.minY - minPadY,
+        pin.x + extents.maxX + maxPadX,
+        pin.y + extents.maxY + maxPadY
+      );
     }
     if (type === "NET") {
       const pins = Array.isArray(component?.pins) ? component.pins : [];
@@ -779,6 +951,57 @@
         return null;
       }
       const extents = getTextAnnotationLocalExtents(component);
+      const pad = 4;
+      return expandBounds(
+        null,
+        pin.x + extents.minX - pad,
+        pin.y + extents.minY - pad,
+        pin.x + extents.maxX + pad,
+        pin.y + extents.maxY + pad
+      );
+    }
+    if (getAnnotationSymbolName(type)) {
+      const pins = Array.isArray(component?.pins) ? component.pins : [];
+      const pin = pins[0];
+      if (!pin) {
+        return null;
+      }
+      if (type === "ARR" && pins.length >= 2) {
+        const xs = pins.map((entry) => Number(entry?.x));
+        const ys = pins.map((entry) => Number(entry?.y));
+        if (!xs.every(Number.isFinite) || !ys.every(Number.isFinite)) {
+          return null;
+        }
+        const thickness = getArrowThickness(component?.value);
+        const pad = Math.max(4, Math.ceil(thickness) + 2);
+        return expandBounds(
+          null,
+          Math.min(...xs) - pad,
+          Math.min(...ys) - pad,
+          Math.max(...xs) + pad,
+          Math.max(...ys) + pad
+        );
+      }
+      if ((type === "BOX" || type === "DBOX") && pins.length >= 2) {
+        const xs = pins.map((entry) => Number(entry?.x));
+        const ys = pins.map((entry) => Number(entry?.y));
+        if (!xs.every(Number.isFinite) || !ys.every(Number.isFinite)) {
+          return null;
+        }
+        const style = getBoxAnnotationStyle(component?.value, {
+          type,
+          defaultLineType: type === "DBOX" ? "dashed" : "solid"
+        });
+        const pad = Math.max(4, Math.ceil(style.thickness) + 2);
+        return expandBounds(
+          null,
+          Math.min(...xs) - pad,
+          Math.min(...ys) - pad,
+          Math.max(...xs) + pad,
+          Math.max(...ys) + pad
+        );
+      }
+      const extents = getAnnotationExtents(component);
       const pad = 4;
       return expandBounds(
         null,
@@ -1045,6 +1268,11 @@
     svg.appendChild(poly);
   };
 
+  const isBackgroundAnnotationComponent = (component) => {
+    const type = String(component?.type ?? "").toUpperCase();
+    return type === "BOX" || type === "DBOX";
+  };
+
   const getTwoPinInfo = (component) => {
     const pins = Array.isArray(component?.pins) ? component.pins : [];
     if (pins.length < 2) {
@@ -1090,10 +1318,19 @@
     const group = document.createElementNS(SVG_NS, "g");
     group.setAttribute("data-component", component.id);
     group.setAttribute("data-symbol", "ground");
-    group.setAttribute("transform", `translate(${pin.x} ${pin.y})`);
+    const variant = normalizeGroundVariantValue(component?.groundVariant);
+    group.setAttribute("data-ground-variant", variant);
+    const rotation = snapRotation(Number(component?.rotation ?? 0));
+    const rotate = rotation !== 0
+      ? ` rotate(${rotation})`
+      : "";
+    group.setAttribute("transform", `translate(${pin.x} ${pin.y})${rotate}`);
     const strokeColor = normalizeNetColorValue(color) ?? STROKE;
     const handled = typeof symbolApi?.drawShape === "function"
-      ? symbolApi.drawShape(symbolCtx, "GND", group, { style: { stroke: strokeColor, width: STROKE_WIDTH } })
+      ? symbolApi.drawShape(symbolCtx, "GND", group, {
+        style: { stroke: strokeColor, width: STROKE_WIDTH },
+        groundVariant: variant
+      })
       : false;
     if (!handled) {
       return;
@@ -1135,11 +1372,16 @@
       return;
     }
     const style = getTextAnnotationStyle(component, color);
+    const annotationStyle = getTextAnnotationStyleValue(component?.value, { type: "TEXT" });
     const text = getTextAnnotationText(component);
     const rotation = snapRotation(Number(component?.rotation ?? 0));
     const group = document.createElementNS(SVG_NS, "g");
     group.setAttribute("data-component", component.id);
     group.setAttribute("data-symbol", "text");
+    const opacity = Math.max(0, Math.min(1, annotationStyle.opacity));
+    if (opacity < 0.9999) {
+      group.setAttribute("opacity", String(opacity));
+    }
     const rotate = rotation !== 0 ? ` rotate(${rotation})` : "";
     group.setAttribute("transform", `translate(${pin.x} ${pin.y})${rotate}`);
     const label = appendText(group, 0, 0, text, {
@@ -1154,6 +1396,113 @@
     label.setAttribute("text-decoration", style.underline ? "underline" : "none");
     if (component?.id) {
       label.setAttribute("data-component-id", String(component.id));
+    }
+    svg.appendChild(group);
+  };
+
+  const drawAnnotationSymbol = (svg, component, color) => {
+    const type = String(component?.type ?? "").toUpperCase();
+    const symbolName = getAnnotationSymbolName(type);
+    if (!symbolName) {
+      return;
+    }
+    const pins = Array.isArray(component?.pins) ? component.pins : [];
+    const pin = pins[0];
+    if (!pin) {
+      return;
+    }
+    const rotation = snapRotation(Number(component?.rotation ?? 0));
+    const group = document.createElementNS(SVG_NS, "g");
+    group.setAttribute("data-component", component.id);
+    group.setAttribute("data-symbol", symbolName);
+    if (type === "ARR") {
+      const info = getTwoPinInfo(component);
+      if (info) {
+        const style = getArrowAnnotationStyle(component?.value, { type: "ARR" });
+        const dasharray = getArrowAnnotationDasharray(style.lineType, style.thickness);
+        const opacity = Math.max(0, Math.min(1, style.opacity));
+        group.setAttribute("transform", `translate(${info.start.x} ${info.start.y}) rotate(${info.angle})`);
+        group.setAttribute("data-arrow-line-type", style.lineType);
+        if (opacity < 0.9999) {
+          group.setAttribute("opacity", String(opacity));
+        }
+        const strokeColor = normalizeNetColorValue(color) ?? STROKE;
+        const handledArrow = typeof symbolApi?.drawShape === "function"
+          ? symbolApi.drawShape(symbolCtx, type, group, {
+            length: info.length,
+            style: {
+              stroke: strokeColor,
+              width: style.thickness,
+              arrowThickness: style.thickness,
+              lineType: style.lineType,
+              line: style.lineType,
+              opacityPercent: style.opacityPercent,
+              opacity: style.opacity,
+              dasharray
+            }
+          })
+          : false;
+        if (!handledArrow) {
+          return;
+        }
+        svg.appendChild(group);
+        return;
+      }
+    }
+    if ((type === "BOX" || type === "DBOX") && pins.length >= 2) {
+      const cornerA = pins[0];
+      const cornerB = pins[1];
+      if (
+        Number.isFinite(Number(cornerA?.x))
+        && Number.isFinite(Number(cornerA?.y))
+        && Number.isFinite(Number(cornerB?.x))
+        && Number.isFinite(Number(cornerB?.y))
+      ) {
+        const style = getBoxAnnotationStyle(component?.value, {
+          type,
+          defaultLineType: type === "DBOX" ? "dashed" : "solid"
+        });
+        const minX = Math.min(Number(cornerA.x), Number(cornerB.x));
+        const minY = Math.min(Number(cornerA.y), Number(cornerB.y));
+        const width = Math.abs(Number(cornerB.x) - Number(cornerA.x));
+        const height = Math.abs(Number(cornerB.y) - Number(cornerA.y));
+        const strokeColor = normalizeNetColorValue(color) ?? STROKE;
+        const strokeLineCap = style.lineType === "dotted" ? "round" : "square";
+        const fill = style.fillEnabled ? style.fillColor : "none";
+        const dasharray = getBoxAnnotationDasharray(style.lineType, style.thickness);
+        const opacity = Math.max(0, Math.min(1, style.opacity));
+        group.setAttribute("transform", `translate(${minX} ${minY})`);
+        group.setAttribute("data-box-line-type", style.lineType);
+        if (opacity < 0.9999) {
+          group.setAttribute("opacity", String(opacity));
+        }
+        const outline = appendPath(group, `M 0 0 L ${width} 0 L ${width} ${height} L 0 ${height} Z`, {
+          stroke: strokeColor,
+          width: style.thickness,
+          cap: strokeLineCap,
+          join: "round"
+        });
+        outline.setAttribute("fill", fill);
+        if (dasharray) {
+          outline.setAttribute("stroke-dasharray", dasharray);
+        }
+        svg.appendChild(group);
+        return;
+      }
+    }
+    const rotate = rotation !== 0 ? ` rotate(${rotation})` : "";
+    group.setAttribute("transform", `translate(${pin.x} ${pin.y})${rotate}`);
+    const strokeColor = normalizeNetColorValue(color) ?? STROKE;
+    const handled = typeof symbolApi?.drawShape === "function"
+      ? symbolApi.drawShape(symbolCtx, type, group, {
+        style: {
+          stroke: strokeColor,
+          width: STROKE_WIDTH
+        }
+      })
+      : false;
+    if (!handled) {
+      return;
     }
     svg.appendChild(group);
   };
@@ -1373,6 +1722,10 @@
       drawTextAnnotationSymbol(svg, component, componentColor);
       return;
     }
+    if (getAnnotationSymbolName(type)) {
+      drawAnnotationSymbol(svg, component, componentColor);
+      return;
+    }
     if (isProbeComponentType(type)) {
       drawProbeSymbol(svg, component, componentColor, options?.measurements, options?.probeLabels);
       return;
@@ -1401,7 +1754,8 @@
       ? drawShape(symbolCtx, type, group, {
         length: info.length,
         rotation: info.angle,
-        style: { stroke: componentColor ?? STROKE, width: STROKE_WIDTH }
+        style: { stroke: componentColor ?? STROKE, width: STROKE_WIDTH },
+        resistorStyle: normalizeResistorStyleValue(component?.resistorStyle)
       })
       : false;
     if (!handled) {
@@ -1455,7 +1809,17 @@
       const wireColor = normalizeNetColorValue(wireColors[String(wire?.id ?? "")]);
       drawWire(svg, wire, wireColor);
     });
-    components.forEach((component) => drawComponent(svg, component, {
+    const backgroundAnnotations = [];
+    const foregroundComponents = [];
+    components.forEach((component) => {
+      if (isBackgroundAnnotationComponent(component)) {
+        backgroundAnnotations.push(component);
+        return;
+      }
+      foregroundComponents.push(component);
+    });
+    const renderOrder = backgroundAnnotations.concat(foregroundComponents);
+    renderOrder.forEach((component) => drawComponent(svg, component, {
       terminalKeys,
       measurements: options?.measurements,
       probeLabels: options?.probeLabels,
@@ -1511,9 +1875,167 @@
     });
   };
 
+  const dataUrlToUint8Array = (dataUrl) => {
+    const text = String(dataUrl ?? "");
+    const commaIndex = text.indexOf(",");
+    if (commaIndex < 0) {
+      return new Uint8Array();
+    }
+    const encoded = text.slice(commaIndex + 1);
+    const binary = self.atob(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  };
+
+  const renderJpegDataUrl = (pngDataUrl, width, height) => (
+    new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(width));
+        canvas.height = Math.max(1, Math.round(height));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Canvas context unavailable."));
+          return;
+        }
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.92));
+      };
+      image.onerror = () => reject(new Error("Failed to convert schematic image to JPEG."));
+      image.src = pngDataUrl;
+    })
+  );
+
+  const exportJpeg = async (model, options) => {
+    const pngResult = await exportPng(model, { ...options, transparent: false });
+    if (!pngResult || !pngResult.dataUrl) {
+      throw new Error("Failed to render schematic JPEG image.");
+    }
+    const jpegDataUrl = await renderJpegDataUrl(
+      pngResult.dataUrl,
+      pngResult.width,
+      pngResult.height
+    );
+    return {
+      dataUrl: jpegDataUrl,
+      width: pngResult.width,
+      height: pngResult.height,
+      scale: pngResult.scale
+    };
+  };
+
+  const buildSinglePagePdfFromJpeg = (jpegDataUrl, imageWidthPx, imageHeightPx) => {
+    const jpegBytes = dataUrlToUint8Array(jpegDataUrl);
+    if (!jpegBytes.length) {
+      throw new Error("JPEG payload is empty.");
+    }
+    const ptsPerPx = 72 / 96;
+    const pageWidth = Math.max(1, imageWidthPx * ptsPerPx);
+    const pageHeight = Math.max(1, imageHeightPx * ptsPerPx);
+    const imageName = "Im0";
+    const contentStream = `q\n${pageWidth.toFixed(3)} 0 0 ${pageHeight.toFixed(3)} 0 0 cm\n/${imageName} Do\nQ\n`;
+
+    const textEncoder = new TextEncoder();
+    const chunks = [];
+    let totalLength = 0;
+    const appendText = (text) => {
+      const bytes = textEncoder.encode(text);
+      chunks.push(bytes);
+      totalLength += bytes.length;
+    };
+    const appendBytes = (bytes) => {
+      chunks.push(bytes);
+      totalLength += bytes.length;
+    };
+
+    const objects = [];
+    objects.push("<< /Type /Catalog /Pages 2 0 R >>");
+    objects.push("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(3)} ${pageHeight.toFixed(3)}] ` +
+      `/Resources << /XObject << /${imageName} 4 0 R >> >> /Contents 5 0 R >>`
+    );
+    objects.push(
+      `<< /Type /XObject /Subtype /Image /Width ${Math.max(1, Math.round(imageWidthPx))} ` +
+      `/Height ${Math.max(1, Math.round(imageHeightPx))} /ColorSpace /DeviceRGB /BitsPerComponent 8 ` +
+      `/Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n__BINARY_JPEG__\nendstream`
+    );
+    const contentLength = textEncoder.encode(contentStream).length;
+    objects.push(`<< /Length ${contentLength} >>\nstream\n${contentStream}endstream`);
+
+    appendText("%PDF-1.4\n");
+    appendBytes(new Uint8Array([0x25, 0xff, 0xff, 0xff, 0xff, 0x0a]));
+    const objectOffsets = [];
+
+    objects.forEach((body, index) => {
+      const objectId = index + 1;
+      objectOffsets.push(totalLength);
+      appendText(`${objectId} 0 obj\n`);
+      if (body.includes("__BINARY_JPEG__")) {
+        const [prefix, suffix] = body.split("__BINARY_JPEG__");
+        appendText(prefix);
+        appendBytes(jpegBytes);
+        appendText(suffix);
+      } else {
+        appendText(body);
+      }
+      appendText("\nendobj\n");
+    });
+
+    const xrefOffset = totalLength;
+    appendText(`xref\n0 ${objects.length + 1}\n`);
+    appendText("0000000000 65535 f \n");
+    objectOffsets.forEach((offset) => {
+      appendText(`${String(offset).padStart(10, "0")} 00000 n \n`);
+    });
+    appendText(`trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`);
+    appendText(`startxref\n${xrefOffset}\n%%EOF\n`);
+
+    const pdfBytes = new Uint8Array(totalLength);
+    let cursor = 0;
+    chunks.forEach((chunk) => {
+      pdfBytes.set(chunk, cursor);
+      cursor += chunk.length;
+    });
+    return {
+      bytes: pdfBytes,
+      widthPx: Math.max(1, Math.round(imageWidthPx)),
+      heightPx: Math.max(1, Math.round(imageHeightPx)),
+      pageWidth,
+      pageHeight
+    };
+  };
+
+  const exportPdf = async (model, options) => {
+    const jpegResult = await exportJpeg(model, options);
+    if (!jpegResult || !jpegResult.dataUrl) {
+      throw new Error("Failed to render schematic PDF image.");
+    }
+    const pdf = buildSinglePagePdfFromJpeg(
+      jpegResult.dataUrl,
+      jpegResult.width,
+      jpegResult.height
+    );
+    return {
+      bytes: pdf.bytes,
+      width: pdf.widthPx,
+      height: pdf.heightPx,
+      pageWidth: pdf.pageWidth,
+      pageHeight: pdf.pageHeight
+    };
+  };
+
   const api = typeof self !== "undefined" ? (self.SpjutSimSchematic ?? {}) : {};
   api.exportSvg = exportSvg;
   api.exportPng = exportPng;
+  api.exportJpeg = exportJpeg;
+  api.exportPdf = exportPdf;
   if (typeof self !== "undefined") {
     self.SpjutSimSchematic = api;
   }

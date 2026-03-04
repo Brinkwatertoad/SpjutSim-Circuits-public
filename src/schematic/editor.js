@@ -1,5 +1,5 @@
 ﻿/**
- * @typedef {{ id: string, name?: string, type: string, value?: string, netColor?: string, textOnly?: boolean, textFont?: string, textSize?: number, textBold?: boolean, textItalic?: boolean, textUnderline?: boolean, rotation?: number, labelRotation?: number, probeDiffRotations?: { "P+"?: number, "P-"?: number }, pins: { id: string, name: string, x: number, y: number }[] }} Component
+ * @typedef {{ id: string, name?: string, type: string, value?: string, groundVariant?: string, resistorStyle?: string, netColor?: string, textOnly?: boolean, textFont?: string, textSize?: number, textBold?: boolean, textItalic?: boolean, textUnderline?: boolean, rotation?: number, labelRotation?: number, probeDiffRotations?: { "P+"?: number, "P-"?: number }, pins: { id: string, name: string, x: number, y: number }[] }} Component
  * @typedef {{ components: Component[], wires: { id: string, points: { x: number, y: number }[] }[] }} SchematicModel
  */
 
@@ -20,6 +20,12 @@
   const DEFAULT_GRID = { size: 20, snap: true, visible: true };
   const PIN_HIT_RADIUS = 8;
   const WIRE_HIT_RADIUS = 10;
+  const ANNOTATION_SELECTION_BUFFER = 4;
+  const DEFAULT_ARROW_THICKNESS = 2;
+  const MIN_ARROW_HEAD_LENGTH = 4;
+  const DEFAULT_ARROW_HEAD_LENGTH = 8;
+  const DEFAULT_ARROW_HEAD_HALF_HEIGHT = 4.5;
+  const LOW_PRIORITY_SELECTION_TYPES = new Set(["ARR", "BOX", "DBOX"]);
   const DRAG_DEADZONE_PX = 4;
   const DOUBLE_CLICK_INTERVAL_MS = 400;
   const DOUBLE_CLICK_DISTANCE_PX = 8;
@@ -31,6 +37,7 @@
   const FLIP_H = { a: -1, b: 0, c: 0, d: 1 };
   const FLIP_V = { a: 1, b: 0, c: 0, d: -1 };
   const SELECTION_PLACEMENT_TOOL = "__SELECTION_PLACEMENT__";
+  const CROSSHAIR_TOOL_TYPES = new Set(["ARR", "BOX", "DBOX"]);
   const schematicApi = typeof self !== "undefined" ? (self.SpjutSimSchematic ?? {}) : {};
 
   const setAttrs = (el, attrs) => {
@@ -162,6 +169,10 @@
     normalizeTextSize: requireSchematicMethod("normalizeTextSize"),
     getDefaultTextStyle: requireSchematicMethod("getDefaultTextStyle"),
     getDefaultComponentTextColors: requireSchematicMethod("getDefaultComponentTextColors"),
+    normalizeGroundVariant: requireSchematicMethod("normalizeGroundVariant"),
+    listGroundVariants: requireSchematicMethod("listGroundVariants"),
+    normalizeResistorStyle: requireSchematicMethod("normalizeResistorStyle"),
+    listResistorStyles: requireSchematicMethod("listResistorStyles"),
     isElectricalComponentType: requireSchematicMethod("isElectricalComponentType"),
     isProbeComponentType: requireSchematicMethod("isProbeComponentType")
   });
@@ -177,6 +188,22 @@
 
   const normalizeTextFontValue = (value) => textStyleApi.normalizeTextFont(value);
   const normalizeTextSizeValue = (value) => textStyleApi.normalizeTextSize(value);
+  const normalizeGroundVariantValue = (value) => textStyleApi.normalizeGroundVariant(value);
+  const normalizeResistorStyleValue = (value) => textStyleApi.normalizeResistorStyle(value);
+  const listGroundVariants = () => {
+    const raw = textStyleApi.listGroundVariants();
+    if (!Array.isArray(raw) || !raw.length) {
+      throw new Error("Schematic API listGroundVariants() returned invalid data.");
+    }
+    return Array.from(new Set(raw.map((entry) => normalizeGroundVariantValue(entry))));
+  };
+  const listResistorStyles = () => {
+    const raw = textStyleApi.listResistorStyles();
+    if (!Array.isArray(raw) || !raw.length) {
+      throw new Error("Schematic API listResistorStyles() returned invalid data.");
+    }
+    return Array.from(new Set(raw.map((entry) => normalizeResistorStyleValue(entry))));
+  };
   const isElectricalComponentType = (type) => textStyleApi.isElectricalComponentType(type);
   const isProbeComponentType = (type) => textStyleApi.isProbeComponentType(type);
 
@@ -371,6 +398,34 @@
     return helper;
   };
 
+  const getGroundHelper = (name) => {
+    const helper = schematicApi?.[name];
+    if (typeof helper !== "function") {
+      throw new Error(`Ground helper '${name}' is unavailable. Ensure model.js and symbol-render.js load before editor.js.`);
+    }
+    return helper;
+  };
+
+  const getGroundExtents = (component) => {
+    const rotation = snapRotation(Number(component?.rotation ?? 0));
+    const extents = getGroundHelper("getGroundSymbolExtents")(rotation, component?.groundVariant);
+    if (
+      !extents
+      || !Number.isFinite(extents.minX)
+      || !Number.isFinite(extents.maxX)
+      || !Number.isFinite(extents.minY)
+      || !Number.isFinite(extents.maxY)
+    ) {
+      throw new Error("Ground extents helper returned invalid data.");
+    }
+    return {
+      minX: Number(extents.minX),
+      maxX: Number(extents.maxX),
+      minY: Number(extents.minY),
+      maxY: Number(extents.maxY)
+    };
+  };
+
   const getNamedNodeGeometry = (component) => {
     const text = getNamedNodeLabelText(component);
     const style = resolveNetLabelStyle();
@@ -460,6 +515,128 @@
       label.setAttribute("data-component-label-highlight", String(options.dataHighlight));
     }
     return label;
+  };
+
+  const getAnnotationHelper = (name) => {
+    const helper = schematicApi?.[name];
+    if (typeof helper !== "function") {
+      throw new Error(`Annotation helper '${name}' is unavailable. Ensure symbol-render.js loads before editor.js.`);
+    }
+    return helper;
+  };
+
+  const getAnnotationSymbolName = (type) => {
+    const symbol = getAnnotationHelper("getAnnotationSymbolName")(type);
+    if (symbol === null || symbol === undefined || symbol === "") {
+      return null;
+    }
+    return String(symbol);
+  };
+
+  const getAnnotationExtents = (component) => {
+    const type = String(component?.type ?? "").toUpperCase();
+    const rotation = snapRotation(Number(component?.rotation ?? 0));
+    const extents = getAnnotationHelper("getAnnotationExtents")(type, rotation);
+    if (
+      !extents
+      || !Number.isFinite(extents.minX)
+      || !Number.isFinite(extents.maxX)
+      || !Number.isFinite(extents.minY)
+      || !Number.isFinite(extents.maxY)
+    ) {
+      throw new Error("Annotation extents helper returned invalid data.");
+    }
+    return {
+      minX: Number(extents.minX),
+      maxX: Number(extents.maxX),
+      minY: Number(extents.minY),
+      maxY: Number(extents.maxY)
+    };
+  };
+
+  const getArrowAnnotationStyle = (value, options) => {
+    const style = getAnnotationHelper("parseArrowAnnotationStyle")(value, options);
+    if (
+      !style
+      || !Number.isFinite(Number(style.thickness))
+      || typeof style.lineType !== "string"
+      || !Number.isFinite(Number(style.opacity))
+      || !Number.isFinite(Number(style.opacityPercent))
+    ) {
+      throw new Error("Arrow annotation style helper returned invalid data.");
+    }
+    return {
+      thickness: Number(style.thickness),
+      lineType: String(style.lineType),
+      opacity: Number(style.opacity),
+      opacityPercent: Number(style.opacityPercent)
+    };
+  };
+
+  const getArrowThickness = (value) => getArrowAnnotationStyle(value).thickness;
+
+  const getArrowAnnotationDasharray = (lineType, thickness) => {
+    const dash = getAnnotationHelper("getArrowAnnotationDasharray")(lineType, thickness);
+    return String(dash ?? "");
+  };
+
+  const getTextAnnotationStyleValue = (value, options) => {
+    const style = getAnnotationHelper("parseTextAnnotationStyle")(value, options);
+    if (
+      !style
+      || !Number.isFinite(Number(style.opacity))
+      || !Number.isFinite(Number(style.opacityPercent))
+    ) {
+      throw new Error("Text annotation style helper returned invalid data.");
+    }
+    return {
+      opacity: Number(style.opacity),
+      opacityPercent: Number(style.opacityPercent)
+    };
+  };
+
+  const getDefaultBoxAnnotationStyle = (options) => {
+    const style = getAnnotationHelper("getDefaultBoxAnnotationStyle")(options);
+    if (!style || typeof style !== "object") {
+      throw new Error("Box annotation style helper returned invalid defaults.");
+    }
+    return style;
+  };
+
+  const getBoxAnnotationStyle = (value, options) => {
+    const style = getAnnotationHelper("parseBoxAnnotationStyle")(value, options);
+    if (
+      !style
+      || !Number.isFinite(Number(style.thickness))
+      || typeof style.lineType !== "string"
+      || typeof style.fillEnabled !== "boolean"
+      || typeof style.fillColor !== "string"
+      || !Number.isFinite(Number(style.opacity))
+      || !Number.isFinite(Number(style.opacityPercent))
+    ) {
+      throw new Error("Box annotation style helper returned invalid data.");
+    }
+    return {
+      thickness: Number(style.thickness),
+      lineType: String(style.lineType),
+      fillEnabled: style.fillEnabled === true,
+      fillColor: String(style.fillColor),
+      opacity: Number(style.opacity),
+      opacityPercent: Number(style.opacityPercent)
+    };
+  };
+
+  const formatBoxAnnotationStyle = (style, options) => {
+    const text = String(getAnnotationHelper("formatBoxAnnotationStyle")(style, options) ?? "").trim();
+    if (!text) {
+      throw new Error("Box annotation style formatter returned invalid data.");
+    }
+    return text;
+  };
+
+  const getBoxAnnotationDasharray = (lineType, thickness) => {
+    const dash = getAnnotationHelper("getBoxAnnotationDasharray")(lineType, thickness);
+    return String(dash ?? "");
   };
 
   const getProbeHelper = (name) => {
@@ -795,6 +972,132 @@
     };
   };
 
+  const pointToSegmentDistanceSq = (point, start, end) => {
+    if (!point || !start || !end) {
+      return Infinity;
+    }
+    const segDx = end.x - start.x;
+    const segDy = end.y - start.y;
+    const segLenSq = (segDx * segDx) + (segDy * segDy);
+    if (segLenSq <= 1e-9) {
+      const dx = point.x - start.x;
+      const dy = point.y - start.y;
+      return (dx * dx) + (dy * dy);
+    }
+    let t = ((point.x - start.x) * segDx + (point.y - start.y) * segDy) / segLenSq;
+    if (t < 0) {
+      t = 0;
+    } else if (t > 1) {
+      t = 1;
+    }
+    const closestX = start.x + (segDx * t);
+    const closestY = start.y + (segDy * t);
+    const dx = point.x - closestX;
+    const dy = point.y - closestY;
+    return (dx * dx) + (dy * dy);
+  };
+
+  const isLowPrioritySelectionType = (type) =>
+    LOW_PRIORITY_SELECTION_TYPES.has(String(type ?? "").toUpperCase());
+
+  const getArrowHeadGeometry = (length, thickness) => {
+    const bodyLength = Number(length);
+    if (!Number.isFinite(bodyLength) || bodyLength <= 0) {
+      return null;
+    }
+    const normalizedThickness = Number.isFinite(Number(thickness))
+      ? Math.max(0.5, Number(thickness))
+      : DEFAULT_ARROW_THICKNESS;
+    const thicknessDelta = Math.max(0, normalizedThickness - DEFAULT_ARROW_THICKNESS);
+    const nominalHeadLength = Math.max(
+      MIN_ARROW_HEAD_LENGTH,
+      DEFAULT_ARROW_HEAD_LENGTH + (thicknessDelta * 0.9)
+    );
+    const maxHeadLength = Math.max(MIN_ARROW_HEAD_LENGTH, bodyLength * 0.45);
+    const usableHeadLength = Math.min(nominalHeadLength, maxHeadLength);
+    const headBackX = bodyLength - usableHeadLength;
+    const nominalHeadHalfHeight = Math.max(
+      3,
+      DEFAULT_ARROW_HEAD_HALF_HEIGHT + (thicknessDelta * 0.5)
+    );
+    const headScale = usableHeadLength / nominalHeadLength;
+    const headHalfHeight = Math.max(3, nominalHeadHalfHeight * headScale);
+    return { headBackX, headHalfHeight };
+  };
+
+  const isPointInsideArrowSelectionExtent = (component, point) => {
+    const info = getTwoPinInfo(component);
+    if (!info || !point) {
+      return false;
+    }
+    const style = getArrowAnnotationStyle(component?.value, { type: "ARR" });
+    const dirX = (info.end.x - info.start.x) / info.length;
+    const dirY = (info.end.y - info.start.y) / info.length;
+    const relX = point.x - info.start.x;
+    const relY = point.y - info.start.y;
+    const localX = (relX * dirX) + (relY * dirY);
+    const localY = (-relX * dirY) + (relY * dirX);
+    const shaftHalfThickness = Math.max(0.5, Number(style.thickness) / 2);
+    const shaftTolerance = shaftHalfThickness + ANNOTATION_SELECTION_BUFFER;
+    const shaftHit = localX >= -ANNOTATION_SELECTION_BUFFER
+      && localX <= info.length + ANNOTATION_SELECTION_BUFFER
+      && Math.abs(localY) <= shaftTolerance;
+    if (shaftHit) {
+      return true;
+    }
+    const head = getArrowHeadGeometry(info.length, style.thickness);
+    if (!head) {
+      return false;
+    }
+    const localPoint = { x: localX, y: localY };
+    const tip = { x: info.length, y: 0 };
+    const upper = { x: head.headBackX, y: -head.headHalfHeight };
+    const lower = { x: head.headBackX, y: head.headHalfHeight };
+    const headTolerance = 1 + ANNOTATION_SELECTION_BUFFER;
+    const headToleranceSq = headTolerance * headTolerance;
+    return pointToSegmentDistanceSq(localPoint, upper, tip) <= headToleranceSq
+      || pointToSegmentDistanceSq(localPoint, lower, tip) <= headToleranceSq;
+  };
+
+  const isPointInsideBoxSelectionExtent = (component, point) => {
+    const type = String(component?.type ?? "").toUpperCase();
+    const pins = Array.isArray(component?.pins) ? component.pins : [];
+    if (!point || pins.length < 2) {
+      return false;
+    }
+    const style = getBoxAnnotationStyle(component?.value, {
+      type,
+      defaultLineType: type === "DBOX" ? "dashed" : "solid"
+    });
+    const minX = Math.min(Number(pins[0].x), Number(pins[1].x));
+    const maxX = Math.max(Number(pins[0].x), Number(pins[1].x));
+    const minY = Math.min(Number(pins[0].y), Number(pins[1].y));
+    const maxY = Math.max(Number(pins[0].y), Number(pins[1].y));
+    const halfThickness = Math.max(0.5, Number(style.thickness) / 2);
+    const inset = halfThickness + ANNOTATION_SELECTION_BUFFER;
+    const outerMinX = minX - inset;
+    const outerMaxX = maxX + inset;
+    const outerMinY = minY - inset;
+    const outerMaxY = maxY + inset;
+    if (point.x < outerMinX || point.x > outerMaxX || point.y < outerMinY || point.y > outerMaxY) {
+      return false;
+    }
+    if (style.fillEnabled) {
+      return true;
+    }
+    const innerMinX = minX + inset;
+    const innerMaxX = maxX - inset;
+    const innerMinY = minY + inset;
+    const innerMaxY = maxY - inset;
+    if (innerMinX >= innerMaxX || innerMinY >= innerMaxY) {
+      return true;
+    }
+    return point.x <= innerMinX
+      || point.x >= innerMaxX
+      || point.y <= innerMinY
+      || point.y >= innerMaxY;
+  };
+
   const strokeOptions = (style) => ({
     stroke: style?.stroke ?? STROKE,
     width: style?.width ?? STROKE_WIDTH
@@ -820,8 +1123,10 @@
     const pin = pins[0];
     const stroke = strokeOptions(options);
     const group = document.createElementNS(SVG_NS, "g");
+    const variant = normalizeGroundVariantValue(component?.groundVariant);
     group.setAttribute("data-component", component.id);
     group.setAttribute("data-symbol", "ground");
+    group.setAttribute("data-ground-variant", variant);
     if (options?.className) {
       group.setAttribute("class", options.className);
     }
@@ -837,7 +1142,7 @@
       : "";
     group.setAttribute("transform", `translate(${pin.x} ${pin.y})${rotate}`);
     const handled = typeof symbolApi?.drawShape === "function"
-      ? symbolApi.drawShape(symbolCtx, "GND", group, { style: stroke })
+      ? symbolApi.drawShape(symbolCtx, "GND", group, { style: stroke, groundVariant: variant })
       : false;
     if (!handled) {
       return;
@@ -892,6 +1197,7 @@
       return;
     }
     const style = getTextAnnotationStyle(component, options);
+    const annotationStyle = getTextAnnotationStyleValue(component?.value, { type: "TEXT" });
     const text = getTextAnnotationText(component);
     const rotation = snapRotation(Number(component?.rotation ?? 0));
     const group = document.createElementNS(SVG_NS, "g");
@@ -903,8 +1209,14 @@
     if (options?.dataHighlight) {
       group.setAttribute("data-component-highlight", String(options.dataHighlight));
     }
-    if (Number.isFinite(options?.opacity)) {
-      group.setAttribute("opacity", String(options.opacity));
+    const previewOpacity = Number(options?.opacity);
+    const hasPreviewOpacity = Number.isFinite(previewOpacity);
+    const baseOpacity = Math.max(0, Math.min(1, annotationStyle.opacity));
+    const combinedOpacity = hasPreviewOpacity
+      ? Math.max(0, Math.min(1, baseOpacity * previewOpacity))
+      : baseOpacity;
+    if (combinedOpacity < 0.9999) {
+      group.setAttribute("opacity", String(combinedOpacity));
     }
     const rotate = rotation !== 0 ? ` rotate(${rotation})` : "";
     group.setAttribute("transform", `translate(${pin.x} ${pin.y})${rotate}`);
@@ -923,6 +1235,152 @@
     }
     if (options?.dataHighlight) {
       label.setAttribute("data-component-label-highlight", String(options.dataHighlight));
+    }
+    svg.appendChild(group);
+  };
+
+  const drawAnnotationSymbol = (svg, component, options) => {
+    const type = String(component?.type ?? "").toUpperCase();
+    const symbolName = getAnnotationSymbolName(type);
+    if (!symbolName) {
+      return;
+    }
+    const pins = Array.isArray(component?.pins) ? component.pins : [];
+    const pin = pins[0];
+    if (!pin) {
+      return;
+    }
+    const stroke = strokeOptions(options);
+    const highlightToken = String(options?.dataHighlight ?? "");
+    const highlightClassName = String(options?.className ?? "");
+    const isHoverHighlight = highlightToken.startsWith("hover-")
+      || highlightToken.startsWith("external-hover-")
+      || highlightClassName.includes("hover-highlight");
+    const highlightWidth = Number(options?.width);
+    const resolveAnnotationThickness = (value) => {
+      const parsed = Number(value);
+      const baseThickness = Number.isFinite(parsed) ? Math.max(0.5, parsed) : 1;
+      if (!isHoverHighlight) {
+        return baseThickness;
+      }
+      const bumpedThickness = baseThickness + 1;
+      if (!Number.isFinite(highlightWidth)) {
+        return bumpedThickness;
+      }
+      return Math.max(bumpedThickness, Math.max(0.5, highlightWidth));
+    };
+    const group = document.createElementNS(SVG_NS, "g");
+    group.setAttribute("data-component", component.id);
+    group.setAttribute("data-symbol", symbolName);
+    if (options?.className) {
+      group.setAttribute("class", options.className);
+    }
+    if (options?.dataHighlight) {
+      group.setAttribute("data-component-highlight", String(options.dataHighlight));
+    }
+    const previewOpacity = Number(options?.opacity);
+    const hasPreviewOpacity = Number.isFinite(previewOpacity);
+    if (type === "ARR") {
+      const arrowInfo = getTwoPinInfo(component);
+      if (arrowInfo) {
+        const arrowStyle = getArrowAnnotationStyle(component?.value, { type: "ARR" });
+        const arrowThickness = resolveAnnotationThickness(arrowStyle.thickness);
+        const dasharray = getArrowAnnotationDasharray(arrowStyle.lineType, arrowThickness);
+        const baseOpacity = Math.max(0, Math.min(1, arrowStyle.opacity));
+        const combinedOpacity = hasPreviewOpacity
+          ? Math.max(0, Math.min(1, baseOpacity * previewOpacity))
+          : baseOpacity;
+        group.setAttribute("transform", `translate(${arrowInfo.start.x} ${arrowInfo.start.y}) rotate(${arrowInfo.angle})`);
+        group.setAttribute("data-arrow-line-type", arrowStyle.lineType);
+        if (combinedOpacity < 0.9999) {
+          group.setAttribute("opacity", String(combinedOpacity));
+        }
+        const handledArrow = typeof symbolApi?.drawShape === "function"
+          ? symbolApi.drawShape(symbolCtx, type, group, {
+            length: arrowInfo.length,
+            style: {
+              ...stroke,
+              width: arrowThickness,
+              arrowThickness,
+              lineType: arrowStyle.lineType,
+              line: arrowStyle.lineType,
+              opacityPercent: arrowStyle.opacityPercent,
+              opacity: arrowStyle.opacity,
+              dasharray,
+              fill: options?.fill
+            }
+          })
+          : false;
+        if (!handledArrow) {
+          return;
+        }
+        svg.appendChild(group);
+        return;
+      }
+    }
+    if ((type === "BOX" || type === "DBOX") && pins.length >= 2) {
+      const cornerA = pins[0];
+      const cornerB = pins[1];
+      if (
+        Number.isFinite(Number(cornerA?.x))
+        && Number.isFinite(Number(cornerA?.y))
+        && Number.isFinite(Number(cornerB?.x))
+        && Number.isFinite(Number(cornerB?.y))
+      ) {
+        const styleValue = getBoxAnnotationStyle(component?.value, {
+          type,
+          defaultLineType: type === "DBOX" ? "dashed" : "solid"
+        });
+        const minX = Math.min(Number(cornerA.x), Number(cornerB.x));
+        const minY = Math.min(Number(cornerA.y), Number(cornerB.y));
+        const width = Math.abs(Number(cornerB.x) - Number(cornerA.x));
+        const height = Math.abs(Number(cornerB.y) - Number(cornerA.y));
+        const strokeLineCap = styleValue.lineType === "dotted" ? "round" : "square";
+        const forcedFill = typeof options?.fill === "string" && options.fill.trim()
+          ? options.fill
+          : null;
+        const fill = forcedFill ?? (styleValue.fillEnabled ? styleValue.fillColor : "none");
+        const boxThickness = resolveAnnotationThickness(styleValue.thickness);
+        const dasharray = getBoxAnnotationDasharray(styleValue.lineType, boxThickness);
+        const baseOpacity = Math.max(0, Math.min(1, styleValue.opacity));
+        const combinedOpacity = hasPreviewOpacity
+          ? Math.max(0, Math.min(1, baseOpacity * previewOpacity))
+          : baseOpacity;
+        group.setAttribute("transform", `translate(${minX} ${minY})`);
+        group.setAttribute("data-box-line-type", styleValue.lineType);
+        if (combinedOpacity < 0.9999) {
+          group.setAttribute("opacity", String(combinedOpacity));
+        }
+        const outline = appendPath(group, `M 0 0 L ${width} 0 L ${width} ${height} L 0 ${height} Z`, {
+          stroke: stroke.stroke,
+          width: boxThickness,
+          cap: strokeLineCap,
+          join: "round"
+        });
+        outline.setAttribute("fill", fill);
+        if (dasharray) {
+          outline.setAttribute("stroke-dasharray", dasharray);
+        }
+        svg.appendChild(group);
+        return;
+      }
+    }
+    const rotation = snapRotation(Number(component?.rotation ?? 0));
+    const rotate = rotation !== 0 ? ` rotate(${rotation})` : "";
+    group.setAttribute("transform", `translate(${pin.x} ${pin.y})${rotate}`);
+    if (hasPreviewOpacity) {
+      group.setAttribute("opacity", String(previewOpacity));
+    }
+    const handled = typeof symbolApi?.drawShape === "function"
+      ? symbolApi.drawShape(symbolCtx, type, group, {
+        style: {
+          ...stroke,
+          fill: options?.fill
+        }
+      })
+      : false;
+    if (!handled) {
+      return;
     }
     svg.appendChild(group);
   };
@@ -1242,6 +1700,10 @@
       drawTextAnnotationSymbol(svg, component, options);
       return;
     }
+    if (getAnnotationSymbolName(type)) {
+      drawAnnotationSymbol(svg, component, options);
+      return;
+    }
     if (isProbeComponentType(type)) {
       drawProbeSymbol(svg, component, options);
       return;
@@ -1281,7 +1743,12 @@
     }
     const drawShape = symbolApi?.drawShape;
     const handled = typeof drawShape === "function"
-      ? drawShape(symbolCtx, type, group, { length: info.length, rotation: info.angle, style })
+      ? drawShape(symbolCtx, type, group, {
+        length: info.length,
+        rotation: info.angle,
+        style,
+        resistorStyle: component?.resistorStyle
+      })
       : false;
     if (!handled) {
       appendLine(group, 0, 0, info.length, 0, style);
@@ -1374,6 +1841,7 @@
       component = {
         id: "GND",
         type: "GND",
+        groundVariant: normalizeGroundVariantValue(options.groundVariant),
         value: "",
         rotation: 0,
         pins: [{ id: "0", name: "0", x: 24, y: 6 }]
@@ -1397,6 +1865,14 @@
         textFont: DEFAULT_TEXT_FONT,
         textSize: 10,
         pins: [{ id: "A", name: "A", x: 6, y: 12 }]
+      };
+    } else if (getAnnotationSymbolName(normalized)) {
+      component = {
+        id: normalized || "ANN",
+        type: normalized,
+        value: "",
+        rotation: 0,
+        pins: [{ id: "A", name: "A", x: 24, y: 12 }]
       };
     } else if (normalized === "SW") {
       component = {
@@ -1450,6 +1926,7 @@
   };
 
   const getComponentBounds = (component, padding, probeLabels) => {
+    const type = String(component?.type ?? "").toUpperCase();
     const pins = Array.isArray(component?.pins) ? component.pins : [];
     if (!pins.length) {
       return null;
@@ -1460,21 +1937,13 @@
     let maxX = Math.max(...xs) + padding;
     let minY = Math.min(...ys) - padding;
     let maxY = Math.max(...ys) + padding;
-    if (String(component?.type ?? "").toUpperCase() === "GND") {
+    if (type === "GND") {
       const pinX = xs[0];
       const pinY = ys[0];
-      const rotation = snapRotation(Number(component?.rotation ?? 0));
       const nearPad = 2;
       const farPad = 6;
       const crossPad = 3;
-      let extents = { minX: -8, maxX: 8, minY: 0, maxY: 16 };
-      if (rotation === 90) {
-        extents = { minX: -16, maxX: 0, minY: -8, maxY: 8 };
-      } else if (rotation === 180) {
-        extents = { minX: -8, maxX: 8, minY: -16, maxY: 0 };
-      } else if (rotation === 270) {
-        extents = { minX: 0, maxX: 16, minY: -8, maxY: 8 };
-      }
+      const extents = getGroundExtents(component);
       let minPadX = crossPad;
       let maxPadX = crossPad;
       let minPadY = crossPad;
@@ -1497,7 +1966,7 @@
       maxX = pinX + extents.maxX + maxPadX;
       minY = pinY + extents.minY - minPadY;
       maxY = pinY + extents.maxY + maxPadY;
-    } else if (String(component?.type ?? "").toUpperCase() === "NET") {
+    } else if (type === "NET") {
       const pinX = xs[0];
       const pinY = ys[0];
       const extents = getNamedNodeExtents(component);
@@ -1510,7 +1979,7 @@
       maxX = pinX + extents.maxX + pad;
       minY = pinY + extents.minY - pad;
       maxY = pinY + extents.maxY + pad;
-    } else if (String(component?.type ?? "").toUpperCase() === "TEXT") {
+    } else if (type === "TEXT") {
       const pinX = xs[0];
       const pinY = ys[0];
       const extents = getTextAnnotationLocalExtents(component);
@@ -1519,7 +1988,35 @@
       maxX = pinX + extents.maxX + pad;
       minY = pinY + extents.minY - pad;
       maxY = pinY + extents.maxY + pad;
-    } else if (String(component?.type ?? "").toUpperCase() === "SW") {
+    } else if (getAnnotationSymbolName(type)) {
+      const pinX = xs[0];
+      const pinY = ys[0];
+      if (type === "ARR" && pins.length >= 2) {
+        const thickness = getArrowThickness(component?.value);
+        const pad = Math.max(4, Math.ceil(thickness) + 2);
+        minX = Math.min(...xs) - pad;
+        maxX = Math.max(...xs) + pad;
+        minY = Math.min(...ys) - pad;
+        maxY = Math.max(...ys) + pad;
+      } else if ((type === "BOX" || type === "DBOX") && pins.length >= 2) {
+        const boxStyle = getBoxAnnotationStyle(component?.value, {
+          type,
+          defaultLineType: type === "DBOX" ? "dashed" : "solid"
+        });
+        const pad = Math.max(4, Math.ceil(boxStyle.thickness) + 2);
+        minX = Math.min(...xs) - pad;
+        maxX = Math.max(...xs) + pad;
+        minY = Math.min(...ys) - pad;
+        maxY = Math.max(...ys) + pad;
+      } else {
+        const extents = getAnnotationExtents(component);
+        const pad = 4;
+        minX = pinX + extents.minX - pad;
+        maxX = pinX + extents.maxX + pad;
+        minY = pinY + extents.minY - pad;
+        maxY = pinY + extents.maxY + pad;
+      }
+    } else if (type === "SW") {
       const extents = getSpdtSwitchExtents(component);
       const pad = 6;
       minX = extents.minX - pad;
@@ -1661,6 +2158,11 @@
     return buildOrthogonalWirePoints(start, end);
   };
 
+  const isBackgroundAnnotationComponent = (component) => {
+    const type = String(component?.type ?? "").toUpperCase();
+    return type === "BOX" || type === "DBOX";
+  };
+
   const createEditor = (container, model, options) => {
     if (!container) {
       return null;
@@ -1668,14 +2170,21 @@
     const api = typeof self !== "undefined" ? (self.SpjutSimSchematic ?? {}) : {};
     const svg = ensureSvg(container);
     const gridGroup = ensureGroup(svg, "schematic-grid");
+    const boxBackgroundGroup = ensureGroup(svg, "schematic-box-background");
     const wireGroup = ensureGroup(svg, "schematic-wires");
     const componentGroup = ensureGroup(svg, "schematic-components");
     const overlayGroup = ensureGroup(svg, "schematic-overlay");
+    svg.appendChild(gridGroup);
+    svg.appendChild(boxBackgroundGroup);
+    svg.appendChild(wireGroup);
+    svg.appendChild(componentGroup);
+    svg.appendChild(overlayGroup);
     svg.setAttribute("viewBox", `${DEFAULT_VIEW.x} ${DEFAULT_VIEW.y} ${DEFAULT_VIEW.width} ${DEFAULT_VIEW.height}`);
 
     const state = {
       model,
       tool: { mode: "select" },
+      groundPlacementVariant: normalizeGroundVariantValue("earth"),
       view: { ...DEFAULT_VIEW },
       grid: { ...DEFAULT_GRID },
       selectionIds: [],
@@ -1684,8 +2193,14 @@
       wirePreview: null,
       probeDiffStart: null,
       probeDiffPreview: null,
+      arrowStart: null,
+      arrowPreview: null,
+      boxStart: null,
+      boxPreview: null,
       probeDiffEndpointSelection: null,
       probeDiffEndpointDrag: null,
+      arrowEndpointDrag: null,
+      boxResizeDrag: null,
       wireSelection: null,
       wireSelections: [],
       wireHandle: null,
@@ -1722,6 +2237,16 @@
 
     const getComponent = (id) => (state.model?.components ?? []).find((entry) => entry.id === id) ?? null;
     const getWire = (id) => (state.model?.wires ?? []).find((entry) => entry.id === id) ?? null;
+    const syncCanvasCursor = () => {
+      const activeType = state.tool?.mode === "place"
+        ? String(state.tool?.type ?? "").toUpperCase()
+        : "";
+      if (CROSSHAIR_TOOL_TYPES.has(activeType)) {
+        svg.style.cursor = "crosshair";
+      } else {
+        svg.style.removeProperty("cursor");
+      }
+    };
     const pointKey = (point) => `${point.x},${point.y}`;
     const getWirePriority = (wire) => {
       const id = String(wire?.id ?? "");
@@ -5233,6 +5758,7 @@
     };
 
     const renderComponents = (netColorState) => {
+      clearGroup(boxBackgroundGroup);
       clearGroup(componentGroup);
       const components = Array.isArray(state.model?.components) ? state.model.components : [];
       components.forEach((component) => {
@@ -5242,7 +5768,10 @@
           : null;
         const componentColor = normalizeNetColorValue(component?.netColor);
         const strokeColor = netColor ?? componentColor;
-        drawComponentSymbol(componentGroup, component, {
+        const targetGroup = isBackgroundAnnotationComponent(component)
+          ? boxBackgroundGroup
+          : componentGroup;
+        drawComponentSymbol(targetGroup, component, {
           measurements: state.measurements,
           probeLabels: state.probeLabels,
           ...(strokeColor ? {
@@ -5256,6 +5785,7 @@
 
     const renderOverlay = (netColorStateArg) => {
       const netColorState = netColorStateArg ?? resolveNetColorState();
+      syncCanvasCursor();
       clearGroup(overlayGroup);
       if (state.wireStart) {
         appendCircle(overlayGroup, state.wireStart.x, state.wireStart.y, 6, {
@@ -5415,12 +5945,60 @@
           });
         }
       }
+      if (state.arrowStart && state.tool.mode === "place" && String(state.tool.type ?? "").toUpperCase() === "ARR") {
+        const preview = state.arrowPreview ?? state.arrowStart;
+        drawComponentSymbol(overlayGroup, {
+          id: "__arrow_preview__",
+          type: "ARR",
+          value: String(getArrowThickness("")),
+          pins: [
+            { id: "A", name: "A", x: state.arrowStart.x, y: state.arrowStart.y },
+            { id: "B", name: "B", x: preview.x, y: preview.y }
+          ]
+        }, {
+          showLabel: false,
+          opacity: 0.7,
+          stroke: "#0f62fe",
+          width: getArrowThickness(""),
+          className: "schematic-preview"
+        });
+      }
+      if (state.boxStart && state.tool.mode === "place") {
+        const activeBoxType = String(state.tool.type ?? "").toUpperCase();
+        if (activeBoxType === "BOX" || activeBoxType === "DBOX") {
+          const preview = state.boxPreview ?? state.boxStart;
+          const defaultStyle = getDefaultBoxAnnotationStyle({
+            type: activeBoxType,
+            defaultLineType: activeBoxType === "DBOX" ? "dashed" : "solid"
+          });
+          drawComponentSymbol(overlayGroup, {
+            id: "__box_preview__",
+            type: activeBoxType,
+            value: formatBoxAnnotationStyle(defaultStyle, { type: activeBoxType }),
+            pins: [
+              { id: "A", name: "A", x: state.boxStart.x, y: state.boxStart.y },
+              { id: "B", name: "B", x: preview.x, y: preview.y }
+            ]
+          }, {
+            showLabel: false,
+            opacity: 0.7,
+            stroke: "#0f62fe",
+            className: "schematic-preview"
+          });
+        }
+      }
       if (state.preview) {
         const preview = state.preview;
         const previewComponent = typeof api.createComponentFromSymbol === "function"
           ? api.createComponentFromSymbol(preview.type, "PREVIEW", "", preview.position.x, preview.position.y)
           : null;
         if (previewComponent) {
+          if (String(previewComponent.type ?? "").toUpperCase() === "GND") {
+            previewComponent.groundVariant = normalizeGroundVariantValue(preview.groundVariant);
+          } else if (String(previewComponent.type ?? "").toUpperCase() === "R"
+            && Object.prototype.hasOwnProperty.call(preview, "resistorStyle")) {
+            previewComponent.resistorStyle = normalizeResistorStyleValue(preview.resistorStyle);
+          }
           applyTransformToComponent(previewComponent, state.placeTransform, false);
           drawComponentSymbol(overlayGroup, previewComponent, {
             showLabel: false,
@@ -5464,6 +6042,12 @@
                 : {}),
               ...(Object.prototype.hasOwnProperty.call(template, "textUnderline")
                 ? { textUnderline: template.textUnderline === true }
+                : {}),
+              ...(Object.prototype.hasOwnProperty.call(template, "groundVariant")
+                ? { groundVariant: normalizeGroundVariantValue(template.groundVariant) }
+                : {}),
+              ...(Object.prototype.hasOwnProperty.call(template, "resistorStyle")
+                ? { resistorStyle: normalizeResistorStyleValue(template.resistorStyle) }
                 : {}),
               ...(Object.prototype.hasOwnProperty.call(template, "probeDiffRotations")
                 ? {
@@ -5619,12 +6203,47 @@
               dataHighlight: id
             });
           }
+          if (type === "ARR" && Array.isArray(component?.pins) && component.pins.length >= 2) {
+            const endpointStyle = {
+              fill: "#f6f4ef",
+              stroke: "#0f62fe",
+              width: 1.5
+            };
+            const tailPin = component.pins[0];
+            const tipPin = component.pins[1];
+            if (tailPin && Number.isFinite(tailPin.x) && Number.isFinite(tailPin.y)) {
+              const tailHandle = appendCircle(overlayGroup, tailPin.x, tailPin.y, 4, endpointStyle);
+              tailHandle.setAttribute("data-arrow-endpoint-overlay", "tail");
+              tailHandle.setAttribute("data-arrow-endpoint-component", String(component.id));
+            }
+            if (tipPin && Number.isFinite(tipPin.x) && Number.isFinite(tipPin.y)) {
+              const tipHandle = appendCircle(overlayGroup, tipPin.x, tipPin.y, 4, endpointStyle);
+              tipHandle.setAttribute("data-arrow-endpoint-overlay", "tip");
+              tipHandle.setAttribute("data-arrow-endpoint-component", String(component.id));
+            }
+          }
+          if ((type === "BOX" || type === "DBOX") && Array.isArray(component?.pins) && component.pins.length >= 2) {
+            const endpointStyle = {
+              fill: "#f6f4ef",
+              stroke: "#0f62fe",
+              width: 1.5
+            };
+            const resizeHandles = getBoxResizeHandles(component);
+            resizeHandles.forEach((handleInfo) => {
+              const handle = appendCircle(overlayGroup, handleInfo.x, handleInfo.y, 4, endpointStyle);
+              handle.setAttribute("data-box-resize-overlay", handleInfo.id);
+              handle.setAttribute("data-box-resize-component", String(component.id));
+            });
+          }
+          const suppressSelectionText = type === "ARR" || type === "BOX" || type === "DBOX";
           const info = getTwoPinInfo(component);
-          const labelGeometry = type === "SW"
-            ? getSpdtLabelGeometry(component)
-            : (info
-              ? { midX: info.midX, midY: info.midY, angle: info.angle }
-              : null);
+          const labelGeometry = suppressSelectionText
+            ? null
+            : (type === "SW"
+              ? getSpdtLabelGeometry(component)
+              : (info
+                ? { midX: info.midX, midY: info.midY, angle: info.angle }
+                : null));
           if (isProbeComponentType(type)) {
             drawProbeLabel(overlayGroup, component, {
               labelColor: "#0f62fe",
@@ -6079,6 +6698,12 @@
         ...(Object.prototype.hasOwnProperty.call(component, "textUnderline")
           ? { textUnderline: component.textUnderline === true }
           : {}),
+        ...(Object.prototype.hasOwnProperty.call(component, "groundVariant")
+          ? { groundVariant: normalizeGroundVariantValue(component.groundVariant) }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(component, "resistorStyle")
+          ? { resistorStyle: normalizeResistorStyleValue(component.resistorStyle) }
+          : {}),
         ...(Object.prototype.hasOwnProperty.call(component, "probeDiffRotations")
           ? {
             probeDiffRotations: {
@@ -6124,6 +6749,8 @@
       state.wireNode = null;
       state.probeDiffEndpointSelection = null;
       state.probeDiffEndpointDrag = null;
+      state.arrowEndpointDrag = null;
+      state.boxResizeDrag = null;
       notifySelection();
       render();
       notifyModelChange();
@@ -6394,6 +7021,8 @@
       const hasTextBoldUpdate = Object.prototype.hasOwnProperty.call(updates, "textBold");
       const hasTextItalicUpdate = Object.prototype.hasOwnProperty.call(updates, "textItalic");
       const hasTextUnderlineUpdate = Object.prototype.hasOwnProperty.call(updates, "textUnderline");
+      const hasGroundVariantUpdate = Object.prototype.hasOwnProperty.call(updates, "groundVariant");
+      const hasResistorStyleUpdate = Object.prototype.hasOwnProperty.call(updates, "resistorStyle");
       const componentType = String(component.type ?? "").toUpperCase();
       const typeChanged = nextType !== null
         && nextType.length > 0
@@ -6415,6 +7044,10 @@
       let textItalicUpdateValid = false;
       let nextTextUnderline = false;
       let textUnderlineUpdateValid = false;
+      let nextGroundVariant = normalizeGroundVariantValue(component?.groundVariant);
+      let groundVariantUpdateValid = false;
+      let nextResistorStyle = normalizeResistorStyleValue(component?.resistorStyle);
+      let resistorStyleUpdateValid = false;
       if (hasNetColorUpdate) {
         const rawNetColor = updates.netColor;
         if (rawNetColor === null || rawNetColor === undefined || String(rawNetColor).trim() === "") {
@@ -6488,6 +7121,14 @@
           textUnderlineUpdateValid = true;
         }
       }
+      if (hasGroundVariantUpdate) {
+        nextGroundVariant = normalizeGroundVariantValue(updates.groundVariant);
+        groundVariantUpdateValid = true;
+      }
+      if (hasResistorStyleUpdate) {
+        nextResistorStyle = normalizeResistorStyleValue(updates.resistorStyle);
+        resistorStyleUpdateValid = true;
+      }
       const idChanged = nextId !== null && nextId !== component.id;
       const valueChanged = nextValue !== null && nextValue !== String(component.value ?? "");
       const currentName = Object.prototype.hasOwnProperty.call(component, "name")
@@ -6528,6 +7169,16 @@
         && hasTextUnderlineUpdate
         && textUnderlineUpdateValid
         && nextTextUnderline !== currentTextUnderline;
+      const currentGroundVariant = normalizeGroundVariantValue(component?.groundVariant);
+      const groundVariantChanged = componentType === "GND"
+        && hasGroundVariantUpdate
+        && groundVariantUpdateValid
+        && nextGroundVariant !== currentGroundVariant;
+      const currentResistorStyle = normalizeResistorStyleValue(component?.resistorStyle);
+      const resistorStyleChanged = componentType === "R"
+        && hasResistorStyleUpdate
+        && resistorStyleUpdateValid
+        && nextResistorStyle !== currentResistorStyle;
       if (
         !idChanged
         && !typeChanged
@@ -6540,6 +7191,8 @@
         && !textBoldChanged
         && !textItalicChanged
         && !textUnderlineChanged
+        && !groundVariantChanged
+        && !resistorStyleChanged
       ) {
         return;
       }
@@ -6608,6 +7261,12 @@
           } else if (Object.prototype.hasOwnProperty.call(component, "textUnderline")) {
             delete component.textUnderline;
           }
+        }
+        if (groundVariantChanged) {
+          component.groundVariant = nextGroundVariant;
+        }
+        if (resistorStyleChanged) {
+          component.resistorStyle = nextResistorStyle;
         }
       }, { notifySelection: true });
     };
@@ -7075,6 +7734,12 @@
             ...(Object.prototype.hasOwnProperty.call(component, "textUnderline")
               ? { textUnderline: component.textUnderline === true }
               : {}),
+            ...(Object.prototype.hasOwnProperty.call(component, "groundVariant")
+              ? { groundVariant: normalizeGroundVariantValue(component.groundVariant) }
+              : {}),
+            ...(Object.prototype.hasOwnProperty.call(component, "resistorStyle")
+              ? { resistorStyle: normalizeResistorStyleValue(component.resistorStyle) }
+              : {}),
             ...(Object.prototype.hasOwnProperty.call(component, "probeDiffRotations")
               ? {
                 probeDiffRotations: {
@@ -7100,6 +7765,19 @@
     const isSelectionPlacementToolType = (toolType) =>
       String(toolType ?? "").toUpperCase() === SELECTION_PLACEMENT_TOOL;
 
+    const cycleGroundVariant = (currentVariant) => {
+      const variants = listGroundVariants();
+      if (!variants.length) {
+        return normalizeGroundVariantValue(currentVariant);
+      }
+      const current = normalizeGroundVariantValue(currentVariant);
+      const currentIndex = variants.indexOf(current);
+      if (currentIndex === -1) {
+        return variants[0];
+      }
+      return variants[(currentIndex + 1) % variants.length];
+    };
+
     const setTool = (tool) => {
       const previousPlaceType = state.tool?.mode === "place" ? state.tool.type : null;
       if (tool === "select" || tool === "wire") {
@@ -7108,6 +7786,17 @@
         state.tool = { mode: "place", type: tool };
       } else if (tool && tool.mode) {
         state.tool = tool;
+      }
+      const activePlaceType = state.tool?.mode === "place"
+        ? String(state.tool?.type ?? "").toUpperCase()
+        : "";
+      const previousPlaceTypeNormalized = String(previousPlaceType ?? "").toUpperCase();
+      if (activePlaceType === "GND") {
+        if (Object.prototype.hasOwnProperty.call(state.tool, "groundVariant")) {
+          state.groundPlacementVariant = normalizeGroundVariantValue(state.tool.groundVariant);
+        } else if (previousPlaceTypeNormalized === "GND") {
+          state.groundPlacementVariant = cycleGroundVariant(state.groundPlacementVariant);
+        }
       }
       if (state.tool.mode === "place") {
         if (state.tool.type !== previousPlaceType) {
@@ -7127,9 +7816,19 @@
         state.probeDiffStart = null;
         state.probeDiffPreview = null;
       }
+      if (!(state.tool.mode === "place" && activePlaceType === "ARR")) {
+        state.arrowStart = null;
+        state.arrowPreview = null;
+      }
+      if (!(state.tool.mode === "place" && (activePlaceType === "BOX" || activePlaceType === "DBOX"))) {
+        state.boxStart = null;
+        state.boxPreview = null;
+      }
       if (state.tool.mode !== "select") {
         clearProbeDiffEndpointSelection();
         state.probeDiffEndpointDrag = null;
+        state.arrowEndpointDrag = null;
+        state.boxResizeDrag = null;
       }
       if (state.tool.mode !== "place") {
         clearPreview();
@@ -7321,6 +8020,18 @@
       if (component && Object.prototype.hasOwnProperty.call(spec, "value")) {
         component.value = String(spec.value ?? "");
       }
+      if (component && Object.prototype.hasOwnProperty.call(spec, "groundVariant")) {
+        component.groundVariant = normalizeGroundVariantValue(spec.groundVariant);
+      } else if (String(component?.type ?? "").toUpperCase() === "GND"
+        && !Object.prototype.hasOwnProperty.call(component, "groundVariant")) {
+        component.groundVariant = normalizeGroundVariantValue(state.groundPlacementVariant);
+      }
+      if (component && Object.prototype.hasOwnProperty.call(spec, "resistorStyle")) {
+        component.resistorStyle = normalizeResistorStyleValue(spec.resistorStyle);
+      } else if (String(component?.type ?? "").toUpperCase() === "R"
+        && !Object.prototype.hasOwnProperty.call(component, "resistorStyle")) {
+        component.resistorStyle = normalizeResistorStyleValue(component.resistorStyle);
+      }
       if (component && transform && !isIdentityTransform(transform)) {
         const cloned = {
           id: component.id,
@@ -7349,6 +8060,12 @@
             : {}),
           ...(Object.prototype.hasOwnProperty.call(component, "textUnderline")
             ? { textUnderline: component.textUnderline === true }
+            : {}),
+          ...(Object.prototype.hasOwnProperty.call(component, "groundVariant")
+            ? { groundVariant: normalizeGroundVariantValue(component.groundVariant) }
+            : {}),
+          ...(Object.prototype.hasOwnProperty.call(component, "resistorStyle")
+            ? { resistorStyle: normalizeResistorStyleValue(component.resistorStyle) }
             : {}),
           ...(Object.prototype.hasOwnProperty.call(component, "probeDiffRotations")
             ? {
@@ -7471,8 +8188,22 @@
       const preferIds = Array.isArray(options?.preferIds) && options.preferIds.length
         ? new Set(options.preferIds.map((id) => String(id)))
         : null;
+      const pointHitsComponent = (component, bounds) => {
+        const type = String(component?.type ?? "").toUpperCase();
+        if (type === "ARR") {
+          return isPointInsideArrowSelectionExtent(component, point);
+        }
+        if (type === "BOX" || type === "DBOX") {
+          return isPointInsideBoxSelectionExtent(component, point);
+        }
+        return point.x >= bounds.minX
+          && point.x <= bounds.maxX
+          && point.y >= bounds.minY
+          && point.y <= bounds.maxY;
+      };
       const pickBest = (filter) => {
         let best = null;
+        let bestPriority = Infinity;
         let bestDist = Infinity;
         components.forEach((component) => {
           if (filter && !filter(component)) {
@@ -7485,12 +8216,17 @@
           if (point.x < bounds.minX || point.x > bounds.maxX || point.y < bounds.minY || point.y > bounds.maxY) {
             return;
           }
+          if (!pointHitsComponent(component, bounds)) {
+            return;
+          }
           const cx = (bounds.minX + bounds.maxX) / 2;
           const cy = (bounds.minY + bounds.maxY) / 2;
           const dx = point.x - cx;
           const dy = point.y - cy;
           const dist = dx * dx + dy * dy;
-          if (dist < bestDist) {
+          const priority = isLowPrioritySelectionType(component?.type) ? 1 : 0;
+          if (priority < bestPriority || (priority === bestPriority && dist < bestDist)) {
+            bestPriority = priority;
             bestDist = dist;
             best = component;
           }
@@ -7549,6 +8285,110 @@
           checkHandle("P-", "minus", geometry.negTip.x, geometry.negTip.y);
           checkHandle("P+", "plus", geometry.pos.x, geometry.pos.y);
           checkHandle("P-", "minus", geometry.neg.x, geometry.neg.y);
+        });
+        return best;
+      };
+      if (preferIds) {
+        const preferred = pickBest((component) => preferIds.has(String(component?.id ?? "")));
+        if (preferred) {
+          return preferred;
+        }
+      }
+      return pickBest(null);
+    };
+
+    const hitTestArrowEndpoint = (point, options) => {
+      if (!point) {
+        return null;
+      }
+      const components = Array.isArray(state.model?.components) ? state.model.components : [];
+      const preferIds = Array.isArray(options?.preferIds) && options.preferIds.length
+        ? new Set(options.preferIds.map((id) => String(id)))
+        : null;
+      const hitRadius = Math.max(PIN_HIT_RADIUS, 8);
+      const hitRadiusSq = hitRadius * hitRadius;
+      const pickBest = (filter) => {
+        let best = null;
+        let bestDist = Infinity;
+        components.forEach((component) => {
+          if (String(component?.type ?? "").toUpperCase() !== "ARR") {
+            return;
+          }
+          if (filter && !filter(component)) {
+            return;
+          }
+          const pins = Array.isArray(component?.pins) ? component.pins : [];
+          if (pins.length < 2) {
+            return;
+          }
+          const checkHandle = (pinId, side, pin) => {
+            if (!pin || !Number.isFinite(pin.x) || !Number.isFinite(pin.y)) {
+              return;
+            }
+            const dx = point.x - pin.x;
+            const dy = point.y - pin.y;
+            const dist = (dx * dx) + (dy * dy);
+            if (dist > hitRadiusSq || dist >= bestDist) {
+              return;
+            }
+            bestDist = dist;
+            best = {
+              component,
+              pinId,
+              side,
+              point: { x: pin.x, y: pin.y }
+            };
+          };
+          checkHandle("A", "tail", pins[0]);
+          checkHandle("B", "tip", pins[1]);
+        });
+        return best;
+      };
+      if (preferIds) {
+        const preferred = pickBest((component) => preferIds.has(String(component?.id ?? "")));
+        if (preferred) {
+          return preferred;
+        }
+      }
+      return pickBest(null);
+    };
+
+    const hitTestBoxResizeHandle = (point, options) => {
+      if (!point) {
+        return null;
+      }
+      const components = Array.isArray(state.model?.components) ? state.model.components : [];
+      const preferIds = Array.isArray(options?.preferIds) && options.preferIds.length
+        ? new Set(options.preferIds.map((id) => String(id)))
+        : null;
+      const hitRadius = Math.max(PIN_HIT_RADIUS, 8);
+      const hitRadiusSq = hitRadius * hitRadius;
+      const pickBest = (filter) => {
+        let best = null;
+        let bestDist = Infinity;
+        components.forEach((component) => {
+          const type = String(component?.type ?? "").toUpperCase();
+          if (type !== "BOX" && type !== "DBOX") {
+            return;
+          }
+          if (filter && !filter(component)) {
+            return;
+          }
+          const handles = getBoxResizeHandles(component);
+          handles.forEach((handleInfo) => {
+            const dx = point.x - handleInfo.x;
+            const dy = point.y - handleInfo.y;
+            const dist = (dx * dx) + (dy * dy);
+            if (dist > hitRadiusSq || dist >= bestDist) {
+              return;
+            }
+            bestDist = dist;
+            best = {
+              component,
+              handleId: handleInfo.id,
+              point: { x: handleInfo.x, y: handleInfo.y }
+            };
+          });
         });
         return best;
       };
@@ -7707,6 +8547,57 @@
       return (component.pins ?? []).find((pin) => String(pin?.id ?? "").trim().toUpperCase() === normalizedId) ?? null;
     };
 
+    const getArrowPinById = (component, pinId) => {
+      if (!component || String(component?.type ?? "").toUpperCase() !== "ARR") {
+        return null;
+      }
+      const normalizedId = String(pinId ?? "").trim().toUpperCase();
+      return (component.pins ?? []).find((pin) => String(pin?.id ?? "").trim().toUpperCase() === normalizedId) ?? null;
+    };
+
+    const getBoxResizePins = (component) => {
+      const type = String(component?.type ?? "").toUpperCase();
+      if (type !== "BOX" && type !== "DBOX") {
+        return null;
+      }
+      const pins = Array.isArray(component?.pins) ? component.pins : [];
+      if (pins.length < 2) {
+        return null;
+      }
+      const first = pins[0];
+      const second = pins[1];
+      if (!first || !second) {
+        return null;
+      }
+      if (!Number.isFinite(first.x) || !Number.isFinite(first.y) || !Number.isFinite(second.x) || !Number.isFinite(second.y)) {
+        return null;
+      }
+      return [first, second];
+    };
+
+    const getBoxResizeHandles = (component) => {
+      const pins = getBoxResizePins(component);
+      if (!pins) {
+        return [];
+      }
+      const minX = Math.min(pins[0].x, pins[1].x);
+      const maxX = Math.max(pins[0].x, pins[1].x);
+      const minY = Math.min(pins[0].y, pins[1].y);
+      const maxY = Math.max(pins[0].y, pins[1].y);
+      const midX = (minX + maxX) / 2;
+      const midY = (minY + maxY) / 2;
+      return [
+        { id: "nw", x: minX, y: minY },
+        { id: "n", x: midX, y: minY },
+        { id: "ne", x: maxX, y: minY },
+        { id: "e", x: maxX, y: midY },
+        { id: "se", x: maxX, y: maxY },
+        { id: "s", x: midX, y: maxY },
+        { id: "sw", x: minX, y: maxY },
+        { id: "w", x: minX, y: midY }
+      ];
+    };
+
     const beginProbeDiffEndpointDrag = (component, pinId, options) => {
       const pin = getProbeDiffPinById(component, pinId);
       if (!component || !pin) {
@@ -7860,6 +8751,237 @@
         state.lastSelectClick = null;
       }
       state.probeDiffEndpointDrag = null;
+    };
+
+    const beginArrowEndpointDrag = (component, pinId, options) => {
+      const pin = getArrowPinById(component, pinId);
+      if (!component || !pin) {
+        return;
+      }
+      setHoverTarget(null);
+      const selectionChanged = !state.selectionIds.includes(component.id);
+      if (selectionChanged) {
+        setSelection([component.id]);
+      }
+      const startWorld = options?.startWorld;
+      const hasStartWorld = startWorld
+        && Number.isFinite(startWorld.x)
+        && Number.isFinite(startWorld.y);
+      const startPoint = hasStartWorld
+        ? { x: Number(startWorld.x), y: Number(startWorld.y) }
+        : { x: pin.x, y: pin.y };
+      state.arrowEndpointDrag = {
+        componentId: String(component.id),
+        pinId: String(pin.id ?? "").trim().toUpperCase(),
+        pinOrigin: { x: pin.x, y: pin.y },
+        start: startPoint,
+        startClientX: Number.isFinite(options?.startClientX) ? options.startClientX : null,
+        startClientY: Number.isFinite(options?.startClientY) ? options.startClientY : null,
+        dragThresholdExceeded: false,
+        moved: false,
+        snapshot: cloneModel(state.model)
+      };
+      if (!selectionChanged) {
+        renderOverlay();
+      }
+    };
+
+    const updateArrowEndpointDrag = (point, event) => {
+      if (!state.arrowEndpointDrag) {
+        return;
+      }
+      const drag = state.arrowEndpointDrag;
+      if (!drag.dragThresholdExceeded) {
+        const hasClientStart = Number.isFinite(drag.startClientX) && Number.isFinite(drag.startClientY);
+        if (hasClientStart && Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)) {
+          const dxClient = event.clientX - drag.startClientX;
+          const dyClient = event.clientY - drag.startClientY;
+          if ((dxClient * dxClient) + (dyClient * dyClient) < DRAG_DEADZONE_PX * DRAG_DEADZONE_PX) {
+            return;
+          }
+        }
+        drag.dragThresholdExceeded = true;
+      }
+      const component = getComponent(drag.componentId);
+      const pin = getArrowPinById(component, drag.pinId);
+      if (!component || !pin || !point) {
+        return;
+      }
+      const dx = point.x - drag.start.x;
+      const dy = point.y - drag.start.y;
+      const moved = Math.abs(dx) > 0.0001 || Math.abs(dy) > 0.0001;
+      if (moved) {
+        drag.moved = true;
+      }
+      pin.x = drag.pinOrigin.x + dx;
+      pin.y = drag.pinOrigin.y + dy;
+      render();
+    };
+
+    const endArrowEndpointDrag = () => {
+      if (!state.arrowEndpointDrag) {
+        return;
+      }
+      const drag = state.arrowEndpointDrag;
+      const component = getComponent(drag.componentId);
+      if (drag.moved && component) {
+        const pin = getArrowPinById(component, drag.pinId);
+        if (pin && state.grid.snap && state.grid.size > 0) {
+          pin.x = snapCoord(pin.x);
+          pin.y = snapCoord(pin.y);
+        }
+        if (drag.snapshot) {
+          state.history.undo.push(drag.snapshot);
+          state.history.redo.length = 0;
+        }
+        render();
+        notifyModelChange();
+      } else {
+        renderOverlay();
+      }
+      if (drag.moved) {
+        state.lastSelectClick = null;
+      }
+      state.arrowEndpointDrag = null;
+    };
+
+    const beginBoxResizeDrag = (component, handleId, options) => {
+      const pins = getBoxResizePins(component);
+      if (!component || !pins || !handleId) {
+        return;
+      }
+      setHoverTarget(null);
+      const selectionChanged = !state.selectionIds.includes(component.id);
+      if (selectionChanged) {
+        setSelection([component.id]);
+      }
+      const pinA = pins[0];
+      const pinB = pins[1];
+      const startWorld = options?.startWorld;
+      const hasStartWorld = startWorld
+        && Number.isFinite(startWorld.x)
+        && Number.isFinite(startWorld.y);
+      const startPoint = hasStartWorld
+        ? { x: Number(startWorld.x), y: Number(startWorld.y) }
+        : {
+          x: (pinA.x + pinB.x) / 2,
+          y: (pinA.y + pinB.y) / 2
+        };
+      state.boxResizeDrag = {
+        componentId: String(component.id),
+        handleId: String(handleId).trim().toLowerCase(),
+        start: startPoint,
+        startClientX: Number.isFinite(options?.startClientX) ? options.startClientX : null,
+        startClientY: Number.isFinite(options?.startClientY) ? options.startClientY : null,
+        dragThresholdExceeded: false,
+        moved: false,
+        initialEdges: {
+          minX: Math.min(pinA.x, pinB.x),
+          maxX: Math.max(pinA.x, pinB.x),
+          minY: Math.min(pinA.y, pinB.y),
+          maxY: Math.max(pinA.y, pinB.y)
+        },
+        pinTargets: [
+          {
+            index: 0,
+            horizontal: pinA.x <= pinB.x ? "w" : "e",
+            vertical: pinA.y <= pinB.y ? "n" : "s"
+          },
+          {
+            index: 1,
+            horizontal: pinB.x <= pinA.x ? "w" : "e",
+            vertical: pinB.y <= pinA.y ? "n" : "s"
+          }
+        ],
+        snapshot: cloneModel(state.model)
+      };
+      if (!selectionChanged) {
+        renderOverlay();
+      }
+    };
+
+    const updateBoxResizeDrag = (point, event) => {
+      if (!state.boxResizeDrag) {
+        return;
+      }
+      const drag = state.boxResizeDrag;
+      if (!drag.dragThresholdExceeded) {
+        const hasClientStart = Number.isFinite(drag.startClientX) && Number.isFinite(drag.startClientY);
+        if (hasClientStart && Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)) {
+          const dxClient = event.clientX - drag.startClientX;
+          const dyClient = event.clientY - drag.startClientY;
+          if ((dxClient * dxClient) + (dyClient * dyClient) < DRAG_DEADZONE_PX * DRAG_DEADZONE_PX) {
+            return;
+          }
+        }
+        drag.dragThresholdExceeded = true;
+      }
+      const component = getComponent(drag.componentId);
+      if (!component || !point) {
+        return;
+      }
+      const pins = getBoxResizePins(component);
+      if (!pins) {
+        return;
+      }
+      const dx = point.x - drag.start.x;
+      const dy = point.y - drag.start.y;
+      const nextEdges = { ...drag.initialEdges };
+      if (drag.handleId.includes("w")) {
+        nextEdges.minX = drag.initialEdges.minX + dx;
+      } else if (drag.handleId.includes("e")) {
+        nextEdges.maxX = drag.initialEdges.maxX + dx;
+      }
+      if (drag.handleId.includes("n")) {
+        nextEdges.minY = drag.initialEdges.minY + dy;
+      } else if (drag.handleId.includes("s")) {
+        nextEdges.maxY = drag.initialEdges.maxY + dy;
+      }
+      const moved = Math.abs(dx) > 0.0001 || Math.abs(dy) > 0.0001;
+      if (moved) {
+        drag.moved = true;
+      }
+      drag.pinTargets.forEach((target) => {
+        const pin = component.pins?.[target.index];
+        if (!pin) {
+          return;
+        }
+        pin.x = target.horizontal === "w" ? nextEdges.minX : nextEdges.maxX;
+        pin.y = target.vertical === "n" ? nextEdges.minY : nextEdges.maxY;
+      });
+      render();
+    };
+
+    const endBoxResizeDrag = () => {
+      if (!state.boxResizeDrag) {
+        return;
+      }
+      const drag = state.boxResizeDrag;
+      const component = getComponent(drag.componentId);
+      if (drag.moved && component) {
+        drag.pinTargets.forEach((target) => {
+          const pin = component.pins?.[target.index];
+          if (!pin) {
+            return;
+          }
+          if (state.grid.snap && state.grid.size > 0) {
+            pin.x = snapCoord(pin.x);
+            pin.y = snapCoord(pin.y);
+          }
+        });
+        if (drag.snapshot) {
+          state.history.undo.push(drag.snapshot);
+          state.history.redo.length = 0;
+        }
+        render();
+        notifyModelChange();
+      } else {
+        renderOverlay();
+      }
+      if (drag.moved) {
+        state.lastSelectClick = null;
+      }
+      state.boxResizeDrag = null;
     };
 
     const beginDrag = (component, point, options) => {
@@ -8705,7 +9827,13 @@
       if (state.touchPinch || state.touchPointers.size !== 2) {
         return false;
       }
-      if (state.drag || state.selectionBox || state.wireNode || state.wireHandle || state.probeDiffEndpointDrag) {
+      if (state.drag
+        || state.selectionBox
+        || state.wireNode
+        || state.wireHandle
+        || state.probeDiffEndpointDrag
+        || state.arrowEndpointDrag
+        || state.boxResizeDrag) {
         return false;
       }
       const entries = Array.from(state.touchPointers.entries());
@@ -9289,6 +10417,85 @@
         return;
       }
       const toolType = String(state.tool?.type ?? "").toUpperCase();
+      const applyPlacedSelection = () => {
+        const latest = state.model.components[state.model.components.length - 1];
+        if (!latest) {
+          return;
+        }
+        setSelection(latest.id);
+        const latestType = String(latest.type ?? "").toUpperCase();
+        if (latestType === "NET" || latestType === "TEXT") {
+          invokeComponentEdit(latest);
+        }
+      };
+      if (toolType === "ARR") {
+        const point = snapPoint(world) ?? { x: world.x, y: world.y };
+        if (!state.arrowStart) {
+          state.arrowStart = { x: point.x, y: point.y };
+          state.arrowPreview = { x: point.x, y: point.y };
+          clearPreview();
+          renderOverlay();
+          return;
+        }
+        const start = state.arrowStart;
+        const end = { x: point.x, y: point.y };
+        const distance = Math.hypot(end.x - start.x, end.y - start.y);
+        if (!Number.isFinite(distance) || distance < 0.001) {
+          state.arrowPreview = end;
+          renderOverlay();
+          return;
+        }
+        state.arrowStart = null;
+        state.arrowPreview = null;
+        const placedArrow = addComponent({
+          type: "ARR",
+          value: String(getArrowThickness("")),
+          pins: [
+            { id: "A", name: "A", x: start.x, y: start.y },
+            { id: "B", name: "B", x: end.x, y: end.y }
+          ]
+        });
+        if (placedArrow) {
+          applyPlacedSelection();
+        }
+        return;
+      }
+      if (toolType === "BOX" || toolType === "DBOX") {
+        const point = snapPoint(world) ?? { x: world.x, y: world.y };
+        if (!state.boxStart) {
+          state.boxStart = { x: point.x, y: point.y };
+          state.boxPreview = { x: point.x, y: point.y };
+          clearPreview();
+          renderOverlay();
+          return;
+        }
+        const start = state.boxStart;
+        const end = { x: point.x, y: point.y };
+        const samePoint = Math.abs(end.x - start.x) < 0.001 && Math.abs(end.y - start.y) < 0.001;
+        if (samePoint) {
+          state.boxPreview = end;
+          renderOverlay();
+          return;
+        }
+        state.boxStart = null;
+        state.boxPreview = null;
+        const defaultStyle = getDefaultBoxAnnotationStyle({
+          type: toolType,
+          defaultLineType: toolType === "DBOX" ? "dashed" : "solid"
+        });
+        const placedBox = addComponent({
+          type: "BOX",
+          value: formatBoxAnnotationStyle(defaultStyle, { type: toolType }),
+          pins: [
+            { id: "A", name: "A", x: start.x, y: start.y },
+            { id: "B", name: "B", x: end.x, y: end.y }
+          ]
+        });
+        if (placedBox) {
+          applyPlacedSelection();
+        }
+        return;
+      }
       const probeType = resolveProbePlacementType(toolType, event);
       const probePlacement = isProbeComponentType(toolType)
         ? createProbeFromTool(probeType, world)
@@ -9312,14 +10519,7 @@
       if (!placed) {
         return;
       }
-      const latest = state.model.components[state.model.components.length - 1];
-      if (latest) {
-        setSelection(latest.id);
-        const latestType = String(latest.type ?? "").toUpperCase();
-        if (latestType === "NET" || latestType === "TEXT") {
-          invokeComponentEdit(latest);
-        }
-      }
+      applyPlacedSelection();
     };
 
     const handlePointerDownWireMode = (world) => {
@@ -9369,6 +10569,19 @@
 
     const hasAdditiveSelectModifier = (event) => Boolean(event?.shiftKey || event?.ctrlKey || event?.metaKey);
 
+    const applyWireHitSelection = (event, wireHit) => {
+      if (!wireHit?.wire?.id) {
+        return false;
+      }
+      state.lastSelectClick = null;
+      if (hasAdditiveSelectModifier(event)) {
+        toggleWireSelection(wireHit.wire.id, { preserveComponents: true });
+      } else {
+        setWireSelection(wireHit.wire.id);
+      }
+      return true;
+    };
+
     const handlePointerDownCtrlWireSelection = (event, world) => {
       if (!event.ctrlKey && !event.metaKey) {
         return false;
@@ -9409,10 +10622,38 @@
         });
         return true;
       }
+      const arrowEndpointHit = !labelComponent && !event.altKey && !event.ctrlKey && !event.metaKey
+        ? hitTestArrowEndpoint(world, { preferIds: state.selectionIds })
+        : null;
+      if (arrowEndpointHit?.component) {
+        beginArrowEndpointDrag(arrowEndpointHit.component, arrowEndpointHit.pinId, {
+          startWorld: world,
+          startClientX: event.clientX,
+          startClientY: event.clientY
+        });
+        return true;
+      }
+      const boxResizeHit = !labelComponent && !event.altKey && !event.ctrlKey && !event.metaKey
+        ? hitTestBoxResizeHandle(world, { preferIds: state.selectionIds })
+        : null;
+      if (boxResizeHit?.component) {
+        beginBoxResizeDrag(boxResizeHit.component, boxResizeHit.handleId, {
+          startWorld: world,
+          startClientX: event.clientX,
+          startClientY: event.clientY
+        });
+        return true;
+      }
       const hit = labelComponent || hitTestComponent(world, { preferIds: state.selectionIds });
       if (hit) {
-        const wasSelectedBeforePointerDown = state.selectionIds.includes(hit.id);
         const hitType = String(hit?.type ?? "").toUpperCase();
+        if (isLowPrioritySelectionType(hitType)) {
+          const overlappingWireHit = hitTestWireSegment(world);
+          if (applyWireHitSelection(event, overlappingWireHit)) {
+            return true;
+          }
+        }
+        const wasSelectedBeforePointerDown = state.selectionIds.includes(hit.id);
         if (hitType === "PD" && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
           const selectedPinIds = getProbeDiffSelectedPinIds(hit.id);
           const hasBothSelected = selectedPinIds.has("P+") && selectedPinIds.has("P-");
@@ -9493,13 +10734,7 @@
 
     const handlePointerDownFallbackSelection = (event, world) => {
       const wireHit = hitTestWireSegment(world);
-      if (wireHit) {
-        state.lastSelectClick = null;
-        if (hasAdditiveSelectModifier(event)) {
-          toggleWireSelection(wireHit.wire.id, { preserveComponents: true });
-        } else {
-          setWireSelection(wireHit.wire.id);
-        }
+      if (applyWireHitSelection(event, wireHit)) {
         return;
       }
       if (isTouchPointer(event) && state.tool.mode === "select" && !hasAdditiveSelectModifier(event)) {
@@ -9579,6 +10814,22 @@
         updateProbeDiffEndpointDrag(world, event);
         return true;
       }
+      if (state.arrowEndpointDrag) {
+        const world = clientToWorld(event.clientX, event.clientY);
+        if (!world) {
+          return true;
+        }
+        updateArrowEndpointDrag(world, event);
+        return true;
+      }
+      if (state.boxResizeDrag) {
+        const world = clientToWorld(event.clientX, event.clientY);
+        if (!world) {
+          return true;
+        }
+        updateBoxResizeDrag(world, event);
+        return true;
+      }
       if (state.wireNode) {
         const world = clientToWorld(event.clientX, event.clientY);
         if (!world) {
@@ -9623,11 +10874,26 @@
         if (!world) {
           return true;
         }
+        const toolType = String(state.tool.type ?? "").toUpperCase();
+        if (toolType === "ARR" && state.arrowStart) {
+          const previewPoint = snapPoint(world) ?? { x: world.x, y: world.y };
+          state.arrowPreview = { x: previewPoint.x, y: previewPoint.y };
+          clearPreview();
+          renderOverlay();
+          return true;
+        }
+        if ((toolType === "BOX" || toolType === "DBOX") && state.boxStart) {
+          const previewPoint = snapPoint(world) ?? { x: world.x, y: world.y };
+          state.boxPreview = { x: previewPoint.x, y: previewPoint.y };
+          clearPreview();
+          renderOverlay();
+          return true;
+        }
         if (isSelectionPlacementMode()) {
           setSelectionPlacementPosition(world);
           return true;
         }
-        if (String(state.tool.type ?? "").toUpperCase() === "PV" && state.probeDiffStart) {
+        if (toolType === "PV" && state.probeDiffStart) {
           const previewPoint = resolveProbeNodePoint(world) ?? snapPoint(world) ?? { x: world.x, y: world.y };
           state.probeDiffPreview = { x: previewPoint.x, y: previewPoint.y };
         } else if (state.probeDiffPreview) {
@@ -9806,6 +11072,12 @@
       if (state.probeDiffEndpointDrag) {
         endProbeDiffEndpointDrag(event);
       }
+      if (state.arrowEndpointDrag) {
+        endArrowEndpointDrag();
+      }
+      if (state.boxResizeDrag) {
+        endBoxResizeDrag();
+      }
       if (state.drag) {
         endDrag(event);
       }
@@ -9884,7 +11156,10 @@
       state.preview = {
         type,
         position: { x: world.x, y: world.y },
-        snapped
+        snapped,
+        ...(String(type ?? "").toUpperCase() === "GND"
+          ? { groundVariant: normalizeGroundVariantValue(state.groundPlacementVariant) }
+          : {})
       };
       renderOverlay();
     };
@@ -9928,6 +11203,12 @@
           : {}),
         ...(Object.prototype.hasOwnProperty.call(component, "textUnderline")
           ? { textUnderline: component.textUnderline === true }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(component, "groundVariant")
+          ? { groundVariant: normalizeGroundVariantValue(component.groundVariant) }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(component, "resistorStyle")
+          ? { resistorStyle: normalizeResistorStyleValue(component.resistorStyle) }
           : {}),
         ...(Object.prototype.hasOwnProperty.call(component, "probeDiffRotations")
           ? {
@@ -10137,6 +11418,12 @@
       state.wirePreview = null;
       state.probeDiffStart = null;
       state.probeDiffPreview = null;
+      state.arrowStart = null;
+      state.arrowPreview = null;
+      state.arrowEndpointDrag = null;
+      state.boxResizeDrag = null;
+      state.boxStart = null;
+      state.boxPreview = null;
       state.lastSelectClick = null;
       setSelectionWithWires([], []);
       renderOverlay();
@@ -10198,6 +11485,12 @@
               : {}),
             ...(Object.prototype.hasOwnProperty.call(template, "textUnderline")
               ? { textUnderline: template.textUnderline === true }
+              : {}),
+            ...(Object.prototype.hasOwnProperty.call(template, "groundVariant")
+              ? { groundVariant: normalizeGroundVariantValue(template.groundVariant) }
+              : {}),
+            ...(Object.prototype.hasOwnProperty.call(template, "resistorStyle")
+              ? { resistorStyle: normalizeResistorStyleValue(template.resistorStyle) }
               : {}),
             ...(Object.prototype.hasOwnProperty.call(template, "probeDiffRotations")
               ? {
@@ -10388,6 +11681,27 @@
       cancelWirePlacement,
       setDragType: (type) => {
         state.dragType = type ? String(type).toUpperCase() : null;
+      },
+      getContentBounds: () => {
+        const components = Array.isArray(state.model?.components) ? state.model.components : [];
+        const wires = Array.isArray(state.model?.wires) ? state.model.wires : [];
+        if (!components.length && !wires.length) {
+          return null;
+        }
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        const expand = (bounds) => {
+          if (!bounds) { return; }
+          if (bounds.minX < minX) { minX = bounds.minX; }
+          if (bounds.maxX > maxX) { maxX = bounds.maxX; }
+          if (bounds.minY < minY) { minY = bounds.minY; }
+          if (bounds.maxY > maxY) { maxY = bounds.maxY; }
+        };
+        components.forEach((comp) => expand(getComponentBounds(comp, 0, state.probeLabels)));
+        wires.forEach((wire) => expand(getWireBounds(wire)));
+        if (!Number.isFinite(minX)) {
+          return null;
+        }
+        return { minX, maxX, minY, maxY };
       }
     };
   };
@@ -10399,4 +11713,3 @@
     self.SpjutSimSchematic = api;
   }
 })();
-

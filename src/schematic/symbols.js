@@ -119,8 +119,43 @@
       pins: [
         { id: "A", name: "A", x: 0, y: 0 }
       ]
+    },
+    IMG: {
+      type: "IMG",
+      label: "Image",
+      pins: [
+        { id: "A", name: "A", x: 0, y: 0 }
+      ]
+    },
+    ARR: {
+      type: "ARR",
+      label: "Arrow",
+      pins: [
+        { id: "A", name: "A", x: 0, y: 0 }
+      ]
+    },
+    BOX: {
+      type: "BOX",
+      label: "Box",
+      pins: [
+        { id: "A", name: "A", x: 0, y: 0 }
+      ]
+    },
+    DBOX: {
+      type: "DBOX",
+      label: "Dashed Rectangle",
+      pins: [
+        { id: "A", name: "A", x: 0, y: 0 }
+      ]
     }
   };
+  const ANNOTATION_DEFAULT_NAMES = Object.freeze({
+    TEXT: "Text",
+    IMG: "Image",
+    ARR: "Arrow",
+    BOX: "Box",
+    DBOX: "Dashed Rectangle"
+  });
 
   const cloneSymbol = (symbol) => ({
     type: symbol.type,
@@ -154,9 +189,7 @@
       : (symbol.type === "SW" ? "A" : "");
     return {
       id: String(id ?? ""),
-      name: symbol.type === "TEXT"
-        ? "Text"
-        : String(id ?? ""),
+      name: ANNOTATION_DEFAULT_NAMES[symbol.type] ?? String(id ?? ""),
       type: symbol.type,
       value: resolvedValue,
       rotation: 0,

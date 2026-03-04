@@ -35,6 +35,56 @@
       270: 180
     })
   });
+  const ANNOTATION_SHAPES = Object.freeze({
+    IMG: Object.freeze({
+      type: "IMG",
+      symbol: "image",
+      halfWidth: 14,
+      halfHeight: 10
+    }),
+    ARR: Object.freeze({
+      type: "ARR",
+      symbol: "arrow",
+      halfWidth: 14,
+      halfHeight: 8
+    }),
+    BOX: Object.freeze({
+      type: "BOX",
+      symbol: "box",
+      halfWidth: 14,
+      halfHeight: 10
+    }),
+    DBOX: Object.freeze({
+      type: "DBOX",
+      symbol: "dashed-rectangle",
+      halfWidth: 14,
+      halfHeight: 10
+    })
+  });
+  const DEFAULT_ARROW_THICKNESS = 2;
+  const MIN_ARROW_THICKNESS = 1;
+  const MAX_ARROW_THICKNESS = 12;
+  const DEFAULT_ARROW_LINE_TYPE = "solid";
+  const DEFAULT_ARROW_HEAD_LENGTH = 8;
+  const DEFAULT_ARROW_HEAD_HALF_HEIGHT = 4.5;
+  const MIN_ARROW_HEAD_LENGTH = 4;
+  const DEFAULT_ARROW_OPACITY_PERCENT = 100;
+  const MIN_ARROW_OPACITY_PERCENT = 0;
+  const MAX_ARROW_OPACITY_PERCENT = 100;
+  const DEFAULT_BOX_THICKNESS = 2;
+  const MIN_BOX_THICKNESS = 1;
+  const MAX_BOX_THICKNESS = 12;
+  const BOX_LINE_TYPES = Object.freeze(["solid", "dashed", "dotted"]);
+  const BOX_LINE_TYPE_SET = new Set(BOX_LINE_TYPES);
+  const DEFAULT_BOX_LINE_TYPE = "solid";
+  const DEFAULT_BOX_FILL_COLOR = "#d8d1c6";
+  const DEFAULT_BOX_FILL_ENABLED = false;
+  const DEFAULT_BOX_OPACITY_PERCENT = 100;
+  const MIN_BOX_OPACITY_PERCENT = 0;
+  const MAX_BOX_OPACITY_PERCENT = 100;
+  const DEFAULT_TEXT_ANNOTATION_OPACITY_PERCENT = 100;
+  const MIN_TEXT_ANNOTATION_OPACITY_PERCENT = 0;
+  const MAX_TEXT_ANNOTATION_OPACITY_PERCENT = 100;
 
   const snapQuarterTurn = (angle) => {
     if (!Number.isFinite(angle)) {
@@ -43,6 +93,18 @@
     const snapped = Math.round(angle / 90) * 90;
     return ((snapped % 360) + 360) % 360;
   };
+
+  const requireSchematicMethod = (name) => {
+    const api = typeof self !== "undefined" ? (self.SpjutSimSchematic ?? {}) : {};
+    const method = api?.[name];
+    if (typeof method !== "function") {
+      throw new Error(`Schematic API missing '${name}'. Check src/schematic/model.js load order.`);
+    }
+    return method.bind(api);
+  };
+
+  const normalizeGroundVariant = requireSchematicMethod("normalizeGroundVariant");
+  const normalizeResistorStyle = requireSchematicMethod("normalizeResistorStyle");
 
   const resolveNamedNodeLabelStyle = (style) => {
     const base = style ?? DEFAULT_NET_LABEL_STYLE;
@@ -154,6 +216,470 @@
       return { x: y, y: -x };
     }
     return { x, y };
+  };
+
+  const getAnnotationShape = (type) => {
+    const normalized = String(type ?? "").trim().toUpperCase();
+    return ANNOTATION_SHAPES[normalized] ?? null;
+  };
+
+  const isAnnotationShapeType = (type) => Boolean(getAnnotationShape(type));
+
+  const getAnnotationSymbolName = (type) => {
+    const shape = getAnnotationShape(type);
+    return shape ? shape.symbol : null;
+  };
+
+  const getAnnotationExtents = (type, rotation) => {
+    const shape = getAnnotationShape(type);
+    if (!shape) {
+      return null;
+    }
+    const corners = [
+      rotateQuarterPoint(-shape.halfWidth, -shape.halfHeight, rotation),
+      rotateQuarterPoint(-shape.halfWidth, shape.halfHeight, rotation),
+      rotateQuarterPoint(shape.halfWidth, -shape.halfHeight, rotation),
+      rotateQuarterPoint(shape.halfWidth, shape.halfHeight, rotation)
+    ];
+    const xs = corners.map((point) => point.x);
+    const ys = corners.map((point) => point.y);
+    return {
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      minY: Math.min(...ys),
+      maxY: Math.max(...ys)
+    };
+  };
+
+  const normalizeArrowThickness = (value) => {
+    const parsed = Number.parseFloat(String(value ?? "").trim());
+    if (!Number.isFinite(parsed)) {
+      return DEFAULT_ARROW_THICKNESS;
+    }
+    return Math.max(MIN_ARROW_THICKNESS, Math.min(MAX_ARROW_THICKNESS, parsed));
+  };
+
+  const normalizeArrowAnnotationLineType = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (BOX_LINE_TYPE_SET.has(normalized)) {
+      return normalized;
+    }
+    if (normalized === "dash" || normalized === "dash-line" || normalized === "dashline") {
+      return "dashed";
+    }
+    if (normalized === "dot" || normalized === "dot-line" || normalized === "dotline") {
+      return "dotted";
+    }
+    return DEFAULT_ARROW_LINE_TYPE;
+  };
+
+  const getAnnotationDashScale = (thickness, baselineThickness) => {
+    const parsedThickness = Number(thickness);
+    const parsedBaseline = Number(baselineThickness);
+    const safeThickness = Number.isFinite(parsedThickness) && parsedThickness > 0
+      ? parsedThickness
+      : 1;
+    const safeBaseline = Number.isFinite(parsedBaseline) && parsedBaseline > 0
+      ? parsedBaseline
+      : 1;
+    return Math.max(0.75, Math.sqrt(safeThickness / safeBaseline));
+  };
+
+  const formatDashLength = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return "";
+    }
+    const rounded = Math.round(parsed * 100) / 100;
+    const normalized = Number.isInteger(rounded) ? String(rounded) : String(rounded);
+    return normalized === "0" ? "" : normalized;
+  };
+
+  const formatDashArray = (segments) => {
+    if (!Array.isArray(segments) || !segments.length) {
+      return "";
+    }
+    return segments
+      .map((segment) => formatDashLength(segment))
+      .filter(Boolean)
+      .join(" ");
+  };
+
+  const getArrowAnnotationDasharray = (lineType, thickness) => {
+    const normalized = normalizeArrowAnnotationLineType(lineType);
+    const scale = getAnnotationDashScale(thickness, DEFAULT_ARROW_THICKNESS);
+    if (normalized === "dashed") {
+      return formatDashArray([6 * scale, 4 * scale]);
+    }
+    if (normalized === "dotted") {
+      return formatDashArray([1.5 * scale, 4 * scale]);
+    }
+    return "";
+  };
+
+  const normalizeArrowOpacityPercent = (value) => {
+    const parsed = Number.parseFloat(String(value ?? "").trim());
+    if (!Number.isFinite(parsed)) {
+      return DEFAULT_ARROW_OPACITY_PERCENT;
+    }
+    const asPercent = parsed <= 1 && parsed >= 0
+      ? parsed * 100
+      : parsed;
+    const rounded = Math.round(asPercent);
+    return Math.max(MIN_ARROW_OPACITY_PERCENT, Math.min(MAX_ARROW_OPACITY_PERCENT, rounded));
+  };
+
+  const getDefaultArrowAnnotationStyle = () => {
+    const opacityPercent = DEFAULT_ARROW_OPACITY_PERCENT;
+    return {
+      thickness: DEFAULT_ARROW_THICKNESS,
+      lineType: DEFAULT_ARROW_LINE_TYPE,
+      opacityPercent,
+      opacity: opacityPercent / 100
+    };
+  };
+
+  const parseArrowAnnotationStyle = (value) => {
+    const defaults = getDefaultArrowAnnotationStyle();
+    const parsed = {
+      thickness: defaults.thickness,
+      lineType: defaults.lineType,
+      opacityPercent: defaults.opacityPercent
+    };
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      parsed.thickness = normalizeArrowThickness(
+        value.thickness ?? value.width ?? value.strokeWidth ?? value.arrowThickness
+      );
+      const rawLineType = value.lineType ?? value.line ?? value.style;
+      if (rawLineType !== undefined && rawLineType !== null && String(rawLineType).trim()) {
+        parsed.lineType = normalizeArrowAnnotationLineType(rawLineType);
+      }
+      parsed.opacityPercent = normalizeArrowOpacityPercent(
+        value.opacityPercent
+          ?? value.opacity
+          ?? value.alpha
+      );
+      return {
+        ...parsed,
+        opacity: parsed.opacityPercent / 100
+      };
+    }
+
+    const text = String(value ?? "").trim();
+    if (text) {
+      if (/^[-+]?\d*\.?\d+$/.test(text)) {
+        parsed.thickness = normalizeArrowThickness(text);
+      } else {
+        const tokens = text.split(/[\s,;]+/).map((token) => token.trim()).filter(Boolean);
+        tokens.forEach((token) => {
+          const lowered = token.toLowerCase();
+          if (BOX_LINE_TYPE_SET.has(lowered)) {
+            parsed.lineType = normalizeArrowAnnotationLineType(lowered);
+            return;
+          }
+          const pair = token.match(/^([^=]+)=(.*)$/);
+          if (!pair) {
+            return;
+          }
+          const key = String(pair[1] ?? "").trim().toLowerCase();
+          const raw = String(pair[2] ?? "").trim();
+          if (!key) {
+            return;
+          }
+          if (key === "thickness" || key === "width" || key === "w" || key === "t") {
+            parsed.thickness = normalizeArrowThickness(raw);
+            return;
+          }
+          if (key === "line" || key === "linetype" || key === "style") {
+            parsed.lineType = normalizeArrowAnnotationLineType(raw);
+            return;
+          }
+          if (key === "opacity" || key === "alpha" || key === "op") {
+            parsed.opacityPercent = normalizeArrowOpacityPercent(raw);
+          }
+        });
+      }
+    }
+
+    return {
+      ...parsed,
+      opacity: parsed.opacityPercent / 100
+    };
+  };
+
+  const formatArrowAnnotationStyle = (value) => {
+    const style = parseArrowAnnotationStyle(value);
+    const thickness = Number.isInteger(style.thickness)
+      ? String(style.thickness)
+      : String(Math.round(style.thickness * 100) / 100);
+    const opacityPercent = Math.round(style.opacityPercent);
+    return `thickness=${thickness} line=${style.lineType} opacity=${opacityPercent}`;
+  };
+
+  const normalizeBoxAnnotationThickness = (value) => {
+    const parsed = Number.parseFloat(String(value ?? "").trim());
+    if (!Number.isFinite(parsed)) {
+      return DEFAULT_BOX_THICKNESS;
+    }
+    return Math.max(MIN_BOX_THICKNESS, Math.min(MAX_BOX_THICKNESS, parsed));
+  };
+
+  const normalizeBoxAnnotationLineType = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (BOX_LINE_TYPE_SET.has(normalized)) {
+      return normalized;
+    }
+    if (normalized === "dash" || normalized === "dash-line" || normalized === "dashline") {
+      return "dashed";
+    }
+    if (normalized === "dot" || normalized === "dot-line" || normalized === "dotline") {
+      return "dotted";
+    }
+    return DEFAULT_BOX_LINE_TYPE;
+  };
+
+  const getBoxAnnotationDasharray = (lineType, thickness) => {
+    const normalized = normalizeBoxAnnotationLineType(lineType);
+    const scale = getAnnotationDashScale(thickness, DEFAULT_BOX_THICKNESS);
+    if (normalized === "dashed") {
+      return formatDashArray([6 * scale, 4 * scale]);
+    }
+    if (normalized === "dotted") {
+      return formatDashArray([1.5 * scale, 4 * scale]);
+    }
+    return "";
+  };
+
+  const normalizeBoxOpacityPercent = (value) => {
+    const parsed = Number.parseFloat(String(value ?? "").trim());
+    if (!Number.isFinite(parsed)) {
+      return DEFAULT_BOX_OPACITY_PERCENT;
+    }
+    const asPercent = parsed <= 1 && parsed >= 0
+      ? parsed * 100
+      : parsed;
+    const rounded = Math.round(asPercent);
+    return Math.max(MIN_BOX_OPACITY_PERCENT, Math.min(MAX_BOX_OPACITY_PERCENT, rounded));
+  };
+
+  const normalizeTextAnnotationOpacityPercent = (value) => {
+    const parsed = Number.parseFloat(String(value ?? "").trim());
+    if (!Number.isFinite(parsed)) {
+      return DEFAULT_TEXT_ANNOTATION_OPACITY_PERCENT;
+    }
+    const asPercent = parsed <= 1 && parsed >= 0
+      ? parsed * 100
+      : parsed;
+    const rounded = Math.round(asPercent);
+    return Math.max(MIN_TEXT_ANNOTATION_OPACITY_PERCENT, Math.min(MAX_TEXT_ANNOTATION_OPACITY_PERCENT, rounded));
+  };
+
+  const getDefaultTextAnnotationStyle = () => {
+    const opacityPercent = DEFAULT_TEXT_ANNOTATION_OPACITY_PERCENT;
+    return {
+      opacityPercent,
+      opacity: opacityPercent / 100
+    };
+  };
+
+  const parseTextAnnotationStyle = (value) => {
+    const defaults = getDefaultTextAnnotationStyle();
+    const parsed = {
+      opacityPercent: defaults.opacityPercent
+    };
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      parsed.opacityPercent = normalizeTextAnnotationOpacityPercent(
+        value.opacityPercent
+          ?? value.opacity
+          ?? value.alpha
+      );
+      return {
+        ...parsed,
+        opacity: parsed.opacityPercent / 100
+      };
+    }
+
+    const text = String(value ?? "").trim();
+    if (text) {
+      if (/^[-+]?\d*\.?\d+$/.test(text)) {
+        parsed.opacityPercent = normalizeTextAnnotationOpacityPercent(text);
+      } else {
+        const tokens = text.split(/[\s,;]+/).map((token) => token.trim()).filter(Boolean);
+        tokens.forEach((token) => {
+          const pair = token.match(/^([^=]+)=(.*)$/);
+          if (!pair) {
+            return;
+          }
+          const key = String(pair[1] ?? "").trim().toLowerCase();
+          const raw = String(pair[2] ?? "").trim();
+          if (!key) {
+            return;
+          }
+          if (key === "opacity" || key === "alpha" || key === "op") {
+            parsed.opacityPercent = normalizeTextAnnotationOpacityPercent(raw);
+          }
+        });
+      }
+    }
+    return {
+      ...parsed,
+      opacity: parsed.opacityPercent / 100
+    };
+  };
+
+  const formatTextAnnotationStyle = (value) => {
+    const style = parseTextAnnotationStyle(value);
+    return `opacity=${Math.round(style.opacityPercent)}`;
+  };
+
+  const normalizeBoxFillColor = (value) => {
+    const text = String(value ?? "").trim().toLowerCase();
+    if (!/^#[0-9a-f]{6}$/.test(text)) {
+      return DEFAULT_BOX_FILL_COLOR;
+    }
+    return text;
+  };
+
+  const parseBooleanFlag = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+    if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+      return true;
+    }
+    if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+      return false;
+    }
+    return null;
+  };
+
+  const getDefaultBoxAnnotationStyle = (options) => {
+    const explicitLineType = String(options?.defaultLineType ?? "").trim();
+    const type = String(options?.type ?? "").trim().toUpperCase();
+    const defaultLineType = explicitLineType
+      ? normalizeBoxAnnotationLineType(explicitLineType)
+      : (type === "DBOX" ? "dashed" : DEFAULT_BOX_LINE_TYPE);
+    const opacityPercent = DEFAULT_BOX_OPACITY_PERCENT;
+    return {
+      thickness: DEFAULT_BOX_THICKNESS,
+      lineType: defaultLineType,
+      fillEnabled: DEFAULT_BOX_FILL_ENABLED,
+      fillColor: DEFAULT_BOX_FILL_COLOR,
+      opacityPercent,
+      opacity: opacityPercent / 100
+    };
+  };
+
+  const parseBoxAnnotationStyle = (value, options) => {
+    const defaults = getDefaultBoxAnnotationStyle(options);
+    const parsed = {
+      thickness: defaults.thickness,
+      lineType: defaults.lineType,
+      fillEnabled: defaults.fillEnabled,
+      fillColor: defaults.fillColor,
+      opacityPercent: defaults.opacityPercent
+    };
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      parsed.thickness = normalizeBoxAnnotationThickness(
+        value.thickness ?? value.width ?? value.strokeWidth
+      );
+      const rawLineType = value.lineType ?? value.line ?? value.style;
+      if (rawLineType !== undefined && rawLineType !== null && String(rawLineType).trim()) {
+        parsed.lineType = normalizeBoxAnnotationLineType(rawLineType);
+      }
+      const fillFlag = parseBooleanFlag(
+        value.fillEnabled
+          ?? value.fill
+          ?? value.filled
+      );
+      if (fillFlag !== null) {
+        parsed.fillEnabled = fillFlag;
+      }
+      parsed.fillColor = normalizeBoxFillColor(
+        value.fillColor
+          ?? value.color
+          ?? value.fc
+      );
+      parsed.opacityPercent = normalizeBoxOpacityPercent(
+        value.opacityPercent
+          ?? value.opacity
+          ?? value.alpha
+      );
+      return {
+        ...parsed,
+        opacity: parsed.opacityPercent / 100
+      };
+    }
+
+    const text = String(value ?? "").trim();
+    if (text) {
+      if (/^[-+]?\d*\.?\d+$/.test(text)) {
+        parsed.thickness = normalizeBoxAnnotationThickness(text);
+      } else {
+        const tokens = text.split(/[\s,;]+/).map((token) => token.trim()).filter(Boolean);
+        tokens.forEach((token) => {
+          const lowered = token.toLowerCase();
+          if (BOX_LINE_TYPE_SET.has(lowered)) {
+            parsed.lineType = normalizeBoxAnnotationLineType(lowered);
+            return;
+          }
+          if (lowered === "fill" || lowered === "filled") {
+            parsed.fillEnabled = true;
+            return;
+          }
+          if (lowered === "nofill" || lowered === "outline") {
+            parsed.fillEnabled = false;
+            return;
+          }
+          const pair = token.match(/^([^=]+)=(.*)$/);
+          if (!pair) {
+            return;
+          }
+          const key = String(pair[1] ?? "").trim().toLowerCase();
+          const raw = String(pair[2] ?? "").trim();
+          if (!key) {
+            return;
+          }
+          if (key === "thickness" || key === "width" || key === "w" || key === "t") {
+            parsed.thickness = normalizeBoxAnnotationThickness(raw);
+            return;
+          }
+          if (key === "line" || key === "linetype" || key === "style") {
+            parsed.lineType = normalizeBoxAnnotationLineType(raw);
+            return;
+          }
+          if (key === "fill" || key === "filled") {
+            const fillFlag = parseBooleanFlag(raw);
+            if (fillFlag !== null) {
+              parsed.fillEnabled = fillFlag;
+            }
+            return;
+          }
+          if (key === "color" || key === "fillcolor" || key === "fill_color" || key === "fc") {
+            parsed.fillColor = normalizeBoxFillColor(raw);
+            return;
+          }
+          if (key === "opacity" || key === "alpha" || key === "op") {
+            parsed.opacityPercent = normalizeBoxOpacityPercent(raw);
+          }
+        });
+      }
+    }
+
+    return {
+      ...parsed,
+      opacity: parsed.opacityPercent / 100
+    };
+  };
+
+  const formatBoxAnnotationStyle = (value, options) => {
+    const style = parseBoxAnnotationStyle(value, options);
+    const thickness = Number.isInteger(style.thickness)
+      ? String(style.thickness)
+      : String(Math.round(style.thickness * 100) / 100);
+    const opacityPercent = Math.round(style.opacityPercent);
+    return `thickness=${thickness} line=${style.lineType} fill=${style.fillEnabled ? "on" : "off"} color=${style.fillColor} opacity=${opacityPercent}`;
   };
 
   const resolveProbeStyle = (style) => {
@@ -675,15 +1201,62 @@
   const resolveTextFill = (style, ctx) =>
     style?.stroke ?? ctx?.stroke ?? DEFAULT_STROKE;
 
-  const drawGroundShape = (ctx, group, style) => {
+  const getGroundLocalExtents = (variant) => {
+    const normalized = normalizeGroundVariant(variant);
+    if (normalized === "chassis") {
+      return { minX: -8, maxX: 8, minY: 0, maxY: 18 };
+    }
+    if (normalized === "signal") {
+      return { minX: -8, maxX: 8, minY: 0, maxY: 20 };
+    }
+    return { minX: -8, maxX: 8, minY: 0, maxY: 18 };
+  };
+
+  const getGroundSymbolExtents = (rotation, variant) => {
+    const local = getGroundLocalExtents(variant);
+    const corners = [
+      rotateProbePoint(local.minX, local.minY, rotation),
+      rotateProbePoint(local.minX, local.maxY, rotation),
+      rotateProbePoint(local.maxX, local.minY, rotation),
+      rotateProbePoint(local.maxX, local.maxY, rotation)
+    ];
+    const xs = corners.map((point) => point.x);
+    const ys = corners.map((point) => point.y);
+    return {
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      minY: Math.min(...ys),
+      maxY: Math.max(...ys)
+    };
+  };
+
+  const drawGroundShape = (ctx, group, style, options) => {
     if (!ctx || !group || typeof ctx.line !== "function") {
       return false;
     }
     const stroke = resolveStroke(style, ctx);
-    ctx.line(group, 0, 0, 0, 8, stroke);
-    ctx.line(group, -8, 8, 8, 8, stroke);
-    ctx.line(group, -6, 12, 6, 12, stroke);
-    ctx.line(group, -4, 16, 4, 16, stroke);
+    const variant = normalizeGroundVariant(options?.variant);
+    if (variant === "chassis") {
+      ctx.line(group, 0, 0, 0, 12, stroke);
+      ctx.line(group, -8, 12, 8, 12, stroke);
+      const dy = 6;
+      const dx = -4;
+      ctx.line(group, -8, 12, -8 + dx, 12 + dy, stroke);
+      ctx.line(group, 0, 12, dx, 12 + dy, stroke);
+      ctx.line(group, 8, 12, 8 + dx, 12 + dy, stroke);
+      return true;
+    }
+    if (variant === "signal") {
+      ctx.line(group, 0, 0, 0, 10, stroke);
+      ctx.line(group, -8, 10, 8, 10, stroke);
+      ctx.line(group, -8, 10, 0, 20, stroke);
+      ctx.line(group, 8, 10, 0, 20, stroke);
+      return true;
+    }
+    ctx.line(group, 0, 0, 0, 10, stroke);
+    ctx.line(group, -8, 10, 8, 10, stroke);
+    ctx.line(group, -5, 14, 5, 14, stroke);
+    ctx.line(group, -2, 18, 2, 18, stroke);
     return true;
   };
 
@@ -761,17 +1334,194 @@
     return true;
   };
 
-  const drawResistorSymbol = (ctx, group, length, style) => {
+  const drawAnnotationBox = (ctx, group, style, shape, dashed) => {
+    if (!ctx || !group || typeof ctx.line !== "function") {
+      return false;
+    }
+    const boxStyle = parseBoxAnnotationStyle(style, {
+      defaultLineType: dashed ? "dashed" : DEFAULT_BOX_LINE_TYPE
+    });
+    const stroke = resolveStroke({
+      ...style,
+      width: boxStyle.thickness
+    }, ctx);
+    const dasharray = getBoxAnnotationDasharray(boxStyle.lineType, boxStyle.thickness);
+    const strokeCap = boxStyle.lineType === "dotted" ? "round" : stroke.cap;
+    const fill = boxStyle.fillEnabled ? boxStyle.fillColor : "none";
+    const left = -shape.halfWidth;
+    const right = shape.halfWidth;
+    const top = -shape.halfHeight;
+    const bottom = shape.halfHeight;
+    if (typeof ctx.path === "function") {
+      const outline = ctx.path(
+        group,
+        `M ${left} ${top} L ${right} ${top} L ${right} ${bottom} L ${left} ${bottom} Z`,
+        {
+          ...stroke,
+          cap: strokeCap
+        }
+      );
+      if (outline && typeof outline.setAttribute === "function") {
+        outline.setAttribute("fill", fill);
+        if (dasharray) {
+          outline.setAttribute("stroke-dasharray", dasharray);
+        }
+        if (strokeCap) {
+          outline.setAttribute("stroke-linecap", strokeCap);
+        }
+      }
+      return true;
+    }
+    const fallbackStroke = {
+      ...stroke,
+      cap: strokeCap
+    };
+    ctx.line(group, left, top, right, top, fallbackStroke);
+    ctx.line(group, right, top, right, bottom, fallbackStroke);
+    ctx.line(group, right, bottom, left, bottom, fallbackStroke);
+    ctx.line(group, left, bottom, left, top, fallbackStroke);
+    return true;
+  };
+
+  const drawAnnotationImage = (ctx, group, style, shape) => {
+    if (!ctx || !group || typeof ctx.line !== "function" || typeof ctx.circle !== "function") {
+      return false;
+    }
     const stroke = resolveStroke(style, ctx);
+    const left = -shape.halfWidth;
+    const right = shape.halfWidth;
+    const top = -shape.halfHeight;
+    const bottom = shape.halfHeight;
+    if (!drawAnnotationBox(ctx, group, style, shape, false)) {
+      return false;
+    }
+    if (typeof ctx.polyline === "function") {
+      ctx.polyline(
+        group,
+        `${left + 3},${bottom - 3} ${left + 8},${top + 3} ${left + 13},${bottom - 3} ${right - 3},${top + 1}`,
+        stroke
+      );
+    } else {
+      ctx.line(group, left + 3, bottom - 3, left + 8, top + 3, stroke);
+      ctx.line(group, left + 8, top + 3, left + 13, bottom - 3, stroke);
+      ctx.line(group, left + 13, bottom - 3, right - 3, top + 1, stroke);
+    }
+    ctx.circle(group, right - 5, top + 4, 2.2, {
+      ...stroke,
+      fill: resolveTextFill(style, ctx)
+    });
+    return true;
+  };
+
+  const drawAnnotationArrow = (ctx, group, style, shape, length) => {
+    if (!ctx || !group || typeof ctx.line !== "function") {
+      return false;
+    }
+    const baseStroke = resolveStroke(style, ctx);
+    const arrowStyle = parseArrowAnnotationStyle({
+      thickness: style?.arrowThickness ?? style?.thickness ?? baseStroke.width,
+      lineType: style?.lineType ?? style?.line,
+      opacityPercent: style?.opacityPercent ?? style?.opacity ?? style?.alpha
+    });
+    const thickness = arrowStyle.thickness;
+    const lineCap = arrowStyle.lineType === "dotted" ? "round" : "butt";
+    const dasharray = getArrowAnnotationDasharray(arrowStyle.lineType, thickness);
+    const stroke = {
+      ...baseStroke,
+      width: thickness,
+      cap: lineCap
+    };
+    const headStroke = {
+      ...baseStroke,
+      width: thickness,
+      cap: lineCap
+    };
+    const hasLength = Number.isFinite(length) && length > 2;
+    const bodyLength = hasLength
+      ? Number(length)
+      : Math.max(10, (shape.halfWidth * 2) - 2);
+    const startX = hasLength ? 0 : -shape.halfWidth + 1;
+    const endX = hasLength ? (startX + bodyLength) : (shape.halfWidth - 2);
+    const thicknessDelta = Math.max(0, thickness - DEFAULT_ARROW_THICKNESS);
+    const nominalHeadLength = Math.max(
+      MIN_ARROW_HEAD_LENGTH,
+      DEFAULT_ARROW_HEAD_LENGTH + (thicknessDelta * 0.9)
+    );
+    const maxHeadLength = Math.max(MIN_ARROW_HEAD_LENGTH, bodyLength * 0.45);
+    const usableHeadLength = Math.min(nominalHeadLength, maxHeadLength);
+    const headBackX = endX - usableHeadLength;
+    const nominalHeadHalfHeight = Math.max(
+      3,
+      DEFAULT_ARROW_HEAD_HALF_HEIGHT + (thicknessDelta * 0.5)
+    );
+    const headScale = usableHeadLength / nominalHeadLength;
+    const headHalfHeight = Math.max(3, nominalHeadHalfHeight * headScale);
+    const shaft = ctx.line(group, startX, 0, endX, 0, stroke);
+    if (shaft && typeof shaft.setAttribute === "function" && dasharray) {
+      shaft.setAttribute("stroke-dasharray", dasharray);
+    }
+    if (typeof ctx.path === "function") {
+      const head = ctx.path(group, `M ${headBackX} -${headHalfHeight} L ${endX} 0 L ${headBackX} ${headHalfHeight}`, headStroke);
+      if (head && typeof head.setAttribute === "function" && dasharray) {
+        head.setAttribute("stroke-dasharray", dasharray);
+      }
+    } else {
+      const upperHead = ctx.line(group, headBackX, -headHalfHeight, endX, 0, headStroke);
+      const lowerHead = ctx.line(group, headBackX, headHalfHeight, endX, 0, headStroke);
+      if (dasharray) {
+        if (upperHead && typeof upperHead.setAttribute === "function") {
+          upperHead.setAttribute("stroke-dasharray", dasharray);
+        }
+        if (lowerHead && typeof lowerHead.setAttribute === "function") {
+          lowerHead.setAttribute("stroke-dasharray", dasharray);
+        }
+      }
+    }
+    return true;
+  };
+
+  const ANNOTATION_DRAW_HANDLERS = Object.freeze({
+    IMG: (ctx, group, style, shape, length) => drawAnnotationImage(ctx, group, style, shape, length),
+    ARR: (ctx, group, style, shape, length) => drawAnnotationArrow(ctx, group, style, shape, length),
+    BOX: (ctx, group, style, shape, length) => drawAnnotationBox(ctx, group, style, shape, false, length),
+    DBOX: (ctx, group, style, shape, length) => drawAnnotationBox(ctx, group, style, shape, true, length)
+  });
+
+  const drawAnnotationShape = (ctx, group, type, style, length) => {
+    const shape = getAnnotationShape(type);
+    if (!shape) {
+      return false;
+    }
+    const draw = ANNOTATION_DRAW_HANDLERS[shape.type];
+    if (typeof draw !== "function") {
+      return false;
+    }
+    return draw(ctx, group, style, shape, length);
+  };
+
+  const drawResistorSymbol = (ctx, group, length, style, options) => {
+    const stroke = resolveStroke(style, ctx);
+    const resistorStyle = normalizeResistorStyle(options?.resistorStyle);
+    if (group && typeof group.setAttribute === "function") {
+      group.setAttribute("data-resistor-style", resistorStyle);
+    }
     const lead = Math.max(6, Math.min(12, length * 0.2));
     const bodyLength = Math.max(8, length - lead * 2);
     const start = lead;
     const end = start + bodyLength;
+    ctx.line(group, 0, 0, start, 0, stroke);
+    ctx.line(group, end, 0, length, 0, stroke);
+    if (resistorStyle === "box") {
+      const halfHeight = Math.min(6, bodyLength * 0.175);
+      ctx.line(group, start, -halfHeight, end, -halfHeight, stroke);
+      ctx.line(group, end, -halfHeight, end, halfHeight, stroke);
+      ctx.line(group, end, halfHeight, start, halfHeight, stroke);
+      ctx.line(group, start, halfHeight, start, -halfHeight, stroke);
+      return;
+    }
     const segments = 7;
     const step = bodyLength / segments;
     const amplitude = Math.min(6, bodyLength * 0.25);
-    ctx.line(group, 0, 0, start, 0, stroke);
-    ctx.line(group, end, 0, length, 0, stroke);
     const points = [];
     for (let i = 0; i <= segments; i += 1) {
       const x = start + step * i;
@@ -905,66 +1655,89 @@
     return true;
   };
 
+  const SYMBOL_DRAW_HANDLERS = Object.freeze({
+    R: (ctx, group, length, style, options) => {
+      drawResistorSymbol(ctx, group, length, style, options);
+      return true;
+    },
+    C: (ctx, group, length, style) => {
+      drawCapacitorSymbol(ctx, group, length, style);
+      return true;
+    },
+    L: (ctx, group, length, style) => {
+      drawInductorSymbol(ctx, group, length, style);
+      return true;
+    },
+    V: (ctx, group, length, style) => {
+      drawVoltageSourceSymbol(ctx, group, length, style);
+      return true;
+    },
+    I: (ctx, group, length, style) => {
+      drawCurrentSourceSymbol(ctx, group, length, style);
+      return true;
+    },
+    VM: (ctx, group, length, style, options) => {
+      drawVoltmeterSymbol(ctx, group, length, style, options);
+      return true;
+    },
+    AM: (ctx, group, length, style, options) => {
+      drawAmmeterSymbol(ctx, group, length, style, options);
+      return true;
+    },
+    IMG: (ctx, group, length, style) => drawAnnotationShape(ctx, group, "IMG", style, length),
+    ARR: (ctx, group, length, style) => drawAnnotationShape(ctx, group, "ARR", style, length),
+    BOX: (ctx, group, length, style) => drawAnnotationShape(ctx, group, "BOX", style, length),
+    DBOX: (ctx, group, length, style) => drawAnnotationShape(ctx, group, "DBOX", style, length),
+    PV: (ctx, group, _length, style) => drawProbeSymbol(ctx, group, style),
+    PI: (ctx, group, _length, style) => drawProbeSymbol(ctx, group, style),
+    PD: (ctx, group, _length, style) => drawProbeSymbol(ctx, group, style),
+    PP: (ctx, group, _length, style) => drawProbeSymbol(ctx, group, style)
+  });
+
   const drawSymbol = (ctx, type, group, length, style, options) => {
     if (!ctx || !group || !Number.isFinite(length)) {
       return false;
     }
     const normalized = String(type ?? "").toUpperCase();
-    switch (normalized) {
-      case "R":
-        drawResistorSymbol(ctx, group, length, style);
-        return true;
-      case "C":
-        drawCapacitorSymbol(ctx, group, length, style);
-        return true;
-      case "L":
-        drawInductorSymbol(ctx, group, length, style);
-        return true;
-      case "V":
-        drawVoltageSourceSymbol(ctx, group, length, style);
-        return true;
-      case "I":
-        drawCurrentSourceSymbol(ctx, group, length, style);
-        return true;
-      case "VM":
-        drawVoltmeterSymbol(ctx, group, length, style, options);
-        return true;
-      case "AM":
-        drawAmmeterSymbol(ctx, group, length, style, options);
-        return true;
-      case "PV":
-      case "PI":
-      case "PD":
-      case "PP":
-        return drawProbeSymbol(ctx, group, style);
-      default:
-        return false;
+    const draw = SYMBOL_DRAW_HANDLERS[normalized];
+    if (typeof draw !== "function") {
+      return false;
     }
+    return draw(ctx, group, length, style, options);
   };
+
+  const SPECIAL_SHAPE_DRAW_HANDLERS = Object.freeze({
+    GND: (ctx, group, options) => drawGroundShape(ctx, group, options?.style, { variant: options?.groundVariant }),
+    NET: (ctx, group, options) => drawNamedNodeShape(ctx, group, options?.geometry, options?.style),
+    IMG: (ctx, group, options) => drawSymbol(ctx, "IMG", group, 0, options?.style, options),
+    ARR: (ctx, group, options) => drawSymbol(ctx, "ARR", group, 0, options?.style, options),
+    BOX: (ctx, group, options) => drawSymbol(ctx, "BOX", group, 0, options?.style, options),
+    DBOX: (ctx, group, options) => drawSymbol(ctx, "DBOX", group, 0, options?.style, options),
+    PV: (ctx, group, options) => drawSymbol(ctx, "PV", group, 0, options?.style, options),
+    PI: (ctx, group, options) => drawSymbol(ctx, "PI", group, 0, options?.style, options),
+    PD: (ctx, group, options) => drawSymbol(ctx, "PD", group, 0, options?.style, options),
+    PP: (ctx, group, options) => drawSymbol(ctx, "PP", group, 0, options?.style, options),
+    SW: (ctx, group, options) => {
+      const plan = options?.plan ?? getSpdtSwitchRenderPlan(options?.pins, options?.value);
+      return drawSpdtSwitchShape(ctx, group, plan, options?.style);
+    }
+  });
 
   const drawShape = (ctx, type, group, options) => {
     if (!ctx || !group) {
       return false;
     }
     const normalized = String(type ?? "").toUpperCase();
-    if (normalized === "GND") {
-      return drawGroundShape(ctx, group, options?.style);
-    }
-    if (normalized === "NET") {
-      return drawNamedNodeShape(ctx, group, options?.geometry, options?.style);
-    }
-    if (normalized === "PV"
-      || normalized === "PI"
-      || normalized === "PD"
-      || normalized === "PP") {
-      return drawSymbol(ctx, normalized, group, 0, options?.style, options);
-    }
-    if (normalized === "SW") {
-      const plan = options?.plan ?? getSpdtSwitchRenderPlan(options?.pins, options?.value);
-      return drawSpdtSwitchShape(ctx, group, plan, options?.style);
-    }
     const length = Number(options?.length);
-    if (!Number.isFinite(length)) {
+    const hasLength = Number.isFinite(length);
+    if (hasLength && typeof SYMBOL_DRAW_HANDLERS[normalized] === "function") {
+      return drawSymbol(ctx, normalized, group, length, options?.style, options);
+    }
+    const drawSpecial = SPECIAL_SHAPE_DRAW_HANDLERS[normalized];
+    if (typeof drawSpecial === "function") {
+      return drawSpecial(ctx, group, options);
+    }
+    if (!hasLength) {
       return false;
     }
     return drawSymbol(ctx, normalized, group, length, options?.style, options);
@@ -974,6 +1747,7 @@
   api.drawShape = drawShape;
   api.drawSymbol = drawSymbol;
   api.drawGroundShape = drawGroundShape;
+  api.getGroundSymbolExtents = getGroundSymbolExtents;
   api.drawNamedNodeShape = drawNamedNodeShape;
   api.getNamedNodeLabelStyle = getNamedNodeLabelStyle;
   api.getNamedNodeGeometry = getNamedNodeGeometry;
@@ -981,6 +1755,25 @@
   api.getNamedNodeTextAnchorX = getNamedNodeTextAnchorX;
   api.getNamedNodeTextExtents = getNamedNodeTextExtents;
   api.getNamedNodeExtents = getNamedNodeExtents;
+  api.isAnnotationShapeType = isAnnotationShapeType;
+  api.getAnnotationSymbolName = getAnnotationSymbolName;
+  api.getAnnotationExtents = getAnnotationExtents;
+  api.normalizeArrowThickness = normalizeArrowThickness;
+  api.normalizeArrowAnnotationLineType = normalizeArrowAnnotationLineType;
+  api.getArrowAnnotationDasharray = getArrowAnnotationDasharray;
+  api.getDefaultArrowAnnotationStyle = getDefaultArrowAnnotationStyle;
+  api.parseArrowAnnotationStyle = parseArrowAnnotationStyle;
+  api.formatArrowAnnotationStyle = formatArrowAnnotationStyle;
+  api.normalizeBoxAnnotationThickness = normalizeBoxAnnotationThickness;
+  api.normalizeBoxAnnotationLineType = normalizeBoxAnnotationLineType;
+  api.listBoxAnnotationLineTypes = () => BOX_LINE_TYPES.slice();
+  api.getBoxAnnotationDasharray = getBoxAnnotationDasharray;
+  api.getDefaultBoxAnnotationStyle = getDefaultBoxAnnotationStyle;
+  api.parseBoxAnnotationStyle = parseBoxAnnotationStyle;
+  api.formatBoxAnnotationStyle = formatBoxAnnotationStyle;
+  api.getDefaultTextAnnotationStyle = getDefaultTextAnnotationStyle;
+  api.parseTextAnnotationStyle = parseTextAnnotationStyle;
+  api.formatTextAnnotationStyle = formatTextAnnotationStyle;
   api.getProbeStyle = getProbeStyle;
   api.getProbeTipPoint = getProbeTipPoint;
   api.getProbeLabelAnchor = getProbeLabelAnchor;
