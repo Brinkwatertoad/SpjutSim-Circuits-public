@@ -26,6 +26,16 @@
   const DEFAULT_RESULTS_PANE_SPLIT_RATIO = 0.5;
   const MIN_RESULTS_PANE_SPLIT_RATIO = 0.25;
   const MAX_RESULTS_PANE_SPLIT_RATIO = 0.75;
+  const DEFAULT_AUTO_SWITCH_TO_SELECT_ON_PLACE = true;
+  const DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE = false;
+  const DEFAULT_SCHEMATIC_TEXT_STYLE = Object.freeze({
+    font: "Segoe UI",
+    size: 12,
+    bold: false,
+    italic: false
+  });
+  const MIN_SCHEMATIC_TEXT_SIZE = 8;
+  const MAX_SCHEMATIC_TEXT_SIZE = 72;
 
   const nowIso = () => new Date().toISOString();
 
@@ -95,6 +105,36 @@
     }
     return Math.min(MAX_RESULTS_PANE_SPLIT_RATIO, Math.max(MIN_RESULTS_PANE_SPLIT_RATIO, parsed));
   };
+  const normalizeSchematicTextFont = (value) => {
+    if (typeof value !== "string") {
+      return DEFAULT_SCHEMATIC_TEXT_STYLE.font;
+    }
+    const trimmed = value.trim();
+    return trimmed || DEFAULT_SCHEMATIC_TEXT_STYLE.font;
+  };
+  const normalizeSchematicTextSize = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return DEFAULT_SCHEMATIC_TEXT_STYLE.size;
+    }
+    const rounded = Math.round(parsed);
+    if (rounded < MIN_SCHEMATIC_TEXT_SIZE) {
+      return MIN_SCHEMATIC_TEXT_SIZE;
+    }
+    if (rounded > MAX_SCHEMATIC_TEXT_SIZE) {
+      return MAX_SCHEMATIC_TEXT_SIZE;
+    }
+    return rounded;
+  };
+  const normalizeSchematicTextStyle = (value) => {
+    const source = value && typeof value === "object" ? value : {};
+    return {
+      font: normalizeSchematicTextFont(source.font),
+      size: normalizeSchematicTextSize(source.size),
+      bold: source.bold === true,
+      italic: source.italic === true
+    };
+  };
 
   const createDocument = (options) => {
     const meta = options?.meta ?? {};
@@ -108,9 +148,17 @@
     const ui = options?.ui ?? {};
     const uiPlot = ui?.plot ?? {};
     const uiResultsPane = ui?.resultsPane ?? {};
+    const uiSettings = ui?.settings ?? {};
     const showGrid = typeof uiPlot.showGrid === "boolean" ? uiPlot.showGrid : false;
     const resultsPaneMode = normalizeResultsPaneMode(uiResultsPane.mode);
     const resultsPaneSplitRatio = normalizeResultsPaneSplitRatio(uiResultsPane.splitRatio);
+    const autoSwitchToSelectOnPlace = typeof uiSettings.autoSwitchToSelectOnPlace === "boolean"
+      ? uiSettings.autoSwitchToSelectOnPlace
+      : DEFAULT_AUTO_SWITCH_TO_SELECT_ON_PLACE;
+    const autoSwitchToSelectOnWire = typeof uiSettings.autoSwitchToSelectOnWire === "boolean"
+      ? uiSettings.autoSwitchToSelectOnWire
+      : DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE;
+    const schematicText = normalizeSchematicTextStyle(uiSettings.schematicText);
     const doc = {
       schema: "spjutsim/schematic",
       version: 1,
@@ -137,6 +185,11 @@
         resultsPane: {
           mode: resultsPaneMode,
           splitRatio: resultsPaneSplitRatio
+        },
+        settings: {
+          autoSwitchToSelectOnPlace,
+          autoSwitchToSelectOnWire,
+          schematicText
         }
       }
     };
@@ -160,6 +213,30 @@
     const showGrid = doc.ui?.plot?.showGrid;
     const resultsPaneMode = normalizeResultsPaneMode(doc.ui?.resultsPane?.mode);
     const resultsPaneSplitRatio = normalizeResultsPaneSplitRatio(doc.ui?.resultsPane?.splitRatio);
+    const autoSwitchToSelectOnPlace = doc.ui?.settings?.autoSwitchToSelectOnPlace;
+    const autoSwitchToSelectOnWire = doc.ui?.settings?.autoSwitchToSelectOnWire;
+    const rawSchematicText = doc.ui?.settings?.schematicText;
+    const schematicText = rawSchematicText && typeof rawSchematicText === "object"
+      ? {
+        font: typeof rawSchematicText.font === "string"
+          ? normalizeSchematicTextFont(rawSchematicText.font)
+          : null,
+        size: Number.isFinite(Number(rawSchematicText.size))
+          ? normalizeSchematicTextSize(rawSchematicText.size)
+          : null,
+        bold: typeof rawSchematicText.bold === "boolean"
+          ? rawSchematicText.bold
+          : null,
+        italic: typeof rawSchematicText.italic === "boolean"
+          ? rawSchematicText.italic
+          : null
+      }
+      : {
+        font: null,
+        size: null,
+        bold: null,
+        italic: null
+      };
     return {
       meta: {
         title: typeof doc.title === "string" ? doc.title : "",
@@ -186,6 +263,11 @@
         resultsPane: {
           mode: resultsPaneMode,
           splitRatio: resultsPaneSplitRatio
+        },
+        settings: {
+          autoSwitchToSelectOnPlace: typeof autoSwitchToSelectOnPlace === "boolean" ? autoSwitchToSelectOnPlace : null,
+          autoSwitchToSelectOnWire: typeof autoSwitchToSelectOnWire === "boolean" ? autoSwitchToSelectOnWire : null,
+          schematicText
         }
       },
       results: doc.results ?? null

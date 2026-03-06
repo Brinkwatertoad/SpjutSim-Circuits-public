@@ -41,6 +41,24 @@
     visible: valueField?.visible === true
   });
 
+  const clonePropertyDefinition = (property) => ({
+    key: String(property?.key ?? ""),
+    label: String(property?.label ?? ""),
+    control: String(property?.control ?? ""),
+    defaultValue: property?.defaultValue,
+    normalizeMethod: String(property?.normalizeMethod ?? ""),
+    inlineEditVisible: property?.inlineEditVisible !== false,
+    options: Array.isArray(property?.options)
+      ? property.options.map((option) => ({
+        value: String(option?.value ?? ""),
+        label: String(option?.label ?? "")
+      }))
+      : [],
+    input: property?.input && typeof property.input === "object" && !Array.isArray(property.input)
+      ? { ...property.input }
+      : {}
+  });
+
   const cloneElementDefinition = (entry) => ({
     type: String(entry?.type ?? ""),
     label: String(entry?.label ?? ""),
@@ -52,7 +70,10 @@
     catalogOrder: Number(entry?.catalogOrder ?? Number.POSITIVE_INFINITY),
     classification: normalizeClassification(entry?.classification),
     help: cloneHelp(entry?.help ?? {}),
-    valueField: cloneValueField(entry?.valueField ?? {})
+    valueField: cloneValueField(entry?.valueField ?? {}),
+    properties: Array.isArray(entry?.properties)
+      ? entry.properties.map((property) => clonePropertyDefinition(property))
+      : []
   });
 
   const compareCatalogOrder = (left, right) => {
@@ -127,6 +148,14 @@
     return cloneValueField(definition.valueField);
   };
 
+  const getElementPropertyDefinitions = (type) => {
+    const definition = getElementDefinition(type);
+    if (!definition || !Array.isArray(definition.properties)) {
+      return [];
+    }
+    return definition.properties.map((property) => clonePropertyDefinition(property));
+  };
+
   const api = typeof self !== "undefined" ? (self.SpjutSimSchematic ?? {}) : {};
   api.getElementDefinition = getElementDefinition;
   api.listElementDefinitions = listElementDefinitions;
@@ -136,6 +165,7 @@
   api.isNonElectricalComponentType = isNonElectricalComponentType;
   api.isElectricalComponentType = isElectricalComponentType;
   api.getValueFieldMeta = getValueFieldMeta;
+  api.getElementPropertyDefinitions = getElementPropertyDefinitions;
   if (typeof self !== "undefined") {
     self.SpjutSimSchematic = api;
   }

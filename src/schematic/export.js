@@ -15,6 +15,16 @@
   const WIRE_PADDING = 4;
   const FONT_FAMILY = "\"Segoe UI\", Tahoma, sans-serif";
   const schematicApi = typeof self !== "undefined" ? (self.SpjutSimSchematic ?? {}) : {};
+  const renderPlanContractsModule = typeof self !== "undefined"
+    ? (self.SpjutSimSchematicRenderPlanContracts ?? null)
+    : null;
+  if (!renderPlanContractsModule || typeof renderPlanContractsModule.createRenderPlanContracts !== "function") {
+    throw new Error("Schematic render-plan contracts module unavailable. Check src/schematic/render-plan-contracts.js load order.");
+  }
+  const renderPlanContracts = renderPlanContractsModule.createRenderPlanContracts({
+    schematicApi,
+    contextName: "export.js"
+  });
 
   const normalizeNetColorValue = (value) => {
     if (typeof schematicApi?.normalizeNetColor !== "function") {
@@ -94,6 +104,60 @@
     return { lineHeight, padding, paddingBelow };
   })();
   const LABEL_LINE_HEIGHT = COMPONENT_LABEL_LAYOUT_DEFAULTS.lineHeight;
+  const DEFAULT_SCHEMATIC_TEXT_STYLE = Object.freeze({
+    font: DEFAULT_TEXT_STYLE.font,
+    size: 12,
+    bold: false,
+    italic: false
+  });
+  const normalizeSchematicTextStyle = (value, fallback = DEFAULT_SCHEMATIC_TEXT_STYLE) => {
+    const base = fallback && typeof fallback === "object"
+      ? fallback
+      : DEFAULT_SCHEMATIC_TEXT_STYLE;
+    const source = value && typeof value === "object"
+      ? value
+      : {};
+    return {
+      font: normalizeTextFontValue(
+        Object.prototype.hasOwnProperty.call(source, "font")
+          ? source.font
+          : base.font
+      ),
+      size: normalizeTextSizeValue(
+        Object.prototype.hasOwnProperty.call(source, "size")
+          ? source.size
+          : base.size
+      ),
+      bold: Object.prototype.hasOwnProperty.call(source, "bold")
+        ? source.bold === true
+        : base.bold === true,
+      italic: Object.prototype.hasOwnProperty.call(source, "italic")
+        ? source.italic === true
+        : base.italic === true
+    };
+  };
+  const resolveSchematicTextStyle = (value) => normalizeSchematicTextStyle(value);
+  const getSchematicTextValueSize = (style) => {
+    const size = Number(style?.size);
+    if (!Number.isFinite(size)) {
+      return 11;
+    }
+    return Math.max(8, Math.round(size) - 1);
+  };
+  const getSchematicTextLineHeight = (style, fallbackLineHeight = LABEL_LINE_HEIGHT) => {
+    const baseLineHeight = Number.isFinite(Number(fallbackLineHeight))
+      ? Number(fallbackLineHeight)
+      : LABEL_LINE_HEIGHT;
+    const textSize = Number(style?.size);
+    if (!Number.isFinite(textSize)) {
+      return baseLineHeight;
+    }
+    return Math.max(baseLineHeight, Math.round(textSize) + 2);
+  };
+  const getSchematicFontFamily = (font) => {
+    const normalized = normalizeTextFontValue(font);
+    return `"${normalized}", Tahoma, sans-serif`;
+  };
   const rawMeasurementTextWeight = Number(valueFormatApi.getMeasurementTextWeight());
   const MEASUREMENT_TEXT_WEIGHT = Number.isFinite(rawMeasurementTextWeight)
     ? rawMeasurementTextWeight
@@ -152,7 +216,7 @@
     };
   })();
 
-  const getTextBounds = (x, y, text, size, anchor, weight) => {
+  const getTextBounds = (x, y, text, size, anchor, weight, baseline) => {
     if (!text) {
       return null;
     }
@@ -169,8 +233,14 @@
       minX = x;
       maxX = x + width;
     }
-    const minY = y - size;
-    const maxY = y + Math.max(2, size * 0.2);
+    const baselineMode = String(baseline ?? "").trim().toLowerCase();
+    const middleBaseline = baselineMode === "middle";
+    const minY = middleBaseline
+      ? y - (size * 0.6)
+      : y - size;
+    const maxY = middleBaseline
+      ? y + (size * 0.6)
+      : y + Math.max(2, size * 0.2);
     return { minX, minY, maxX, maxY };
   };
 
@@ -265,6 +335,17 @@
 
   const getLabelLayout = (midX, midY, angle, lineCount, labelRotation) =>
     labelLayoutApi.getComponentLabelLayout(midX, midY, angle, lineCount, labelRotation);
+  const resolveComponentLabelPosition = (layout, options = {}) => {
+    const resolver = renderPlanContracts?.resolveTwoPinLabelPosition;
+    if (typeof resolver !== "function") {
+      throw new Error("Schematic render-plan contracts missing two-pin label position helper.");
+    }
+    return resolver(layout, {
+      ...options,
+      labelLineHeight: LABEL_LINE_HEIGHT,
+      labelLayoutDefaults: COMPONENT_LABEL_LAYOUT_DEFAULTS
+    });
+  };
 
   const formatDisplayValue = (component) => valueFormatApi.formatComponentDisplayValue(component);
 
@@ -357,86 +438,47 @@
   };
 
   const resolveNetLabelStyle = () => {
-    const shared = getNamedNodeHelper("getNamedNodeLabelStyle")();
-    if (!shared || typeof shared !== "object") {
-      throw new Error("Named-node style helper returned invalid data.");
-    }
-    return shared;
-  };
-
-  const getNamedNodeHelper = (name) => {
-    const helper = schematicApi?.[name];
-    if (typeof helper !== "function") {
-      throw new Error(`Named-node helper '${name}' is unavailable. Ensure symbol-render.js loads before export.js.`);
-    }
-    return helper;
-  };
-
-  const getGroundHelper = (name) => {
-    const helper = schematicApi?.[name];
-    if (typeof helper !== "function") {
-      throw new Error(`Ground helper '${name}' is unavailable. Ensure model.js and symbol-render.js load before export.js.`);
-    }
-    return helper;
+    return renderPlanContracts.getNamedNodeLabelStyle();
   };
 
   const normalizeGroundVariantValue = (value) => {
-    const normalized = getGroundHelper("normalizeGroundVariant")(value);
-    if (typeof normalized !== "string" || !normalized.trim()) {
-      throw new Error("Ground variant helper returned invalid data.");
-    }
-    return normalized;
+    return renderPlanContracts.normalizeGroundVariant(value);
   };
 
   const getGroundExtents = (component) => {
     const rotation = snapRotation(Number(component?.rotation ?? 0));
-    const extents = getGroundHelper("getGroundSymbolExtents")(rotation, component?.groundVariant);
-    if (
-      !extents
-      || !Number.isFinite(extents.minX)
-      || !Number.isFinite(extents.maxX)
-      || !Number.isFinite(extents.minY)
-      || !Number.isFinite(extents.maxY)
-    ) {
-      throw new Error("Ground extents helper returned invalid data.");
-    }
-    return {
-      minX: Number(extents.minX),
-      maxX: Number(extents.maxX),
-      minY: Number(extents.minY),
-      maxY: Number(extents.maxY)
-    };
+    return renderPlanContracts.getGroundExtents(rotation, component?.groundVariant);
   };
 
-  const getNamedNodeGeometry = (component) => {
+  const getNamedNodeGeometry = (component, schematicTextStyle) => {
     const text = getNamedNodeLabelText(component);
-    const style = resolveNetLabelStyle();
-    const textWidth = measureTextWidth(text, Number(style.fontSize), 400);
-    const geometry = getNamedNodeHelper("getNamedNodeGeometry")(textWidth, style);
-    if (
-      !geometry
-      || !Number.isFinite(geometry.halfHeight)
-      || !Number.isFinite(geometry.slopeX)
-      || !Number.isFinite(geometry.textX)
-      || !Number.isFinite(geometry.endX)
-    ) {
-      throw new Error("Named-node geometry helper returned invalid data.");
-    }
+    const baseStyle = resolveNetLabelStyle();
+    const resolvedTextStyle = resolveSchematicTextStyle(schematicTextStyle);
+    const fontSize = Number(resolvedTextStyle.size);
+    const style = {
+      ...baseStyle,
+      fontSize: Number.isFinite(fontSize) ? fontSize : Number(baseStyle.fontSize)
+    };
+    const textWidth = measureTextWidth(
+      text,
+      Number(style.fontSize),
+      resolvedTextStyle.bold ? 700 : 400,
+      resolvedTextStyle.font
+    );
+    const geometry = renderPlanContracts.getNamedNodeGeometry(textWidth, style);
     return {
       text,
       halfHeight: Number(geometry.halfHeight),
       slopeX: Number(geometry.slopeX),
       textX: Number(geometry.textX),
       endX: Number(geometry.endX),
-      style
+      style,
+      schematicTextStyle: resolvedTextStyle
     };
   };
 
   const getNamedNodeTextTransform = (rotation, style, options) => {
-    const transform = getNamedNodeHelper("getNamedNodeTextTransform")(rotation, style, options);
-    if (!transform || !Number.isFinite(transform.rotation) || !Number.isFinite(transform.y)) {
-      throw new Error("Named-node text transform helper returned invalid data.");
-    }
+    const transform = renderPlanContracts.getNamedNodeTextTransform(rotation, style, options);
     return {
       rotation: snapRotation(transform.rotation),
       y: Number(transform.y)
@@ -444,27 +486,14 @@
   };
 
   const getNamedNodeTextAnchorX = (rotation, geometry, options) => {
-    const anchor = getNamedNodeHelper("getNamedNodeTextAnchorX")(rotation, geometry, options);
-    if (!Number.isFinite(anchor)) {
-      throw new Error("Named-node text anchor helper returned invalid data.");
-    }
-    return Number(anchor);
+    return renderPlanContracts.getNamedNodeTextAnchorX(rotation, geometry, options);
   };
 
-  const getNamedNodeExtents = (component) => {
-    const geometry = getNamedNodeGeometry(component);
+  const getNamedNodeExtents = (component, schematicTextStyle) => {
+    const geometry = getNamedNodeGeometry(component, schematicTextStyle);
     const rotation = snapRotation(Number(component?.rotation ?? 0));
     const textOnly = component?.textOnly === true;
-    const extents = getNamedNodeHelper("getNamedNodeExtents")(rotation, geometry, { textOnly, style: geometry?.style });
-    if (
-      !extents
-      || !Number.isFinite(extents.minX)
-      || !Number.isFinite(extents.maxX)
-      || !Number.isFinite(extents.minY)
-      || !Number.isFinite(extents.maxY)
-    ) {
-      throw new Error("Named-node extents helper returned invalid data.");
-    }
+    const extents = renderPlanContracts.getNamedNodeExtents(rotation, geometry, { textOnly, style: geometry?.style });
     return {
       minX: Number(extents.minX),
       maxX: Number(extents.maxX),
@@ -474,8 +503,9 @@
     };
   };
 
-  const appendNamedNodeLabelText = (group, component, rotation, geometry, labelColor) => {
-    const metrics = geometry ?? getNamedNodeGeometry(component);
+  const appendNamedNodeLabelText = (group, component, rotation, geometry, labelColor, schematicTextStyle) => {
+    const resolvedTextStyle = resolveSchematicTextStyle(schematicTextStyle);
+    const metrics = geometry ?? getNamedNodeGeometry(component, resolvedTextStyle);
     const textOnly = component?.textOnly === true;
     const textTransform = getNamedNodeTextTransform(rotation, metrics.style, { textOnly });
     const textX = getNamedNodeTextAnchorX(rotation, metrics, { textOnly });
@@ -484,7 +514,10 @@
       size: Number.isFinite(fontSize) ? fontSize : 12,
       fill: labelColor ?? STROKE,
       anchor: "middle",
-      baseline: "middle"
+      baseline: "middle",
+      family: getSchematicFontFamily(resolvedTextStyle.font),
+      weight: resolvedTextStyle.bold ? 700 : 400,
+      style: resolvedTextStyle.italic ? "italic" : "normal"
     });
     if (textTransform.rotation !== 0) {
       label.setAttribute("transform", `rotate(${textTransform.rotation} ${textX} ${textTransform.y})`);
@@ -495,310 +528,66 @@
     return label;
   };
 
-  const getAnnotationHelper = (name) => {
-    const helper = schematicApi?.[name];
-    if (typeof helper !== "function") {
-      throw new Error(`Annotation helper '${name}' is unavailable. Ensure symbol-render.js loads before export.js.`);
-    }
-    return helper;
-  };
-
   const getAnnotationSymbolName = (type) => {
-    const symbol = getAnnotationHelper("getAnnotationSymbolName")(type);
-    if (symbol === null || symbol === undefined || symbol === "") {
-      return null;
-    }
-    return String(symbol);
+    return renderPlanContracts.getAnnotationSymbolName(type);
   };
 
   const getAnnotationExtents = (component) => {
     const type = String(component?.type ?? "").toUpperCase();
     const rotation = snapRotation(Number(component?.rotation ?? 0));
-    const extents = getAnnotationHelper("getAnnotationExtents")(type, rotation);
-    if (
-      !extents
-      || !Number.isFinite(extents.minX)
-      || !Number.isFinite(extents.maxX)
-      || !Number.isFinite(extents.minY)
-      || !Number.isFinite(extents.maxY)
-    ) {
-      throw new Error("Annotation extents helper returned invalid data.");
-    }
-    return {
-      minX: Number(extents.minX),
-      maxX: Number(extents.maxX),
-      minY: Number(extents.minY),
-      maxY: Number(extents.maxY)
-    };
+    return renderPlanContracts.getAnnotationExtents(type, rotation);
   };
 
   const getArrowAnnotationStyle = (value, options) => {
-    const style = getAnnotationHelper("parseArrowAnnotationStyle")(value, options);
-    if (
-      !style
-      || !Number.isFinite(Number(style.thickness))
-      || typeof style.lineType !== "string"
-      || !Number.isFinite(Number(style.opacity))
-      || !Number.isFinite(Number(style.opacityPercent))
-    ) {
-      throw new Error("Arrow annotation style helper returned invalid data.");
-    }
-    return {
-      thickness: Number(style.thickness),
-      lineType: String(style.lineType),
-      opacity: Number(style.opacity),
-      opacityPercent: Number(style.opacityPercent)
-    };
+    return renderPlanContracts.getArrowAnnotationStyle(value, options);
   };
 
   const getArrowThickness = (value) => getArrowAnnotationStyle(value).thickness;
 
   const getArrowAnnotationDasharray = (lineType, thickness) => {
-    const dash = getAnnotationHelper("getArrowAnnotationDasharray")(lineType, thickness);
-    return String(dash ?? "");
+    return renderPlanContracts.getArrowAnnotationDasharray(lineType, thickness);
   };
 
   const getTextAnnotationStyleValue = (value, options) => {
-    const style = getAnnotationHelper("parseTextAnnotationStyle")(value, options);
-    if (
-      !style
-      || !Number.isFinite(Number(style.opacity))
-      || !Number.isFinite(Number(style.opacityPercent))
-    ) {
-      throw new Error("Text annotation style helper returned invalid data.");
-    }
-    return {
-      opacity: Number(style.opacity),
-      opacityPercent: Number(style.opacityPercent)
-    };
+    return renderPlanContracts.getTextAnnotationStyle(value, options);
   };
 
   const getBoxAnnotationStyle = (value, options) => {
-    const style = getAnnotationHelper("parseBoxAnnotationStyle")(value, options);
-    if (
-      !style
-      || !Number.isFinite(Number(style.thickness))
-      || typeof style.lineType !== "string"
-      || typeof style.fillEnabled !== "boolean"
-      || typeof style.fillColor !== "string"
-      || !Number.isFinite(Number(style.opacity))
-      || !Number.isFinite(Number(style.opacityPercent))
-    ) {
-      throw new Error("Box annotation style helper returned invalid data.");
-    }
-    return {
-      thickness: Number(style.thickness),
-      lineType: String(style.lineType),
-      fillEnabled: style.fillEnabled === true,
-      fillColor: String(style.fillColor),
-      opacity: Number(style.opacity),
-      opacityPercent: Number(style.opacityPercent)
-    };
+    return renderPlanContracts.getBoxAnnotationStyle(value, options);
   };
 
   const getBoxAnnotationDasharray = (lineType, thickness) => {
-    const dash = getAnnotationHelper("getBoxAnnotationDasharray")(lineType, thickness);
-    return String(dash ?? "");
-  };
-
-  const getProbeHelper = (name) => {
-    const helper = schematicApi?.[name];
-    if (typeof helper !== "function") {
-      throw new Error(`Probe helper '${name}' is unavailable. Ensure symbol-render.js loads before export.js.`);
-    }
-    return helper;
+    return renderPlanContracts.getBoxAnnotationDasharray(lineType, thickness);
   };
 
   const getProbeLabelAnchor = (rotation) => {
-    const anchor = getProbeHelper("getProbeLabelAnchor")(rotation, getProbeHelper("getProbeStyle")());
-    if (!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)) {
-      throw new Error("Probe label helper returned invalid data.");
-    }
-    return {
-      x: Number(anchor.x),
-      y: Number(anchor.y),
-      anchor: anchor.anchor === "end"
-        ? "end"
-        : (anchor.anchor === "middle" ? "middle" : "start")
-    };
+    return renderPlanContracts.getProbeLabelAnchor(rotation);
   };
 
   const getProbeExtents = (rotation) => {
-    const extents = getProbeHelper("getProbeExtents")(rotation, getProbeHelper("getProbeStyle")());
-    if (
-      !extents
-      || !Number.isFinite(extents.minX)
-      || !Number.isFinite(extents.maxX)
-      || !Number.isFinite(extents.minY)
-      || !Number.isFinite(extents.maxY)
-    ) {
-      throw new Error("Probe extents helper returned invalid data.");
-    }
-    return {
-      minX: Number(extents.minX),
-      maxX: Number(extents.maxX),
-      minY: Number(extents.minY),
-      maxY: Number(extents.maxY)
-    };
+    return renderPlanContracts.getProbeExtents(rotation);
   };
 
-  const getDifferentialProbeRotations = (component) => {
-    if (!component || String(component?.type ?? "").toUpperCase() !== "PD") {
-      return null;
-    }
-    return component.probeDiffRotations ?? null;
-  };
+  const getDifferentialProbeRotations = (component) =>
+    renderPlanContracts.getDifferentialProbeRotations(component);
 
-  const getDifferentialProbeGeometry = (component) => {
-    const helper = getProbeHelper("getDifferentialProbeGeometry");
-    const geometry = helper(
-      component?.pins,
-      Number(component?.rotation ?? 0),
-      getProbeHelper("getProbeStyle")(),
-      getDifferentialProbeRotations(component)
-    );
-    if (!geometry) {
-      return null;
-    }
-    if (
-      !geometry.pos
-      || !geometry.neg
-      || !geometry.labelAnchor
-      || !geometry.extents
-      || !Number.isFinite(geometry.pos.x)
-      || !Number.isFinite(geometry.pos.y)
-      || !Number.isFinite(geometry.neg.x)
-      || !Number.isFinite(geometry.neg.y)
-      || !geometry.posTip
-      || !geometry.negTip
-      || !Number.isFinite(geometry.posTip.x)
-      || !Number.isFinite(geometry.posTip.y)
-      || !Number.isFinite(geometry.negTip.x)
-      || !Number.isFinite(geometry.negTip.y)
-      || !Number.isFinite(geometry.labelAnchor.x)
-      || !Number.isFinite(geometry.labelAnchor.y)
-      || !Number.isFinite(geometry.extents.minX)
-      || !Number.isFinite(geometry.extents.maxX)
-      || !Number.isFinite(geometry.extents.minY)
-      || !Number.isFinite(geometry.extents.maxY)
-    ) {
-      throw new Error("Differential probe geometry helper returned invalid data.");
-    }
-    return geometry;
-  };
+  const getDifferentialProbeGeometry = (component) =>
+    renderPlanContracts.getDifferentialProbeGeometry(component);
 
-  const getDifferentialProbeRenderPlan = (component) => {
-    const helper = getProbeHelper("getDifferentialProbeRenderPlan");
-    const plan = helper(component?.pins, {
-      rotation: Number(component?.rotation ?? 0),
-      style: getProbeHelper("getProbeStyle")(),
-      rotations: getDifferentialProbeRotations(component)
-    });
-    if (!plan) {
-      return null;
-    }
-    const endpoints = Array.isArray(plan.endpoints) ? plan.endpoints : [];
-    const link = plan.link;
-    if (
-      !plan.geometry
-      || !link
-      || !Number.isFinite(link.x1)
-      || !Number.isFinite(link.y1)
-      || !Number.isFinite(link.x2)
-      || !Number.isFinite(link.y2)
-      || typeof link.dash !== "string"
-      || !link.dash.trim()
-      || !Number.isFinite(Number(plan.headRadius))
-      || endpoints.length < 2
-    ) {
-      throw new Error("Differential probe render plan helper returned invalid data.");
-    }
-    return plan;
-  };
+  const getDifferentialProbeRenderPlan = (component) =>
+    renderPlanContracts.getDifferentialProbeRenderPlan(component);
 
-  const getDifferentialPolarityColor = (fillColor) => {
-    const helper = getProbeHelper("getContrastPolarityColor");
-    const resolved = String(helper(fillColor) ?? "").trim();
-    if (!resolved) {
-      throw new Error("Differential polarity color helper returned invalid data.");
-    }
-    return resolved;
-  };
+  const getDifferentialPolarityColor = (fillColor) =>
+    renderPlanContracts.getDifferentialPolarityColor(fillColor);
 
-  const getSpdtSwitchHelper = (name) => {
-    const helper = schematicApi?.[name];
-    if (typeof helper !== "function") {
-      throw new Error(`SPDT helper '${name}' is unavailable. Ensure symbol-render.js loads before export.js.`);
-    }
-    return helper;
-  };
+  const getSpdtSwitchRenderPlan = (component) =>
+    renderPlanContracts.getSpdtSwitchRenderPlan(component);
 
-  const getSpdtSwitchRenderPlan = (component) => {
-    const helper = getSpdtSwitchHelper("getSpdtSwitchRenderPlan");
-    const plan = helper(component?.pins, component?.value);
-    if (
-      !plan
-      || !plan.pins
-      || !plan.contacts
-      || !plan.blade
-      || !plan.labelCenter
-      || !Number.isFinite(plan.labelCenter.x)
-      || !Number.isFinite(plan.labelCenter.y)
-      || !Number.isFinite(plan.labelAngle)
-      || !Number.isFinite(plan.pins?.C?.x)
-      || !Number.isFinite(plan.pins?.C?.y)
-      || !Number.isFinite(plan.pins?.A?.x)
-      || !Number.isFinite(plan.pins?.A?.y)
-      || !Number.isFinite(plan.pins?.B?.x)
-      || !Number.isFinite(plan.pins?.B?.y)
-      || !Number.isFinite(plan.contacts?.A?.x)
-      || !Number.isFinite(plan.contacts?.A?.y)
-      || !Number.isFinite(plan.contacts?.B?.x)
-      || !Number.isFinite(plan.contacts?.B?.y)
-      || !Number.isFinite(plan.blade?.from?.x)
-      || !Number.isFinite(plan.blade?.from?.y)
-      || !Number.isFinite(plan.blade?.to?.x)
-      || !Number.isFinite(plan.blade?.to?.y)
-    ) {
-      throw new Error("SPDT switch render plan helper returned invalid data.");
-    }
-    return {
-      ...plan,
-      labelCenter: {
-        x: Number(plan.labelCenter.x),
-        y: Number(plan.labelCenter.y)
-      },
-      labelAngle: Number(plan.labelAngle)
-    };
-  };
-
-  const getSpdtSwitchExtents = (component) => {
-    const helper = getSpdtSwitchHelper("getSpdtSwitchExtents");
-    const extents = helper(component?.pins, component?.value);
-    if (
-      !extents
-      || !Number.isFinite(extents.minX)
-      || !Number.isFinite(extents.maxX)
-      || !Number.isFinite(extents.minY)
-      || !Number.isFinite(extents.maxY)
-    ) {
-      throw new Error("SPDT switch extents helper returned invalid data.");
-    }
-    return {
-      minX: Number(extents.minX),
-      maxX: Number(extents.maxX),
-      minY: Number(extents.minY),
-      maxY: Number(extents.maxY)
-    };
-  };
+  const getSpdtSwitchExtents = (component) =>
+    renderPlanContracts.getSpdtSwitchExtents(component);
 
   const getSpdtLabelGeometry = (component, plan) => {
-    const resolvedPlan = plan ?? getSpdtSwitchRenderPlan(component);
-    return {
-      midX: Number(resolvedPlan.labelCenter.x),
-      midY: Number(resolvedPlan.labelCenter.y),
-      angle: Number(resolvedPlan.labelAngle)
-    };
+    return renderPlanContracts.getSpdtLabelGeometry(component, plan);
   };
 
   const createSvg = (width, height, viewBox) => {
@@ -887,7 +676,12 @@
     }
   };
 
-  const getComponentBounds = (component, measurements, probeLabels) => {
+  const getComponentBounds = (component, measurements, probeLabels, schematicTextStyle) => {
+    const resolvedTextStyle = resolveSchematicTextStyle(schematicTextStyle);
+    const valueTextSize = getSchematicTextValueSize(resolvedTextStyle);
+    const textLineHeight = getSchematicTextLineHeight(resolvedTextStyle);
+    const textWeight = resolvedTextStyle.bold ? 700 : 400;
+    const measurementWeight = resolvedTextStyle.bold ? 700 : MEASUREMENT_TEXT_WEIGHT;
     const type = String(component?.type ?? "").toUpperCase();
     if (type === "GND") {
       const pins = Array.isArray(component?.pins) ? component.pins : [];
@@ -931,7 +725,7 @@
         return null;
       }
       const pin = pins[0];
-      const extents = getNamedNodeExtents(component);
+      const extents = getNamedNodeExtents(component, schematicTextStyle);
       const rotation = snapRotation(Number(component?.rotation ?? 0));
       const verticalTextOnly = component?.textOnly === true && (rotation === 90 || rotation === 270);
       const pad = component?.textOnly === true
@@ -982,7 +776,7 @@
           Math.max(...ys) + pad
         );
       }
-      if ((type === "BOX" || type === "DBOX") && pins.length >= 2) {
+      if (type === "BOX" && pins.length >= 2) {
         const xs = pins.map((entry) => Number(entry?.x));
         const ys = pins.map((entry) => Number(entry?.y));
         if (!xs.every(Number.isFinite) || !ys.every(Number.isFinite)) {
@@ -990,7 +784,7 @@
         }
         const style = getBoxAnnotationStyle(component?.value, {
           type,
-          defaultLineType: type === "DBOX" ? "dashed" : "solid"
+          defaultLineType: "solid"
         });
         const pad = Math.max(4, Math.ceil(style.thickness) + 2);
         return expandBounds(
@@ -1014,63 +808,13 @@
     if (type === "SW") {
       const extents = getSpdtSwitchExtents(component);
       const pad = 6;
-      let bounds = expandBounds(
+      return expandBounds(
         null,
         extents.minX - pad,
         extents.minY - pad,
         extents.maxX + pad,
         extents.maxY + pad
       );
-      const displayValue = formatDisplayValue(component);
-      const hasValue = Boolean(displayValue);
-      const measurementText = measurements?.get?.(component.id);
-      const lineCount = (hasValue ? 2 : 1) + (measurementText ? 1 : 0);
-      const labelRotation = Number(component?.labelRotation ?? 0);
-      const labelGeometry = getSpdtLabelGeometry(component);
-      const layout = getLabelLayout(
-        labelGeometry.midX,
-        labelGeometry.midY,
-        labelGeometry.angle,
-        lineCount,
-        labelRotation
-      );
-      const idBounds = getTextBounds(layout.x, layout.y, getDisplayName(component), 12, layout.anchor, 400);
-      if (idBounds) {
-        bounds = expandBounds(bounds, idBounds.minX, idBounds.minY, idBounds.maxX, idBounds.maxY);
-      }
-      if (hasValue) {
-        const valueBounds = getTextBounds(
-          layout.x,
-          layout.y + layout.lineHeight,
-          displayValue,
-          11,
-          layout.anchor,
-          400
-        );
-        if (valueBounds) {
-          bounds = expandBounds(bounds, valueBounds.minX, valueBounds.minY, valueBounds.maxX, valueBounds.maxY);
-        }
-      }
-      if (measurementText) {
-        const measurementBounds = getTextBounds(
-          layout.x,
-          layout.y + layout.lineHeight * (lineCount - 1),
-          measurementText,
-          11,
-          layout.anchor,
-          MEASUREMENT_TEXT_WEIGHT
-        );
-        if (measurementBounds) {
-          bounds = expandBounds(
-            bounds,
-            measurementBounds.minX,
-            measurementBounds.minY,
-            measurementBounds.maxX,
-            measurementBounds.maxY
-          );
-        }
-      }
-      return bounds;
     }
     if (isProbeComponentType(type)) {
       const shapePad = 6;
@@ -1117,18 +861,27 @@
       }
       const labelText = getProbeDisplayName(component, probeLabels);
       const measurementText = measurements?.get?.(component.id);
-      const labelBounds = getTextBounds(labelX, labelY, labelText, 12, labelAnchor, 400);
+      const labelBounds = getTextBounds(
+        labelX,
+        labelY,
+        labelText,
+        resolvedTextStyle.size,
+        labelAnchor,
+        textWeight,
+        "middle"
+      );
       if (labelBounds) {
         bounds = expandBounds(bounds, labelBounds.minX, labelBounds.minY, labelBounds.maxX, labelBounds.maxY);
       }
       if (measurementText) {
         const valueBounds = getTextBounds(
           labelX,
-          labelY + LABEL_LINE_HEIGHT,
+          labelY + textLineHeight,
           measurementText,
-          11,
+          valueTextSize,
           labelAnchor,
-          MEASUREMENT_TEXT_WEIGHT
+          measurementWeight,
+          "middle"
         );
         if (valueBounds) {
           bounds = expandBounds(bounds, valueBounds.minX, valueBounds.minY, valueBounds.maxX, valueBounds.maxY);
@@ -1156,19 +909,43 @@
     const labelRotation = Number(component?.labelRotation ?? 0);
     const lineCount = (hasValue ? 2 : 1) + (measurementText ? 1 : 0);
     const layout = getLabelLayout(info.midX, info.midY, info.angle, lineCount, labelRotation);
+    const symbolHalfExtent = getTwoPinSymbolHalfExtent(component, info);
+    const resolvedPosition = resolveComponentLabelPosition(layout, {
+      midX: info.midX,
+      midY: info.midY,
+      angle: info.angle,
+      labelRotation,
+      lineCount,
+      lineHeight: textLineHeight,
+      labelSize: resolvedTextStyle.size,
+      valueSize: valueTextSize,
+      symbolHalfExtent
+    });
+    const resolvedY = resolvedPosition.y;
+    const resolvedX = resolvedPosition.x;
+    const labelBaseline = "middle";
     const idText = displayName;
-    const idBounds = getTextBounds(layout.x, layout.y, idText, 12, layout.anchor, 400);
+    const idBounds = getTextBounds(
+      resolvedX,
+      resolvedY,
+      idText,
+      resolvedTextStyle.size,
+      layout.anchor,
+      textWeight,
+      labelBaseline
+    );
     if (idBounds) {
       bounds = expandBounds(bounds, idBounds.minX, idBounds.minY, idBounds.maxX, idBounds.maxY);
     }
     if (hasValue) {
       const valueBounds = getTextBounds(
-        layout.x,
-        layout.y + layout.lineHeight,
+        resolvedX,
+        resolvedY + textLineHeight,
         displayValue,
-        11,
+        valueTextSize,
         layout.anchor,
-        400
+        textWeight,
+        labelBaseline
       );
       if (valueBounds) {
         bounds = expandBounds(bounds, valueBounds.minX, valueBounds.minY, valueBounds.maxX, valueBounds.maxY);
@@ -1176,12 +953,13 @@
     }
     if (measurementText) {
       const measurementBounds = getTextBounds(
-        layout.x,
-        layout.y + layout.lineHeight * (lineCount - 1),
+        resolvedX,
+        resolvedY + textLineHeight * (lineCount - 1),
         measurementText,
-        11,
+        valueTextSize,
         layout.anchor,
-        MEASUREMENT_TEXT_WEIGHT
+        measurementWeight,
+        labelBaseline
       );
       if (measurementBounds) {
         bounds = expandBounds(
@@ -1209,7 +987,7 @@
       }
     });
     components.forEach((component) => {
-      const componentBounds = getComponentBounds(component, measurements, probeLabels);
+      const componentBounds = getComponentBounds(component, measurements, probeLabels, options?.schematicTextStyle);
       if (componentBounds) {
         bounds = expandBounds(bounds, componentBounds.minX, componentBounds.minY, componentBounds.maxX, componentBounds.maxY);
       }
@@ -1270,7 +1048,7 @@
 
   const isBackgroundAnnotationComponent = (component) => {
     const type = String(component?.type ?? "").toUpperCase();
-    return type === "BOX" || type === "DBOX";
+    return type === "BOX";
   };
 
   const getTwoPinInfo = (component) => {
@@ -1295,6 +1073,20 @@
       midX: (start.x + end.x) / 2,
       midY: (start.y + end.y) / 2
     };
+  };
+  const getTwoPinSymbolHalfExtent = (component, info) => {
+    if (!info || !Number.isFinite(info.length)) {
+      return 0;
+    }
+    const type = String(component?.type ?? "").toUpperCase();
+    const helper = renderPlanContracts?.getTwoPinVisualHalfExtent;
+    if (typeof helper !== "function") {
+      return 0;
+    }
+    const value = helper(type, info.length, {
+      resistorStyle: component?.resistorStyle
+    });
+    return Number.isFinite(value) && value > 0 ? value : 0;
   };
 
   const symbolApi = schematicApi;
@@ -1338,20 +1130,20 @@
     svg.appendChild(group);
   };
 
-  const drawNamedNodeSymbol = (svg, component, color) => {
+  const drawNamedNodeSymbol = (svg, component, options) => {
     const pins = Array.isArray(component?.pins) ? component.pins : [];
     if (!pins.length) {
       return;
     }
     const pin = pins[0];
     const rotation = snapRotation(Number(component?.rotation ?? 0));
-    const geometry = getNamedNodeGeometry(component);
+    const geometry = getNamedNodeGeometry(component, options?.schematicTextStyle);
     const group = document.createElementNS(SVG_NS, "g");
     group.setAttribute("data-component", component.id);
     group.setAttribute("data-symbol", "net");
     const rotate = rotation !== 0 ? ` rotate(${rotation})` : "";
     group.setAttribute("transform", `translate(${pin.x} ${pin.y})${rotate}`);
-    const strokeColor = normalizeNetColorValue(color) ?? STROKE;
+    const strokeColor = normalizeNetColorValue(options?.netColor) ?? STROKE;
     const textOnly = component?.textOnly === true;
     const handled = !textOnly && typeof symbolApi?.drawShape === "function"
       ? symbolApi.drawShape(symbolCtx, "NET", group, {
@@ -1362,7 +1154,7 @@
     if (!textOnly && !handled) {
       return;
     }
-    appendNamedNodeLabelText(group, component, rotation, geometry, strokeColor);
+    appendNamedNodeLabelText(group, component, rotation, geometry, strokeColor, options?.schematicTextStyle);
     svg.appendChild(group);
   };
 
@@ -1373,14 +1165,15 @@
     }
     const style = getTextAnnotationStyle(component, color);
     const annotationStyle = getTextAnnotationStyleValue(component?.value, { type: "TEXT" });
+    const annotationRenderStyle = renderPlanContracts.buildTextAnnotationRenderAttributes(annotationStyle, {
+    });
     const text = getTextAnnotationText(component);
     const rotation = snapRotation(Number(component?.rotation ?? 0));
     const group = document.createElementNS(SVG_NS, "g");
     group.setAttribute("data-component", component.id);
     group.setAttribute("data-symbol", "text");
-    const opacity = Math.max(0, Math.min(1, annotationStyle.opacity));
-    if (opacity < 0.9999) {
-      group.setAttribute("opacity", String(opacity));
+    if (annotationRenderStyle.opacity < 0.9999) {
+      group.setAttribute("opacity", String(annotationRenderStyle.opacity));
     }
     const rotate = rotation !== 0 ? ` rotate(${rotation})` : "";
     group.setAttribute("transform", `translate(${pin.x} ${pin.y})${rotate}`);
@@ -1416,29 +1209,30 @@
     group.setAttribute("data-component", component.id);
     group.setAttribute("data-symbol", symbolName);
     if (type === "ARR") {
-      const info = getTwoPinInfo(component);
-      if (info) {
+      const arrowGeometry = renderPlanContracts.buildArrowAnnotationGeometry(component);
+      if (arrowGeometry) {
         const style = getArrowAnnotationStyle(component?.value, { type: "ARR" });
-        const dasharray = getArrowAnnotationDasharray(style.lineType, style.thickness);
-        const opacity = Math.max(0, Math.min(1, style.opacity));
-        group.setAttribute("transform", `translate(${info.start.x} ${info.start.y}) rotate(${info.angle})`);
-        group.setAttribute("data-arrow-line-type", style.lineType);
-        if (opacity < 0.9999) {
-          group.setAttribute("opacity", String(opacity));
+        const arrowRenderStyle = renderPlanContracts.buildArrowAnnotationRenderAttributes(style, {
+          thickness: style.thickness
+        });
+        group.setAttribute("transform", arrowGeometry.transform);
+        group.setAttribute("data-arrow-line-type", arrowRenderStyle.lineType);
+        if (arrowRenderStyle.opacity < 0.9999) {
+          group.setAttribute("opacity", String(arrowRenderStyle.opacity));
         }
         const strokeColor = normalizeNetColorValue(color) ?? STROKE;
         const handledArrow = typeof symbolApi?.drawShape === "function"
           ? symbolApi.drawShape(symbolCtx, type, group, {
-            length: info.length,
+            length: arrowGeometry.length,
             style: {
               stroke: strokeColor,
-              width: style.thickness,
-              arrowThickness: style.thickness,
-              lineType: style.lineType,
-              line: style.lineType,
-              opacityPercent: style.opacityPercent,
-              opacity: style.opacity,
-              dasharray
+              width: arrowRenderStyle.thickness,
+              arrowThickness: arrowRenderStyle.thickness,
+              lineType: arrowRenderStyle.lineType,
+              line: arrowRenderStyle.lineType,
+              opacityPercent: arrowRenderStyle.opacityPercent,
+              opacity: arrowRenderStyle.opacity,
+              dasharray: arrowRenderStyle.dasharray
             }
           })
           : false;
@@ -1449,42 +1243,33 @@
         return;
       }
     }
-    if ((type === "BOX" || type === "DBOX") && pins.length >= 2) {
-      const cornerA = pins[0];
-      const cornerB = pins[1];
-      if (
-        Number.isFinite(Number(cornerA?.x))
-        && Number.isFinite(Number(cornerA?.y))
-        && Number.isFinite(Number(cornerB?.x))
-        && Number.isFinite(Number(cornerB?.y))
-      ) {
+    if (type === "BOX") {
+      const boxGeometry = renderPlanContracts.buildBoxAnnotationGeometry(component);
+      if (boxGeometry) {
         const style = getBoxAnnotationStyle(component?.value, {
           type,
-          defaultLineType: type === "DBOX" ? "dashed" : "solid"
+          defaultLineType: "solid"
         });
-        const minX = Math.min(Number(cornerA.x), Number(cornerB.x));
-        const minY = Math.min(Number(cornerA.y), Number(cornerB.y));
-        const width = Math.abs(Number(cornerB.x) - Number(cornerA.x));
-        const height = Math.abs(Number(cornerB.y) - Number(cornerA.y));
+        const boxRenderStyle = renderPlanContracts.buildBoxAnnotationRenderAttributes(style, {
+          thickness: style.thickness
+        });
         const strokeColor = normalizeNetColorValue(color) ?? STROKE;
-        const strokeLineCap = style.lineType === "dotted" ? "round" : "square";
-        const fill = style.fillEnabled ? style.fillColor : "none";
-        const dasharray = getBoxAnnotationDasharray(style.lineType, style.thickness);
-        const opacity = Math.max(0, Math.min(1, style.opacity));
-        group.setAttribute("transform", `translate(${minX} ${minY})`);
-        group.setAttribute("data-box-line-type", style.lineType);
-        if (opacity < 0.9999) {
-          group.setAttribute("opacity", String(opacity));
+        const strokeLineCap = boxRenderStyle.lineType === "dotted" ? "round" : "square";
+        const fill = boxRenderStyle.fillEnabled ? boxRenderStyle.fillColor : "none";
+        group.setAttribute("transform", boxGeometry.transform);
+        group.setAttribute("data-box-line-type", boxRenderStyle.lineType);
+        if (boxRenderStyle.opacity < 0.9999) {
+          group.setAttribute("opacity", String(boxRenderStyle.opacity));
         }
-        const outline = appendPath(group, `M 0 0 L ${width} 0 L ${width} ${height} L 0 ${height} Z`, {
+        const outline = appendPath(group, `M 0 0 L ${boxGeometry.width} 0 L ${boxGeometry.width} ${boxGeometry.height} L 0 ${boxGeometry.height} Z`, {
           stroke: strokeColor,
-          width: style.thickness,
+          width: boxRenderStyle.thickness,
           cap: strokeLineCap,
           join: "round"
         });
         outline.setAttribute("fill", fill);
-        if (dasharray) {
-          outline.setAttribute("stroke-dasharray", dasharray);
+        if (boxRenderStyle.dasharray) {
+          outline.setAttribute("stroke-dasharray", boxRenderStyle.dasharray);
         }
         svg.appendChild(group);
         return;
@@ -1509,6 +1294,11 @@
 
   const drawProbeLabel = (svg, component, options) => {
     const type = String(component?.type ?? "").toUpperCase();
+    const resolvedTextStyle = resolveSchematicTextStyle(options?.schematicTextStyle);
+    const valueTextSize = getSchematicTextValueSize(resolvedTextStyle);
+    const textLineHeight = getSchematicTextLineHeight(resolvedTextStyle);
+    const textWeight = resolvedTextStyle.bold ? 700 : 400;
+    const measurementWeight = resolvedTextStyle.bold ? 700 : MEASUREMENT_TEXT_WEIGHT;
     const probeLabel = getProbeDisplayName(component, options?.probeLabels);
     let labelX = 0;
     let labelY = 0;
@@ -1539,26 +1329,31 @@
     }
     const invalidColor = isInvalidDifferentialProbeLabel(component, probeLabel) ? PROBE_INVALID_COLOR : null;
     const label = appendText(svg, labelX, labelY, probeLabel, {
-      size: 12,
+      size: resolvedTextStyle.size,
       fill: invalidColor ?? options?.labelColor ?? DEFAULT_COMPONENT_TEXT_COLORS.label,
       anchor: anchor.anchor,
-      baseline: "middle"
+      baseline: "middle",
+      family: getSchematicFontFamily(resolvedTextStyle.font),
+      weight: textWeight,
+      style: resolvedTextStyle.italic ? "italic" : "normal"
     });
     if (component?.id) {
       label.setAttribute("data-component-id", String(component.id));
     }
     const measurementText = options?.measurements?.get?.(component.id);
     if (measurementText) {
-      appendText(svg, labelX, labelY + LABEL_LINE_HEIGHT, measurementText, {
-        size: 11,
+      appendText(svg, labelX, labelY + textLineHeight, measurementText, {
+        size: valueTextSize,
         fill: invalidColor ?? options?.valueColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value,
         anchor: anchor.anchor,
-        weight: MEASUREMENT_TEXT_WEIGHT
+        family: getSchematicFontFamily(resolvedTextStyle.font),
+        style: resolvedTextStyle.italic ? "italic" : "normal",
+        weight: measurementWeight
       });
     }
   };
 
-  const drawDifferentialProbeSymbol = (svg, component, color, measurements, probeLabels) => {
+  const drawDifferentialProbeSymbol = (svg, component, color, measurements, probeLabels, schematicTextStyle) => {
     const plan = getDifferentialProbeRenderPlan(component);
     if (!plan) {
       return;
@@ -1610,14 +1405,15 @@
       labelColor: invalidColor ?? normalizeNetColorValue(color) ?? undefined,
       valueColor: invalidColor ?? normalizeNetColorValue(color) ?? undefined,
       measurements,
-      probeLabels
+      probeLabels,
+      schematicTextStyle
     });
   };
 
-  const drawProbeSymbol = (svg, component, color, measurements, probeLabels) => {
+  const drawProbeSymbol = (svg, component, color, measurements, probeLabels, schematicTextStyle) => {
     const type = String(component?.type ?? "").toUpperCase();
     if (type === "PD") {
-      drawDifferentialProbeSymbol(svg, component, color, measurements, probeLabels);
+      drawDifferentialProbeSymbol(svg, component, color, measurements, probeLabels, schematicTextStyle);
       return;
     }
     const pins = Array.isArray(component?.pins) ? component.pins : [];
@@ -1644,11 +1440,12 @@
       labelColor: textColor ?? undefined,
       valueColor: textColor ?? undefined,
       measurements,
-      probeLabels
+      probeLabels,
+      schematicTextStyle
     });
   };
 
-  const drawSpdtSwitchSymbol = (svg, component, componentColor, measurements) => {
+  const drawSpdtSwitchSymbol = (svg, component, componentColor, measurements, schematicTextStyle) => {
     const plan = getSpdtSwitchRenderPlan(component);
     const group = document.createElementNS(SVG_NS, "g");
     group.setAttribute("data-component", component.id);
@@ -1666,56 +1463,26 @@
       return;
     }
     svg.appendChild(group);
-    const displayValue = formatDisplayValue(component);
-    const hasValue = Boolean(displayValue);
-    const measurementText = measurements?.get?.(component.id);
-    const lineCount = (hasValue ? 2 : 1) + (measurementText ? 1 : 0);
-    const labelRotation = Number(component?.labelRotation ?? 0);
-    const labelGeometry = getSpdtLabelGeometry(component, plan);
-    const layout = getLabelLayout(
-      labelGeometry.midX,
-      labelGeometry.midY,
-      labelGeometry.angle,
-      lineCount,
-      labelRotation
-    );
-    appendText(svg, layout.x, layout.y, getDisplayName(component), {
-      size: 12,
-      anchor: layout.anchor,
-      fill: componentColor ?? STROKE
-    });
-    if (hasValue) {
-      appendText(svg, layout.x, layout.y + layout.lineHeight, displayValue, {
-        size: 11,
-        fill: componentColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value,
-        anchor: layout.anchor
-      });
-    }
-    if (measurementText) {
-      appendText(
-        svg,
-        layout.x,
-        layout.y + layout.lineHeight * (lineCount - 1),
-        measurementText,
-        {
-          size: 11,
-          fill: componentColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value,
-          anchor: layout.anchor,
-          weight: MEASUREMENT_TEXT_WEIGHT
-        }
-      );
-    }
   };
 
   const drawComponent = (svg, component, options) => {
     const type = String(component?.type ?? "").toUpperCase();
     const componentColor = normalizeNetColorValue(options?.componentColor);
+    const resolvedTextStyle = resolveSchematicTextStyle(options?.schematicTextStyle);
+    const valueTextSize = getSchematicTextValueSize(resolvedTextStyle);
+    const textLineHeight = getSchematicTextLineHeight(resolvedTextStyle);
+    const textWeight = resolvedTextStyle.bold ? 700 : 400;
+    const measurementWeight = resolvedTextStyle.bold ? 700 : MEASUREMENT_TEXT_WEIGHT;
+    const textFamily = getSchematicFontFamily(resolvedTextStyle.font);
     if (type === "GND") {
       drawGroundSymbol(svg, component, componentColor);
       return;
     }
     if (type === "NET") {
-      drawNamedNodeSymbol(svg, component, options?.netColor ?? componentColor);
+      drawNamedNodeSymbol(svg, component, {
+        netColor: options?.netColor ?? componentColor,
+        schematicTextStyle: resolvedTextStyle
+      });
       return;
     }
     if (type === "TEXT") {
@@ -1727,11 +1494,18 @@
       return;
     }
     if (isProbeComponentType(type)) {
-      drawProbeSymbol(svg, component, componentColor, options?.measurements, options?.probeLabels);
+      drawProbeSymbol(
+        svg,
+        component,
+        componentColor,
+        options?.measurements,
+        options?.probeLabels,
+        resolvedTextStyle
+      );
       return;
     }
     if (type === "SW") {
-      drawSpdtSwitchSymbol(svg, component, componentColor, options?.measurements);
+      drawSpdtSwitchSymbol(svg, component, componentColor, options?.measurements, resolvedTextStyle);
       return;
     }
     const info = getTwoPinInfo(component);
@@ -1768,25 +1542,56 @@
     const measurementText = options?.measurements?.get?.(component.id);
     const lineCount = (hasValue ? 2 : 1) + (measurementText ? 1 : 0);
     const layout = getLabelLayout(info.midX, info.midY, info.angle, lineCount, labelRotation);
-    appendText(svg, layout.x, layout.y, getDisplayName(component), {
-      size: 12,
+    const symbolHalfExtent = getTwoPinSymbolHalfExtent(component, info);
+    const resolvedPosition = resolveComponentLabelPosition(layout, {
+      midX: info.midX,
+      midY: info.midY,
+      angle: info.angle,
+      labelRotation,
+      lineCount,
+      lineHeight: textLineHeight,
+      labelSize: resolvedTextStyle.size,
+      valueSize: valueTextSize,
+      symbolHalfExtent
+    });
+    const resolvedY = resolvedPosition.y;
+    const resolvedX = resolvedPosition.x;
+    const labelBaseline = "middle";
+    appendText(svg, resolvedX, resolvedY, getDisplayName(component), {
+      size: resolvedTextStyle.size,
       anchor: layout.anchor,
-      fill: componentColor ?? STROKE
+      baseline: labelBaseline,
+      fill: componentColor ?? STROKE,
+      family: textFamily,
+      weight: textWeight,
+      style: resolvedTextStyle.italic ? "italic" : "normal"
     });
     if (hasValue) {
-      appendText(svg, layout.x, layout.y + layout.lineHeight, displayValue, {
-        size: 11,
+      appendText(svg, resolvedX, resolvedY + textLineHeight, displayValue, {
+        size: valueTextSize,
         fill: componentColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value,
-        anchor: layout.anchor
+        anchor: layout.anchor,
+        baseline: labelBaseline,
+        family: textFamily,
+        weight: textWeight,
+        style: resolvedTextStyle.italic ? "italic" : "normal"
       });
     }
     if (measurementText) {
       appendText(
         svg,
-        layout.x,
-        layout.y + layout.lineHeight * (lineCount - 1),
+        resolvedX,
+        resolvedY + textLineHeight * (lineCount - 1),
         measurementText,
-        { size: 11, fill: componentColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value, anchor: layout.anchor, weight: MEASUREMENT_TEXT_WEIGHT }
+        {
+          size: valueTextSize,
+          fill: componentColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value,
+          anchor: layout.anchor,
+          baseline: labelBaseline,
+          family: textFamily,
+          style: resolvedTextStyle.italic ? "italic" : "normal",
+          weight: measurementWeight
+        }
       );
     }
   };
@@ -1805,10 +1610,6 @@
       ? netColorState.netColors
       : {};
     const terminalKeys = getTerminalJunctionKeys(components, wires);
-    wires.forEach((wire) => {
-      const wireColor = normalizeNetColorValue(wireColors[String(wire?.id ?? "")]);
-      drawWire(svg, wire, wireColor);
-    });
     const backgroundAnnotations = [];
     const foregroundComponents = [];
     components.forEach((component) => {
@@ -1818,14 +1619,20 @@
       }
       foregroundComponents.push(component);
     });
-    const renderOrder = backgroundAnnotations.concat(foregroundComponents);
-    renderOrder.forEach((component) => drawComponent(svg, component, {
+    const drawComponentWithResolvedColors = (component) => drawComponent(svg, component, {
       terminalKeys,
       measurements: options?.measurements,
       probeLabels: options?.probeLabels,
+      schematicTextStyle: options?.schematicTextStyle,
       netColor: normalizeNetColorValue(netColors[String(component?.id ?? "")]),
       componentColor: normalizeNetColorValue(component?.netColor)
-    }));
+    });
+    backgroundAnnotations.forEach((component) => drawComponentWithResolvedColors(component));
+    wires.forEach((wire) => {
+      const wireColor = normalizeNetColorValue(wireColors[String(wire?.id ?? "")]);
+      drawWire(svg, wire, wireColor);
+    });
+    foregroundComponents.forEach((component) => drawComponentWithResolvedColors(component));
     return svg;
   };
 

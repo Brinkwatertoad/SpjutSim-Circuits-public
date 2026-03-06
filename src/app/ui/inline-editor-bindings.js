@@ -152,40 +152,42 @@
     return () => inlineProbeTypeSelect.removeEventListener("change", onChange);
   };
 
-  const bindInlineGroundVariantSelect = (input) => {
+  const bindInlineSelectInput = (input) => {
     const args = input && typeof input === "object" ? input : {};
-    const inlineGroundVariantSelect = args.inlineGroundVariantSelect;
+    const select = args.select;
+    const propertyKey = String(args.propertyKey ?? "").trim();
     const canEdit = typeof args.canEdit === "function" ? args.canEdit : () => false;
     const onPatch = typeof args.onPatch === "function" ? args.onPatch : () => { };
-    if (!inlineGroundVariantSelect || typeof inlineGroundVariantSelect.addEventListener !== "function") {
+    if (!select || typeof select.addEventListener !== "function" || !propertyKey) {
       return () => { };
     }
     const onChange = () => {
       if (!canEdit()) {
         return;
       }
-      onPatch({ groundVariant: inlineGroundVariantSelect.value });
+      onPatch({ [propertyKey]: select.value });
     };
-    inlineGroundVariantSelect.addEventListener("change", onChange);
-    return () => inlineGroundVariantSelect.removeEventListener("change", onChange);
+    select.addEventListener("change", onChange);
+    return () => select.removeEventListener("change", onChange);
   };
 
-  const bindInlineResistorStyleSelect = (input) => {
+  const bindInlineToggleInput = (input) => {
     const args = input && typeof input === "object" ? input : {};
-    const inlineResistorStyleSelect = args.inlineResistorStyleSelect;
+    const target = args.input;
+    const propertyKey = String(args.propertyKey ?? "").trim();
     const canEdit = typeof args.canEdit === "function" ? args.canEdit : () => false;
     const onPatch = typeof args.onPatch === "function" ? args.onPatch : () => { };
-    if (!inlineResistorStyleSelect || typeof inlineResistorStyleSelect.addEventListener !== "function") {
+    if (!target || typeof target.addEventListener !== "function" || !propertyKey) {
       return () => { };
     }
     const onChange = () => {
       if (!canEdit()) {
         return;
       }
-      onPatch({ resistorStyle: inlineResistorStyleSelect.value });
+      onPatch({ [propertyKey]: target.checked === true });
     };
-    inlineResistorStyleSelect.addEventListener("change", onChange);
-    return () => inlineResistorStyleSelect.removeEventListener("change", onChange);
+    target.addEventListener("change", onChange);
+    return () => target.removeEventListener("change", onChange);
   };
 
   const bindInlineBoxStyleInputs = (input) => {
@@ -271,42 +273,6 @@
     return () => cleanups.forEach((cleanup) => cleanup());
   };
 
-  const bindInlineTextInputs = (input) => {
-    const args = input && typeof input === "object" ? input : {};
-    const inlineTextOnlyInput = args.inlineTextOnlyInput;
-    const inlineTextFontSelect = args.inlineTextFontSelect;
-    const inlineTextSizeInput = args.inlineTextSizeInput;
-    const inlineTextBoldInput = args.inlineTextBoldInput;
-    const inlineTextItalicInput = args.inlineTextItalicInput;
-    const inlineTextUnderlineInput = args.inlineTextUnderlineInput;
-    const canEdit = typeof args.canEdit === "function" ? args.canEdit : () => false;
-    const onPatch = typeof args.onPatch === "function" ? args.onPatch : () => { };
-    const cleanups = [];
-
-    const bind = (target, eventName, factory) => {
-      if (!target || typeof target.addEventListener !== "function") {
-        return;
-      }
-      const handler = () => {
-        if (!canEdit()) {
-          return;
-        }
-        onPatch(factory());
-      };
-      target.addEventListener(eventName, handler);
-      cleanups.push(() => target.removeEventListener(eventName, handler));
-    };
-
-    bind(inlineTextOnlyInput, "change", () => ({ textOnly: inlineTextOnlyInput.checked }));
-    bind(inlineTextFontSelect, "change", () => ({ textFont: inlineTextFontSelect.value }));
-    bind(inlineTextSizeInput, "input", () => ({ textSize: inlineTextSizeInput.value }));
-    bind(inlineTextBoldInput, "change", () => ({ textBold: inlineTextBoldInput.checked }));
-    bind(inlineTextItalicInput, "change", () => ({ textItalic: inlineTextItalicInput.checked }));
-    bind(inlineTextUnderlineInput, "change", () => ({ textUnderline: inlineTextUnderlineInput.checked }));
-
-    return () => cleanups.forEach((cleanup) => cleanup());
-  };
-
   if (typeof self !== "undefined") {
     self.SpjutSimUIInlineEditorBindings = {
       setInlineSwitchActiveThrowState,
@@ -314,10 +280,9 @@
       bindInlineValueInput,
       bindInlineSwitchInputs,
       bindInlineProbeTypeSelect,
-      bindInlineGroundVariantSelect,
-      bindInlineResistorStyleSelect,
-      bindInlineBoxStyleInputs,
-      bindInlineTextInputs
+      bindInlineSelectInput,
+      bindInlineToggleInput,
+      bindInlineBoxStyleInputs
     };
   }
 })();

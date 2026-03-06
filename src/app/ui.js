@@ -5,7 +5,6 @@
 /** @typedef {(netlist: string, signals?: string[]) => void} RunHandler */
 /** @typedef {{ onInit: VoidHandler, onRun: RunOpHandler, onRunDc: RunHandler, onRunTran: RunHandler, onRunAc: RunHandler, onReset: VoidHandler }} UIActions */
 /** @typedef {{ setStatus: (status: AppState["status"]) => void, setError: (message?: string) => void, setLog: (lines: string[]) => void, appendLog: (line: string) => void, getNetlist: () => string, setNetlist: (netlist: string) => void, setOpResults: (results?: AppState["opResults"]) => void, setDcResults: (results?: AppState["dcResults"]) => void, setTranResults: (results?: AppState["tranResults"]) => void, setAcResults: (results?: AppState["acResults"]) => void }} UIHandle */
-
 const getUIDomainsApi = () => (typeof self !== "undefined" ? (self.SpjutSimUIDomains ?? null) : null);
 const requireUIDomain = (name) => {
   const domains = getUIDomainsApi();
@@ -51,10 +50,9 @@ const requireUIInlineEditorBindingsModule = () => {
     || typeof api.bindInlineValueInput !== "function"
     || typeof api.bindInlineSwitchInputs !== "function"
     || typeof api.bindInlineProbeTypeSelect !== "function"
-    || typeof api.bindInlineGroundVariantSelect !== "function"
-    || typeof api.bindInlineResistorStyleSelect !== "function"
-    || typeof api.bindInlineBoxStyleInputs !== "function"
-    || typeof api.bindInlineTextInputs !== "function") {
+    || typeof api.bindInlineSelectInput !== "function"
+    || typeof api.bindInlineToggleInput !== "function"
+    || typeof api.bindInlineBoxStyleInputs !== "function") {
     throw new Error("UI inline-editor bindings module missing. Check src/app/ui/inline-editor-bindings.js load order.");
   }
   return api;
@@ -255,6 +253,14 @@ const RESULTS_PANE_STACK_WIDTH_THRESHOLD = Number.isFinite(Number(uiResultsPaneD
 const RESULTS_PANE_COMPACT_WIDTH_THRESHOLD = Number.isFinite(Number(uiResultsPaneDomain.RESULTS_PANE_COMPACT_WIDTH_THRESHOLD))
   ? Number(uiResultsPaneDomain.RESULTS_PANE_COMPACT_WIDTH_THRESHOLD)
   : 600;
+const DEFAULT_AUTO_SWITCH_TO_SELECT_ON_PLACE = true;
+const DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE = false;
+const DEFAULT_SCHEMATIC_TEXT_STYLE = Object.freeze({
+  font: "Segoe UI",
+  size: 12,
+  bold: false,
+  italic: false
+});
 
 const createSimulationConfig = () => ({
   activeKind: "op",
@@ -392,6 +398,196 @@ const buildAboutDialog = (container) => {
   return { aboutDialog, openAboutDialog, closeAboutDialog };
 };
 
+const buildSettingsDialog = (container, config = {}) => {
+  const getAutoSwitchToSelectAfterToolUse = typeof config.getAutoSwitchToSelectAfterToolUse === "function"
+    ? config.getAutoSwitchToSelectAfterToolUse
+    : () => false;
+  const onAutoSwitchToSelectAfterToolUseChange = typeof config.onAutoSwitchToSelectAfterToolUseChange === "function"
+    ? config.onAutoSwitchToSelectAfterToolUseChange
+    : () => { };
+  const getAutoSwitchToSelectAfterWireUse = typeof config.getAutoSwitchToSelectAfterWireUse === "function"
+    ? config.getAutoSwitchToSelectAfterWireUse
+    : () => false;
+  const onAutoSwitchToSelectAfterWireUseChange = typeof config.onAutoSwitchToSelectAfterWireUseChange === "function"
+    ? config.onAutoSwitchToSelectAfterWireUseChange
+    : () => { };
+  const getSchematicTextStyle = typeof config.getSchematicTextStyle === "function"
+    ? config.getSchematicTextStyle
+    : () => ({ ...DEFAULT_SCHEMATIC_TEXT_STYLE });
+  const getSchematicTextFontOptions = typeof config.getSchematicTextFontOptions === "function"
+    ? config.getSchematicTextFontOptions
+    : () => [DEFAULT_SCHEMATIC_TEXT_STYLE.font];
+  const onSchematicTextStyleChange = typeof config.onSchematicTextStyleChange === "function"
+    ? config.onSchematicTextStyleChange
+    : () => { };
+  const onResetSettings = typeof config.onResetSettings === "function"
+    ? config.onResetSettings
+    : () => { };
+  const settingsDialog = document.createElement("div");
+  settingsDialog.className = "modal-backdrop hidden";
+  settingsDialog.dataset.settingsDialog = "1";
+  settingsDialog.setAttribute("role", "dialog");
+  settingsDialog.setAttribute("aria-modal", "true");
+  settingsDialog.hidden = true;
+  const settingsPanel = document.createElement("div");
+  settingsPanel.className = "modal-dialog";
+  settingsPanel.dataset.settingsPanel = "1";
+  const settingsTitle = document.createElement("div");
+  settingsTitle.className = "modal-title";
+  settingsTitle.dataset.settingsTitle = "1";
+  settingsTitle.textContent = "Settings";
+  const settingsBody = document.createElement("div");
+  settingsBody.className = "modal-body";
+  settingsBody.dataset.settingsBody = "1";
+  const autoSwitchToolUseRow = document.createElement("label");
+  autoSwitchToolUseRow.className = "modal-field";
+  const autoSwitchToolUseToggle = document.createElement("input");
+  autoSwitchToolUseToggle.type = "checkbox";
+  autoSwitchToolUseToggle.dataset.settingsSetting = "autoswitch-select-tool-use";
+  const autoSwitchToolUseLabel = document.createElement("span");
+  autoSwitchToolUseLabel.textContent = "Autoswitch to Select after tool use";
+  autoSwitchToolUseRow.append(autoSwitchToolUseToggle, autoSwitchToolUseLabel);
+  const autoSwitchWireUseRow = document.createElement("label");
+  autoSwitchWireUseRow.className = "modal-field";
+  const autoSwitchWireUseToggle = document.createElement("input");
+  autoSwitchWireUseToggle.type = "checkbox";
+  autoSwitchWireUseToggle.dataset.settingsSetting = "autoswitch-select-wire-use";
+  const autoSwitchWireUseLabel = document.createElement("span");
+  autoSwitchWireUseLabel.textContent = "Autoswitch to Select after Wire use";
+  autoSwitchWireUseRow.append(autoSwitchWireUseToggle, autoSwitchWireUseLabel);
+  const schematicTextFontRow = document.createElement("label");
+  schematicTextFontRow.className = "modal-field";
+  const schematicTextFontLabel = document.createElement("span");
+  schematicTextFontLabel.textContent = "Schematic text font";
+  const schematicTextFontSelect = document.createElement("select");
+  schematicTextFontSelect.dataset.settingsSetting = "schematic-text-font";
+  const textFontOptionsRaw = getSchematicTextFontOptions();
+  const textFontOptions = Array.isArray(textFontOptionsRaw)
+    ? textFontOptionsRaw
+    : [];
+  textFontOptions.forEach((entry) => {
+    const fontName = String(entry ?? "").trim();
+    if (!fontName) {
+      return;
+    }
+    const option = document.createElement("option");
+    option.value = fontName;
+    option.textContent = fontName;
+    schematicTextFontSelect.appendChild(option);
+  });
+  if (!schematicTextFontSelect.options.length) {
+    const fallbackOption = document.createElement("option");
+    fallbackOption.value = DEFAULT_SCHEMATIC_TEXT_STYLE.font;
+    fallbackOption.textContent = DEFAULT_SCHEMATIC_TEXT_STYLE.font;
+    schematicTextFontSelect.appendChild(fallbackOption);
+  }
+  schematicTextFontRow.append(schematicTextFontLabel, schematicTextFontSelect);
+  const schematicTextSizeRow = document.createElement("label");
+  schematicTextSizeRow.className = "modal-field";
+  const schematicTextSizeLabel = document.createElement("span");
+  schematicTextSizeLabel.textContent = "Schematic text size";
+  const schematicTextSizeInput = document.createElement("input");
+  schematicTextSizeInput.type = "number";
+  schematicTextSizeInput.min = "8";
+  schematicTextSizeInput.max = "72";
+  schematicTextSizeInput.step = "1";
+  schematicTextSizeInput.dataset.settingsSetting = "schematic-text-size";
+  schematicTextSizeRow.append(schematicTextSizeLabel, schematicTextSizeInput);
+  const schematicTextBoldRow = document.createElement("label");
+  schematicTextBoldRow.className = "modal-field";
+  const schematicTextBoldToggle = document.createElement("input");
+  schematicTextBoldToggle.type = "checkbox";
+  schematicTextBoldToggle.dataset.settingsSetting = "schematic-text-bold";
+  const schematicTextBoldLabel = document.createElement("span");
+  schematicTextBoldLabel.textContent = "Schematic text bold";
+  schematicTextBoldRow.append(schematicTextBoldToggle, schematicTextBoldLabel);
+  const schematicTextItalicRow = document.createElement("label");
+  schematicTextItalicRow.className = "modal-field";
+  const schematicTextItalicToggle = document.createElement("input");
+  schematicTextItalicToggle.type = "checkbox";
+  schematicTextItalicToggle.dataset.settingsSetting = "schematic-text-italic";
+  const schematicTextItalicLabel = document.createElement("span");
+  schematicTextItalicLabel.textContent = "Schematic text italic";
+  schematicTextItalicRow.append(schematicTextItalicToggle, schematicTextItalicLabel);
+  settingsBody.append(
+    autoSwitchToolUseRow,
+    autoSwitchWireUseRow,
+    schematicTextFontRow,
+    schematicTextSizeRow,
+    schematicTextBoldRow,
+    schematicTextItalicRow
+  );
+  const settingsActions = document.createElement("div");
+  settingsActions.className = "modal-actions";
+  const settingsReset = document.createElement("button");
+  settingsReset.type = "button";
+  settingsReset.className = "secondary";
+  settingsReset.textContent = "Reset Settings";
+  settingsReset.dataset.settingsReset = "1";
+  const settingsClose = document.createElement("button");
+  settingsClose.type = "button";
+  settingsClose.textContent = "Close";
+  settingsClose.dataset.settingsClose = "1";
+  settingsActions.append(settingsReset, settingsClose);
+  settingsPanel.append(settingsTitle, settingsBody, settingsActions);
+  settingsDialog.append(settingsPanel);
+  container.appendChild(settingsDialog);
+
+  const syncSettingsState = () => {
+    autoSwitchToolUseToggle.checked = Boolean(getAutoSwitchToSelectAfterToolUse());
+    autoSwitchWireUseToggle.checked = Boolean(getAutoSwitchToSelectAfterWireUse());
+    const textSettings = getSchematicTextStyle();
+    const normalizedFont = String(textSettings?.font ?? "").trim();
+    const hasMatchingOption = Array.from(schematicTextFontSelect.options).some((option) => option.value === normalizedFont);
+    schematicTextFontSelect.value = hasMatchingOption
+      ? normalizedFont
+      : schematicTextFontSelect.options[0].value;
+    const parsedSize = Number(textSettings?.size);
+    schematicTextSizeInput.value = Number.isFinite(parsedSize)
+      ? String(Math.round(parsedSize))
+      : String(DEFAULT_SCHEMATIC_TEXT_STYLE.size);
+    schematicTextBoldToggle.checked = textSettings?.bold === true;
+    schematicTextItalicToggle.checked = textSettings?.italic === true;
+  };
+  const openSettingsDialog = () => {
+    syncSettingsState();
+    setDialogOpen(settingsDialog, true);
+  };
+  const closeSettingsDialog = () => setDialogOpen(settingsDialog, false);
+
+  settingsDialog.addEventListener("click", (event) => {
+    if (event.target === settingsDialog) {
+      closeSettingsDialog();
+    }
+  });
+  autoSwitchToolUseToggle.addEventListener("change", () => {
+    onAutoSwitchToSelectAfterToolUseChange(autoSwitchToolUseToggle.checked);
+  });
+  autoSwitchWireUseToggle.addEventListener("change", () => {
+    onAutoSwitchToSelectAfterWireUseChange(autoSwitchWireUseToggle.checked);
+  });
+  schematicTextFontSelect.addEventListener("change", () => {
+    onSchematicTextStyleChange({ font: schematicTextFontSelect.value });
+  });
+  schematicTextSizeInput.addEventListener("change", () => {
+    onSchematicTextStyleChange({ size: Number(schematicTextSizeInput.value) });
+  });
+  schematicTextBoldToggle.addEventListener("change", () => {
+    onSchematicTextStyleChange({ bold: schematicTextBoldToggle.checked });
+  });
+  schematicTextItalicToggle.addEventListener("change", () => {
+    onSchematicTextStyleChange({ italic: schematicTextItalicToggle.checked });
+  });
+  settingsReset.addEventListener("click", () => {
+    onResetSettings();
+    syncSettingsState();
+  });
+  settingsClose.addEventListener("click", closeSettingsDialog);
+  syncSettingsState();
+
+  return { settingsDialog, openSettingsDialog, closeSettingsDialog };
+};
+
 /**
  * @param {HTMLElement} container
  * @param {AppState} state
@@ -427,6 +623,9 @@ function createUI(container, state, actions) {
   let schematicEditor = null;
   let schematicSelectionId = null;
   let schematicTool = "select";
+  let autoSwitchToSelectOnPlace = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_PLACE;
+  let autoSwitchToSelectOnWire = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE;
+  let schematicTextStyle = { ...DEFAULT_SCHEMATIC_TEXT_STYLE };
   let activeTraceHighlightTokens = new Set();
   let activeTraceSelectionTokens = new Set();
   let activeTraceHoverTokens = new Set();
@@ -555,13 +754,10 @@ function createUI(container, state, actions) {
     getTextFontOptions: requireSchematicMethod("getTextFontOptions"),
     normalizeTextFont: requireSchematicMethod("normalizeTextFont"),
     normalizeTextSize: requireSchematicMethod("normalizeTextSize"),
-    getDefaultTextStyle: requireSchematicMethod("getDefaultTextStyle"),
-    normalizeGroundVariant: requireSchematicMethod("normalizeGroundVariant"),
-    listGroundVariants: requireSchematicMethod("listGroundVariants"),
-    normalizeResistorStyle: requireSchematicMethod("normalizeResistorStyle"),
-    listResistorStyles: requireSchematicMethod("listResistorStyles")
+    getDefaultTextStyle: requireSchematicMethod("getDefaultTextStyle")
   });
   const elementCatalogApi = Object.freeze({
+    listElementDefinitions: requireSchematicMethod("listElementDefinitions"),
     listToolbarElementDefinitions: requireSchematicMethod("listToolbarElementDefinitions"),
     isProbeComponentType: requireSchematicMethod("isProbeComponentType"),
     getValueFieldMeta: requireSchematicMethod("getValueFieldMeta")
@@ -582,52 +778,455 @@ function createUI(container, state, actions) {
   const parseSpdtSwitchValue = requireSchematicMethod("parseSpdtSwitchValue");
   const buildAnalysisDirectivesForConfig = requireSchematicMethod("buildAnalysisDirectivesForConfig");
 
-  const getTextFontOptions = () => {
-    const raw = textStyleApi.getTextFontOptions();
-    if (!Array.isArray(raw) || raw.length === 0) {
-      throw new Error("Schematic API getTextFontOptions() returned no options.");
+  const getSelectPropertyContract = ({
+    type: rawType,
+    key: rawKey,
+    property: sourceProperty,
+    propertyFieldPath: rawPropertyFieldPath,
+    normalizeMethodName: rawNormalizeMethodName,
+    normalizeValue
+  } = {}) => {
+    const source = {
+      type: rawType,
+      key: rawKey,
+      property: sourceProperty,
+      propertyFieldPath: rawPropertyFieldPath,
+      normalizeMethodName: rawNormalizeMethodName,
+      normalizeValue
+    };
+    const type = String(source.type ?? "").trim().toUpperCase();
+    const key = String(source.key ?? "").trim();
+    const normalizeMethodName = String(source.normalizeMethodName ?? "").trim();
+    const propertyFieldPath = String(source.propertyFieldPath ?? `${type}.${key}`).trim();
+    const property = source.property;
+    if (!type || !key) {
+      throw new Error(`Inline select property contract '${propertyFieldPath || "?"}' requires non-empty type/key.`);
     }
-    const normalized = raw
-      .map((entry) => String(entry ?? "").trim())
-      .filter((entry) => entry.length > 0);
-    if (!normalized.length) {
-      throw new Error("Schematic API getTextFontOptions() returned invalid options.");
+    if (!property) {
+      throw new Error(`Missing property contract '${propertyFieldPath}' in element catalog definition list.`);
     }
-    return normalized;
+    const control = String(property?.control ?? "").trim().toLowerCase();
+    if (control !== "select") {
+      throw new Error(`Property contract '${propertyFieldPath}' must use select control.`);
+    }
+    const normalizeMethod = String(property?.normalizeMethod ?? "").trim();
+    if (normalizeMethod !== normalizeMethodName) {
+      throw new Error(
+        `Property contract '${propertyFieldPath}' normalize owner mismatch. Expected '${normalizeMethodName}', got '${normalizeMethod || "?"}'.`
+      );
+    }
+    const label = String(property?.label ?? "").trim();
+    if (!label) {
+      throw new Error(`Property contract '${propertyFieldPath}' requires a non-empty label.`);
+    }
+    const optionsRaw = Array.isArray(property?.options) ? property.options : [];
+    if (!optionsRaw.length) {
+      throw new Error(`Property contract '${propertyFieldPath}' requires one or more options.`);
+    }
+    const seenValues = new Set();
+    const options = optionsRaw.map((entry, index) => {
+      const value = normalizeValue(entry?.value);
+      const optionLabel = String(entry?.label ?? "").trim();
+      if (typeof value !== "string" || !value.trim()) {
+        throw new Error(`Property contract '${propertyFieldPath}' has invalid option value at index ${index}.`);
+      }
+      if (!optionLabel) {
+        throw new Error(`Property contract '${propertyFieldPath}' has invalid option label at index ${index}.`);
+      }
+      if (seenValues.has(value)) {
+        throw new Error(`Property contract '${propertyFieldPath}' contains duplicate option value '${value}'.`);
+      }
+      seenValues.add(value);
+      return { value, label: optionLabel };
+    });
+    return Object.freeze({
+      key,
+      label,
+      options: Object.freeze(options)
+    });
+  };
+  const areInlineSelectContractsEqual = (left, right) => {
+    if (!left || !right) {
+      return false;
+    }
+    if (left.label !== right.label) {
+      return false;
+    }
+    if (!Array.isArray(left.options) || !Array.isArray(right.options) || left.options.length !== right.options.length) {
+      return false;
+    }
+    for (let index = 0; index < left.options.length; index += 1) {
+      const leftOption = left.options[index];
+      const rightOption = right.options[index];
+      if (leftOption?.value !== rightOption?.value || leftOption?.label !== rightOption?.label) {
+        return false;
+      }
+    }
+    return true;
   };
 
-  const normalizeTextFontValue = (value) => textStyleApi.normalizeTextFont(value);
-  const normalizeTextSizeValue = (value) => textStyleApi.normalizeTextSize(value);
-  const normalizeGroundVariantValue = (value) => textStyleApi.normalizeGroundVariant(value);
-  const normalizeResistorStyleValue = (value) => textStyleApi.normalizeResistorStyle(value);
-  const listGroundVariantValues = () => {
-    const raw = textStyleApi.listGroundVariants();
-    if (!Array.isArray(raw) || !raw.length) {
-      throw new Error("Schematic API listGroundVariants() returned invalid data.");
+  const inlineSelectNormalizeMethodCache = new Map();
+  const resolveInlineSelectNormalizeValue = (normalizeMethod) => {
+    const methodName = String(normalizeMethod ?? "").trim();
+    if (!methodName) {
+      throw new Error("Inline select property contract requires a non-empty normalize owner.");
     }
-    return Array.from(new Set(raw.map((entry) => normalizeGroundVariantValue(entry))));
-  };
-  const listResistorStyleValues = () => {
-    const raw = textStyleApi.listResistorStyles();
-    if (!Array.isArray(raw) || !raw.length) {
-      throw new Error("Schematic API listResistorStyles() returned invalid data.");
+    const cachedNormalizeValue = inlineSelectNormalizeMethodCache.get(methodName);
+    if (typeof cachedNormalizeValue === "function") {
+      return cachedNormalizeValue;
     }
-    return Array.from(new Set(raw.map((entry) => normalizeResistorStyleValue(entry))));
+    const normalizeValue = requireSchematicMethod(methodName);
+    inlineSelectNormalizeMethodCache.set(methodName, normalizeValue);
+    return normalizeValue;
   };
+  const buildInlineSelectPropertySpecs = () => {
+    const definitions = elementCatalogApi.listElementDefinitions();
+    if (!Array.isArray(definitions) || !definitions.length) {
+      throw new Error("Schematic API listElementDefinitions() returned invalid data.");
+    }
+    const specsByKey = new Map();
+    definitions.forEach((definition, definitionIndex) => {
+      const type = String(definition?.type ?? "").trim().toUpperCase();
+      if (!type) {
+        throw new Error(`Schematic API listElementDefinitions() returned invalid type at index ${definitionIndex}.`);
+      }
+      const properties = Array.isArray(definition?.properties) ? definition.properties : [];
+      properties.forEach((property, propertyIndex) => {
+        const key = String(property?.key ?? "").trim();
+        const control = String(property?.control ?? "").trim().toLowerCase();
+        if (control !== "select" || property?.inlineEditVisible === false) {
+          return;
+        }
+        if (!key) {
+          throw new Error(
+            `Inline select property contract '${type}' missing key at property index ${propertyIndex}.`
+          );
+        }
+        const normalizeMethod = String(property?.normalizeMethod ?? "").trim();
+        const normalizeValue = resolveInlineSelectNormalizeValue(normalizeMethod);
+        const propertyFieldPath = `${type}.${key}`;
+        const nextContract = getSelectPropertyContract({
+          type,
+          key,
+          property,
+          propertyFieldPath,
+          normalizeMethodName: normalizeMethod,
+          normalizeValue
+        });
+        const existingSpec = specsByKey.get(key);
+        if (!existingSpec) {
+          specsByKey.set(key, {
+            key,
+            normalizeMethod,
+            normalizeValue,
+            contract: nextContract,
+            componentTypes: [type]
+          });
+          return;
+        }
+        if (existingSpec.normalizeMethod !== normalizeMethod) {
+          throw new Error(
+            `Inline select property '${key}' normalize owner mismatch across element definitions.`
+          );
+        }
+        if (!areInlineSelectContractsEqual(existingSpec.contract, nextContract)) {
+          throw new Error(`Inline select property '${key}' contract mismatch across element definitions.`);
+        }
+        if (!existingSpec.componentTypes.includes(type)) {
+          existingSpec.componentTypes.push(type);
+        }
+      });
+    });
+    const specs = [];
+    specsByKey.forEach((existingSpec) => {
+      specs.push(Object.freeze({
+        key: existingSpec.key,
+        componentTypes: Object.freeze(existingSpec.componentTypes.slice()),
+        normalizeMethod: existingSpec.normalizeMethod,
+        normalizeValue: existingSpec.normalizeValue,
+        contract: existingSpec.contract
+      }));
+    });
+    if (!specs.length) {
+      throw new Error("Inline select property contracts missing from element definitions.");
+    }
+    return Object.freeze(specs);
+  };
+  const INLINE_SELECT_PROPERTY_SPECS = buildInlineSelectPropertySpecs();
+  const getInlineSelectPropertySpec = (key) => {
+    const normalizedKey = String(key ?? "").trim();
+    const spec = INLINE_SELECT_PROPERTY_SPECS.find((entry) => entry.key === normalizedKey) ?? null;
+    if (!spec) {
+      throw new Error(`Unsupported inline select property contract '${normalizedKey || "?"}'.`);
+    }
+    return spec;
+  };
+  const getInlineSelectPropertyContract = (key) => {
+    const spec = getInlineSelectPropertySpec(key);
+    return spec.contract;
+  };
+  const getTogglePropertyContract = ({
+    type,
+    key,
+    source,
+    propertyFieldPath,
+    normalizeMethodName
+  }) => {
+    const property = source && typeof source === "object" && source.property
+      ? source.property
+      : null;
+    if (!type || !key || typeof type !== "string" || typeof key !== "string") {
+      throw new Error(`Inline toggle property contract '${propertyFieldPath || "?"}' requires non-empty type/key.`);
+    }
+    if (!property) {
+      throw new Error(`Missing property contract '${propertyFieldPath}' in element catalog definition list.`);
+    }
+    const control = String(property?.control ?? "").trim().toLowerCase();
+    if (control !== "toggle") {
+      throw new Error(`Property contract '${propertyFieldPath}' must use toggle control.`);
+    }
+    const normalizeMethod = String(property?.normalizeMethod ?? "").trim();
+    if (normalizeMethod !== normalizeMethodName) {
+      throw new Error(
+        `Property contract '${propertyFieldPath}' normalize owner mismatch. Expected '${normalizeMethodName}', got '${normalizeMethod || "?"}'.`
+      );
+    }
+    const label = String(property?.label ?? "").trim();
+    if (!label) {
+      throw new Error(`Property contract '${propertyFieldPath}' requires a non-empty label.`);
+    }
+    return Object.freeze({
+      key,
+      label
+    });
+  };
+  const areInlineToggleContractsEqual = (left, right) => {
+    if (!left || !right) {
+      return false;
+    }
+    return left.label === right.label;
+  };
+  const buildInlineTogglePropertySpecs = () => {
+    const definitions = elementCatalogApi.listElementDefinitions();
+    if (!Array.isArray(definitions) || !definitions.length) {
+      throw new Error("Schematic API listElementDefinitions() returned invalid data.");
+    }
+    const specsByKey = new Map();
+    definitions.forEach((definition, definitionIndex) => {
+      const type = String(definition?.type ?? "").trim().toUpperCase();
+      if (!type) {
+        throw new Error(`Schematic API listElementDefinitions() returned invalid type at index ${definitionIndex}.`);
+      }
+      const properties = Array.isArray(definition?.properties) ? definition.properties : [];
+      properties.forEach((property, propertyIndex) => {
+        const key = String(property?.key ?? "").trim();
+        const control = String(property?.control ?? "").trim().toLowerCase();
+        if (control !== "toggle" || property?.inlineEditVisible === false) {
+          return;
+        }
+        if (!key) {
+          throw new Error(
+            `Inline toggle property contract '${type}' missing key at property index ${propertyIndex}.`
+          );
+        }
+        const normalizeMethod = String(property?.normalizeMethod ?? "").trim();
+        const normalizeValue = resolveInlineSelectNormalizeValue(normalizeMethod);
+        const propertyFieldPath = `${type}.${key}`;
+        const nextContract = getTogglePropertyContract({
+          type,
+          key,
+          source: { property },
+          propertyFieldPath,
+          normalizeMethodName: normalizeMethod
+        });
+        const existingSpec = specsByKey.get(key);
+        if (!existingSpec) {
+          specsByKey.set(key, {
+            key,
+            normalizeMethod,
+            normalizeValue,
+            contract: nextContract,
+            componentTypes: [type]
+          });
+          return;
+        }
+        if (existingSpec.normalizeMethod !== normalizeMethod) {
+          throw new Error(
+            `Inline toggle property '${key}' normalize owner mismatch across element definitions.`
+          );
+        }
+        if (!areInlineToggleContractsEqual(existingSpec.contract, nextContract)) {
+          throw new Error(`Inline toggle property '${key}' contract mismatch across element definitions.`);
+        }
+        if (!existingSpec.componentTypes.includes(type)) {
+          existingSpec.componentTypes.push(type);
+        }
+      });
+    });
+    const specs = [];
+    specsByKey.forEach((existingSpec) => {
+      specs.push(Object.freeze({
+        key: existingSpec.key,
+        componentTypes: Object.freeze(existingSpec.componentTypes.slice()),
+        normalizeMethod: existingSpec.normalizeMethod,
+        normalizeValue: existingSpec.normalizeValue,
+        contract: existingSpec.contract
+      }));
+    });
+    return Object.freeze(specs);
+  };
+  const INLINE_TOGGLE_PROPERTY_SPECS = buildInlineTogglePropertySpecs();
+  const getInlineTogglePropertySpec = (key) => {
+    const normalizedKey = String(key ?? "").trim();
+    const spec = INLINE_TOGGLE_PROPERTY_SPECS.find((entry) => entry.key === normalizedKey) ?? null;
+    if (!spec) {
+      throw new Error(`Unsupported inline toggle property contract '${normalizedKey || "?"}'.`);
+    }
+    return spec;
+  };
+  const getInlineTogglePropertyContract = (key) => {
+    const spec = getInlineTogglePropertySpec(key);
+    return spec.contract;
+  };
+  const INLINE_INPUT_CONTROL_TYPES = new Set(["text", "number", "color"]);
+  const normalizeInputContractMetadata = (propertyFieldPath, control, input) => {
+    const normalizedInput = {};
+    if (typeof input?.placeholder === "string") {
+      normalizedInput.placeholder = input.placeholder;
+    }
+    if (control === "number") {
+      ["min", "max", "step"].forEach((name) => {
+        if (!Object.prototype.hasOwnProperty.call(input, name)) return;
+        const value = Number(input[name]);
+        if (!Number.isFinite(value)) {
+          throw new Error(`Property contract '${propertyFieldPath}.input.${name}' requires a finite number.`);
+        }
+        normalizedInput[name] = value;
+      });
+    }
+    return normalizedInput;
+  };
+  const getInputPropertyContract = ({
+    type, key, source, propertyFieldPath, normalizeMethodName
+  }) => {
+    const property = source && typeof source === "object" ? source.property : null;
+    if (!type || !key || typeof type !== "string" || typeof key !== "string") {
+      throw new Error(`Inline input property contract '${propertyFieldPath || "?"}' requires non-empty type/key.`);
+    }
+    if (!property) throw new Error(`Missing property contract '${propertyFieldPath}' in element catalog definition list.`);
+    const control = String(property?.control ?? "").trim().toLowerCase();
+    if (!INLINE_INPUT_CONTROL_TYPES.has(control)) {
+      throw new Error(`Property contract '${propertyFieldPath}' must use text/number/color control.`);
+    }
+    const normalizeMethod = String(property?.normalizeMethod ?? "").trim();
+    if (normalizeMethod !== normalizeMethodName) {
+      throw new Error(`Property contract '${propertyFieldPath}' normalize owner mismatch. Expected '${normalizeMethodName}', got '${normalizeMethod || "?"}'.`);
+    }
+    const label = String(property?.label ?? "").trim();
+    if (!label) throw new Error(`Property contract '${propertyFieldPath}' requires a non-empty label.`);
+    const input = property?.input && typeof property.input === "object" && !Array.isArray(property.input) ? property.input : {};
+    return Object.freeze({ key, label, control, input: Object.freeze(normalizeInputContractMetadata(propertyFieldPath, control, input)) });
+  };
+  const areInlineInputContractsEqual = (left, right) => {
+    if (!left || !right || left.label !== right.label || left.control !== right.control) return false;
+    const leftInput = left.input && typeof left.input === "object" ? left.input : {};
+    const rightInput = right.input && typeof right.input === "object" ? right.input : {};
+    return !Array.from(new Set([...Object.keys(leftInput), ...Object.keys(rightInput)])).some((entryKey) => leftInput[entryKey] !== rightInput[entryKey]);
+  };
+  const buildInlineInputPropertySpecs = () => {
+    const definitions = elementCatalogApi.listElementDefinitions();
+    if (!Array.isArray(definitions) || !definitions.length) {
+      throw new Error("Schematic API listElementDefinitions() returned invalid data.");
+    }
+    const specsByKey = new Map();
+    definitions.forEach((definition, definitionIndex) => {
+      const type = String(definition?.type ?? "").trim().toUpperCase();
+      if (!type) {
+        throw new Error(`Schematic API listElementDefinitions() returned invalid type at index ${definitionIndex}.`);
+      }
+      const properties = Array.isArray(definition?.properties) ? definition.properties : [];
+      properties.forEach((property, propertyIndex) => {
+        const key = String(property?.key ?? "").trim();
+        const control = String(property?.control ?? "").trim().toLowerCase();
+        if (!INLINE_INPUT_CONTROL_TYPES.has(control) || property?.inlineEditVisible === false) return;
+        if (!key) {
+          throw new Error(`Inline input property contract '${type}' missing key at property index ${propertyIndex}.`);
+        }
+        const normalizeMethod = String(property?.normalizeMethod ?? "").trim();
+        const normalizeValue = resolveInlineSelectNormalizeValue(normalizeMethod);
+        const propertyFieldPath = `${type}.${key}`;
+        const nextContract = getInputPropertyContract({ type, key, source: { property }, propertyFieldPath, normalizeMethodName: normalizeMethod });
+        const existingSpec = specsByKey.get(key);
+        if (!existingSpec) {
+          specsByKey.set(key, { key, normalizeMethod, normalizeValue, contract: nextContract, componentTypes: [type] });
+          return;
+        }
+        if (existingSpec.normalizeMethod !== normalizeMethod) {
+          throw new Error(`Inline input property '${key}' normalize owner mismatch across element definitions.`);
+        }
+        if (!areInlineInputContractsEqual(existingSpec.contract, nextContract)) {
+          throw new Error(`Inline input property '${key}' contract mismatch across element definitions.`);
+        }
+        if (!existingSpec.componentTypes.includes(type)) existingSpec.componentTypes.push(type);
+      });
+    });
+    const specs = [];
+    specsByKey.forEach((existingSpec) => specs.push(Object.freeze({
+      key: existingSpec.key,
+      componentTypes: Object.freeze(existingSpec.componentTypes.slice()),
+      normalizeMethod: existingSpec.normalizeMethod,
+      normalizeValue: existingSpec.normalizeValue,
+      contract: existingSpec.contract
+    })));
+    return Object.freeze(specs);
+  };
+  const INLINE_INPUT_PROPERTY_SPECS = buildInlineInputPropertySpecs();
+  const getInlineInputPropertySpec = (key) => {
+    const normalizedKey = String(key ?? "").trim();
+    const spec = INLINE_INPUT_PROPERTY_SPECS.find((entry) => entry.key === normalizedKey) ?? null;
+    if (!spec) throw new Error(`Unsupported inline input property contract '${normalizedKey || "?"}'.`);
+    return spec;
+  };
+  const getInlineInputPropertyContract = (key) => { const spec = getInlineInputPropertySpec(key); return spec.contract; };
 
   const getDefaultTextStyle = () => {
     const style = textStyleApi.getDefaultTextStyle();
-    if (!style || typeof style !== "object") {
-      throw new Error("Schematic API getDefaultTextStyle() returned invalid payload.");
-    }
+    if (!style || typeof style !== "object") throw new Error("Schematic API getDefaultTextStyle() returned invalid payload.");
+    return { font: textStyleApi.normalizeTextFont(style.font), size: textStyleApi.normalizeTextSize(style.size), bold: style.bold === true, italic: style.italic === true, underline: style.underline === true };
+  };
+  const normalizeSchematicTextStyle = (value, fallback = DEFAULT_SCHEMATIC_TEXT_STYLE) => {
+    const base = fallback && typeof fallback === "object"
+      ? fallback
+      : DEFAULT_SCHEMATIC_TEXT_STYLE;
+    const source = value && typeof value === "object"
+      ? value
+      : {};
     return {
-      font: normalizeTextFontValue(style.font),
-      size: normalizeTextSizeValue(style.size),
-      bold: style.bold === true,
-      italic: style.italic === true,
-      underline: style.underline === true
+      font: textStyleApi.normalizeTextFont(
+        Object.prototype.hasOwnProperty.call(source, "font")
+          ? source.font
+          : base.font
+      ),
+      size: textStyleApi.normalizeTextSize(
+        Object.prototype.hasOwnProperty.call(source, "size")
+          ? source.size
+          : base.size
+      ),
+      bold: Object.prototype.hasOwnProperty.call(source, "bold")
+        ? source.bold === true
+        : base.bold === true,
+      italic: Object.prototype.hasOwnProperty.call(source, "italic")
+        ? source.italic === true
+        : base.italic === true
     };
   };
+  const applySchematicTextStyleToEditor = () => {
+    if (!schematicEditor || typeof schematicEditor.setSchematicTextStyle !== "function") {
+      return;
+    }
+    schematicEditor.setSchematicTextStyle(schematicTextStyle);
+  };
+  schematicTextStyle = normalizeSchematicTextStyle(schematicTextStyle);
 
   const normalizeSpdtThrow = (value) => uiInlineEditorDomain.normalizeSpdtThrow(value);
   const parseSpdtSwitchValueSafe = (value) => uiInlineEditorDomain.parseSpdtSwitchValueSafe(parseSpdtSwitchValue, value);
@@ -681,7 +1280,6 @@ function createUI(container, state, actions) {
     }
     return text;
   };
-
   const createNetColorPicker = ({ rowAttribute, swatchAttribute, onPick }) => {
     const row = document.createElement("label");
     row.className = "inline-edit-row schematic-net-color-row";
@@ -3526,6 +4124,7 @@ function createUI(container, state, actions) {
     }
     if (!schematicEditor && typeof api.createEditor === "function") {
       schematicEditor = api.createEditor(schematicCanvasWrap, schematicModel, {
+        schematicTextStyle,
         onSelectionChange: (component) => {
           updateSchematicProps(component);
           if (isApplyingPlotDrivenSchematicSelection) {
@@ -3906,9 +4505,30 @@ function createUI(container, state, actions) {
             }, 200);
           }
           queueAutosave();
+          if (
+            autoSwitchToSelectOnPlace
+            && schematicTool !== "select"
+            && schematicTool !== "wire"
+            && schematicEditor
+            && typeof schematicEditor.getTool === "function"
+            && schematicEditor.getTool()?.mode === "place"
+          ) {
+            setActiveSchematicTool("select");
+          } else if (
+            autoSwitchToSelectOnWire
+            && schematicTool === "wire"
+            && schematicEditor
+            && typeof schematicEditor.getTool === "function"
+            && schematicEditor.getTool()?.mode === "wire"
+            && typeof schematicEditor.isWirePlacementActive === "function"
+            && !schematicEditor.isWirePlacementActive()
+          ) {
+            setActiveSchematicTool("select");
+          }
         }
       });
       schematicPanel._schematicEditor = schematicEditor;
+      applySchematicTextStyleToEditor();
       setActiveSchematicTool(schematicTool);
       syncSchematicGrid();
     }
@@ -4372,6 +4992,16 @@ function createUI(container, state, actions) {
       resultsPane: {
         mode: resultsPaneState.mode,
         splitRatio: resultsPaneState.splitRatio
+      },
+      settings: {
+        autoSwitchToSelectOnPlace: Boolean(autoSwitchToSelectOnPlace),
+        autoSwitchToSelectOnWire: Boolean(autoSwitchToSelectOnWire),
+        schematicText: {
+          font: schematicTextStyle.font,
+          size: schematicTextStyle.size,
+          bold: schematicTextStyle.bold === true,
+          italic: schematicTextStyle.italic === true
+        }
       }
     };
     const results = includeResults ? buildResultsCache() : null;
@@ -4646,6 +5276,25 @@ function createUI(container, state, actions) {
       const restoredPane = normalizeResultsPaneState(extracted.ui.resultsPane);
       resultsPaneState = restoredPane;
       applyResultsPaneState({ skipResize: true });
+    }
+    if (typeof extracted.ui?.settings?.autoSwitchToSelectOnPlace === "boolean") {
+      autoSwitchToSelectOnPlace = extracted.ui.settings.autoSwitchToSelectOnPlace;
+    }
+    if (typeof extracted.ui?.settings?.autoSwitchToSelectOnWire === "boolean") {
+      autoSwitchToSelectOnWire = extracted.ui.settings.autoSwitchToSelectOnWire;
+    }
+    const extractedSchematicText = extracted.ui?.settings?.schematicText;
+    const hasSchematicTextOverride = extractedSchematicText
+      && typeof extractedSchematicText === "object"
+      && (
+        extractedSchematicText.font !== null
+        || extractedSchematicText.size !== null
+        || extractedSchematicText.bold !== null
+        || extractedSchematicText.italic !== null
+      );
+    if (hasSchematicTextOverride) {
+      schematicTextStyle = normalizeSchematicTextStyle(extractedSchematicText, schematicTextStyle);
+      applySchematicTextStyleToEditor();
     }
     if (schematicEditor && typeof schematicEditor.setView === "function" && extracted.editor.view) {
       schematicEditor.setView(extracted.editor.view, { preserveAspect: false });
@@ -5938,7 +6587,8 @@ function createUI(container, state, actions) {
       fit: true,
       padding: EXPORT_PADDING,
       measurements: schematicMeasurements,
-      probeLabels: schematicProbeLabels
+      probeLabels: schematicProbeLabels,
+      schematicTextStyle
     });
     if (!svgText) {
       return;
@@ -5967,7 +6617,8 @@ function createUI(container, state, actions) {
         scale: safeScale,
         transparent: Boolean(transparent),
         measurements: schematicMeasurements,
-        probeLabels: schematicProbeLabels
+        probeLabels: schematicProbeLabels,
+        schematicTextStyle
       });
       if (!result || !result.dataUrl) {
         return;
@@ -6001,7 +6652,8 @@ function createUI(container, state, actions) {
         padding: EXPORT_PADDING,
         scale: safeScale,
         measurements: schematicMeasurements,
-        probeLabels: schematicProbeLabels
+        probeLabels: schematicProbeLabels,
+        schematicTextStyle
       });
       if (!result || !result.dataUrl) {
         return;
@@ -6034,7 +6686,8 @@ function createUI(container, state, actions) {
         padding: EXPORT_PADDING,
         scale: getExportScale(exportDiagramPrefs.scale),
         measurements: schematicMeasurements,
-        probeLabels: schematicProbeLabels
+        probeLabels: schematicProbeLabels,
+        schematicTextStyle
       });
       if (!result || !(result.bytes instanceof Uint8Array) || !result.bytes.length) {
         return;
@@ -6451,6 +7104,10 @@ function createUI(container, state, actions) {
       openAboutDialog();
       return;
     }
+    if (action === "settings") {
+      openSettingsDialog();
+      return;
+    }
     if (action === "open") {
       void handleOpenAction();
       return;
@@ -6661,6 +7318,9 @@ function createUI(container, state, actions) {
         const canceled = schematicEditor.cancelWirePlacement();
         if (canceled) {
           event.preventDefault();
+          if (autoSwitchToSelectOnWire) {
+            setActiveSchematicTool("select");
+          }
           return;
         }
       }
@@ -6726,7 +7386,14 @@ function createUI(container, state, actions) {
       if (action === "toggle-help") {
         return false;
       }
-      if (action === "open" || action === "save" || action === "save-as" || action === "new" || action === "about") {
+      if (
+        action === "open"
+        || action === "save"
+        || action === "save-as"
+        || action === "new"
+        || action === "about"
+        || action === "settings"
+      ) {
         return false;
       }
       if (action && action.startsWith(EXAMPLE_MENU_ACTION_PREFIX)) {
@@ -6947,7 +7614,9 @@ function createUI(container, state, actions) {
         { id: "save-as", label: "Save As...", shortcut: "Ctrl+Shift+S" },
         { divider: true, id: "exports" },
         { id: "export-diagram", label: "Export Diagram..." },
-        { id: "export-results", label: "Export Results..." }
+        { id: "export-results", label: "Export Results..." },
+        { divider: true, id: "settings" },
+        { id: "settings", label: "Settings..." }
       ],
       actionAttribute: "menuAction",
       showShortcuts: true
@@ -7021,11 +7690,10 @@ function createUI(container, state, actions) {
     getEditor: () => schematicEditor
   });
   const inlineEditorPanel = uiInlineEditorPanelModule.createInlineEditorPanel({
-    createNetColorPicker,
-    getTextFontOptions,
-    getDefaultTextStyle,
-    listGroundVariantValues,
-    listResistorStyleValues,
+    createNetColorPicker, getDefaultTextStyle,
+    listInlineSelectPropertyKeys: () => INLINE_SELECT_PROPERTY_SPECS.map((spec) => spec.key), getSelectPropertyContract: getInlineSelectPropertyContract,
+    listInlineTogglePropertyKeys: () => INLINE_TOGGLE_PROPERTY_SPECS.map((spec) => spec.key), getTogglePropertyContract: getInlineTogglePropertyContract,
+    listInlineInputPropertyKeys: () => INLINE_INPUT_PROPERTY_SPECS.map((spec) => spec.key), getInputPropertyContract: getInlineInputPropertyContract,
     onPickNetColor: handleInlineNetColorPick
   });
   const {
@@ -7056,12 +7724,9 @@ function createUI(container, state, actions) {
     inlineProbeTypeRow,
     inlineProbeTypeLabel,
     inlineProbeTypeSelect,
-    inlineGroundVariantRow,
-    inlineGroundVariantLabel,
-    inlineGroundVariantSelect,
-    inlineResistorStyleRow,
-    inlineResistorStyleLabel,
-    inlineResistorStyleSelect,
+    inlineSelectControlsByKey,
+    inlineToggleControlsByKey,
+    inlineInputControlsByKey,
     inlineBoxThicknessRow,
     inlineBoxThicknessLabel,
     inlineBoxThicknessUnit,
@@ -7080,24 +7745,6 @@ function createUI(container, state, actions) {
     inlineBoxOpacityInput,
     inlineBoxOpacityValue,
     inlineNetColorPicker,
-    inlineTextOnlyRow,
-    inlineTextOnlyLabel,
-    inlineTextOnlyInput,
-    inlineTextFontRow,
-    inlineTextFontLabel,
-    inlineTextFontSelect,
-    inlineTextSizeRow,
-    inlineTextSizeLabel,
-    inlineTextSizeInput,
-    inlineTextBoldRow,
-    inlineTextBoldLabel,
-    inlineTextBoldInput,
-    inlineTextItalicRow,
-    inlineTextItalicLabel,
-    inlineTextItalicInput,
-    inlineTextUnderlineRow,
-    inlineTextUnderlineLabel,
-    inlineTextUnderlineInput,
     syncInlineLabelColumnWidth
   } = inlineEditorPanel;
   workspace.appendChild(inlineEditor);
@@ -7131,10 +7778,6 @@ function createUI(container, state, actions) {
     inlineNameInput,
     inlineProbeTypeRow,
     inlineProbeTypeSelect,
-    inlineGroundVariantRow,
-    inlineGroundVariantSelect,
-    inlineResistorStyleRow,
-    inlineResistorStyleSelect,
     inlineBoxThicknessRow,
     inlineBoxThicknessLabel,
     inlineBoxThicknessUnit,
@@ -7160,24 +7803,148 @@ function createUI(container, state, actions) {
     inlineSwitchShowRonInput,
     inlineSwitchShowRoffInput,
     inlineNetColorPicker,
-    inlineTextOnlyRow,
-    inlineTextOnlyInput,
-    inlineTextFontRow,
-    inlineTextSizeRow,
-    inlineTextBoldRow,
-    inlineTextItalicRow,
-    inlineTextUnderlineRow,
-    inlineTextFontSelect,
-    inlineTextSizeInput,
-    inlineTextBoldInput,
-    inlineTextItalicInput,
-    inlineTextUnderlineInput,
     inlineValueLabel,
     inlineValueUnit,
     syncInlineLabelColumnWidth,
     inlineSwitchPositionA,
-    inlineSwitchPositionB
+    inlineSwitchPositionB,
+    inlineSelectControlsByKey,
+    inlineToggleControlsByKey,
+    inlineInputControlsByKey
   };
+  const inlineSelectUiRefsByPropertyKey = (() => {
+    if (!inlineSelectControlsByKey || typeof inlineSelectControlsByKey !== "object") {
+      throw new Error("Inline editor panel must expose inlineSelectControlsByKey.");
+    }
+    const refsByPropertyKey = {};
+    INLINE_SELECT_PROPERTY_SPECS.forEach((spec) => {
+      const key = String(spec?.key ?? "").trim();
+      const entry = inlineSelectControlsByKey[key];
+      if (!entry || !(entry.row && entry.select)) {
+        throw new Error(`Inline select control refs missing for property '${key || "?"}'.`);
+      }
+      refsByPropertyKey[key] = Object.freeze({
+        row: entry.row,
+        select: entry.select
+      });
+    });
+    return Object.freeze(refsByPropertyKey);
+  })();
+  const getInlineSelectUiRefs = (spec) => {
+    const refs = inlineSelectUiRefsByPropertyKey[String(spec?.key ?? "").trim()] ?? null;
+    if (!refs || !(refs.row && refs.select)) {
+      throw new Error(`Inline select UI refs missing for property '${String(spec?.key ?? "")}'.`);
+    }
+    return refs;
+  };
+  const inlineToggleUiRefsByPropertyKey = (() => {
+    if (!inlineToggleControlsByKey || typeof inlineToggleControlsByKey !== "object") {
+      throw new Error("Inline editor panel must expose inlineToggleControlsByKey.");
+    }
+    const refsByPropertyKey = {};
+    INLINE_TOGGLE_PROPERTY_SPECS.forEach((spec) => {
+      const key = String(spec?.key ?? "").trim();
+      const entry = inlineToggleControlsByKey[key];
+      if (!entry || !(entry.row && entry.input)) {
+        throw new Error(`Inline toggle control refs missing for property '${key || "?"}'.`);
+      }
+      refsByPropertyKey[key] = Object.freeze({
+        row: entry.row,
+        input: entry.input
+      });
+    });
+    return Object.freeze(refsByPropertyKey);
+  })();
+  const getInlineToggleUiRefs = (spec) => {
+    const refs = inlineToggleUiRefsByPropertyKey[String(spec?.key ?? "").trim()] ?? null;
+    if (!refs || !(refs.row && refs.input)) {
+      throw new Error(`Inline toggle UI refs missing for property '${String(spec?.key ?? "")}'.`);
+    }
+    return refs;
+  };
+  const inlineInputUiRefsByPropertyKey = (() => {
+    if (!inlineInputControlsByKey || typeof inlineInputControlsByKey !== "object") throw new Error("Inline editor panel must expose inlineInputControlsByKey.");
+    const refsByPropertyKey = {};
+    INLINE_INPUT_PROPERTY_SPECS.forEach((spec) => {
+      const key = String(spec?.key ?? "").trim();
+      const entry = inlineInputControlsByKey[key];
+      if (!entry || !(entry.row && entry.input)) throw new Error(`Inline input control refs missing for property '${key || "?"}'.`);
+      refsByPropertyKey[key] = Object.freeze({ row: entry.row, input: entry.input });
+    });
+    return Object.freeze(refsByPropertyKey);
+  })();
+  const getInlineInputUiRefs = (spec) => {
+    const refs = inlineInputUiRefsByPropertyKey[String(spec?.key ?? "").trim()] ?? null;
+    if (!refs || !(refs.row && refs.input)) throw new Error(`Inline input UI refs missing for property '${String(spec?.key ?? "")}'.`);
+    return refs;
+  };
+  const inlineSelectUiEntries = INLINE_SELECT_PROPERTY_SPECS.map((spec) => ({ spec, refs: getInlineSelectUiRefs(spec) }));
+  const inlineToggleUiEntries = INLINE_TOGGLE_PROPERTY_SPECS.map((spec) => ({ spec, refs: getInlineToggleUiRefs(spec) }));
+  const inlineInputUiEntries = INLINE_INPUT_PROPERTY_SPECS.map((spec) => ({ spec, refs: getInlineInputUiRefs(spec) }));
+  const INLINE_SELECT_SYNC_ENTRIES = Object.freeze([
+    ...inlineSelectUiEntries.reduce((entries, entry) => {
+      entry.spec.componentTypes.forEach((componentType) => {
+        entries.push(Object.freeze({
+          componentType,
+          propertyKey: entry.spec.key,
+          row: entry.refs.row,
+          select: entry.refs.select,
+          normalizeValue: entry.spec.normalizeValue
+        }));
+      });
+      return entries;
+    }, [])
+  ]);
+  const INLINE_TOGGLE_SYNC_ENTRIES = Object.freeze([
+    ...inlineToggleUiEntries.reduce((entries, entry) => {
+      entry.spec.componentTypes.forEach((componentType) => {
+        entries.push(Object.freeze({
+          componentType,
+          propertyKey: entry.spec.key,
+          row: entry.refs.row,
+          input: entry.refs.input,
+          normalizeValue: entry.spec.normalizeValue
+        }));
+      });
+      return entries;
+    }, [])
+  ]);
+  const INLINE_INPUT_SYNC_ENTRIES = Object.freeze([...inlineInputUiEntries.reduce((entries, entry) => {
+    entry.spec.componentTypes.forEach((componentType) => entries.push(Object.freeze({
+      componentType,
+      propertyKey: entry.spec.key,
+      row: entry.refs.row,
+      input: entry.refs.input,
+      normalizeValue: entry.spec.normalizeValue
+    })));
+    return entries;
+  }, [])]);
+  const getInlineSelectSyncEntries = () => INLINE_SELECT_SYNC_ENTRIES;
+  const getInlineToggleSyncEntries = () => INLINE_TOGGLE_SYNC_ENTRIES;
+  const getInlineInputSyncEntries = () => INLINE_INPUT_SYNC_ENTRIES;
+  const inlineSelectCloseTargets = inlineSelectUiEntries.map((entry) => entry.refs.select);
+  const inlineToggleCloseTargets = inlineToggleUiEntries.map((entry) => entry.refs.input);
+  const inlineInputCloseTargets = inlineInputUiEntries.map((entry) => entry.refs.input);
+  const resolveProbeTargetComponentIdAtPin = (probeComponent, probePin) => {
+    if (!probePin || !schematicEditor || typeof schematicEditor.getModel !== "function") {
+      return "";
+    }
+    const components = Array.isArray(schematicEditor.getModel()?.components)
+      ? schematicEditor.getModel().components
+      : [];
+    return uiInlineEditorDomain.findNearestProbeTargetComponentId({
+      probeComponent,
+      probePin,
+      components,
+      isProbeComponentType: (type) => isProbeType(type)
+    });
+  };
+  const buildInlineProbeTypeUpdate = (component, nextTypeRaw) => uiInlineEditorDomain.buildProbeTypeUpdate({
+    component,
+    nextType: nextTypeRaw,
+    resolveTargetComponentId: (probeComponent, probePin) =>
+      resolveProbeTargetComponentIdAtPin(probeComponent, probePin)
+  });
   const inlineEditorHandlers = uiInlineEditorWorkflowModule.createInlineEditorHandlers({
     getModel: () => (schematicEditor && typeof schematicEditor.getModel === "function" ? schematicEditor.getModel() : null),
     getEditor: () => schematicEditor,
@@ -7190,18 +7957,16 @@ function createUI(container, state, actions) {
       inlineSync = value === true;
     },
     panel: inlineEditorPanelRefs,
-    findNearestProbeTargetComponentId: (args) => uiInlineEditorDomain.findNearestProbeTargetComponentId(args),
-    buildProbeTypeUpdateFromDomain: (args) => uiInlineEditorDomain.buildProbeTypeUpdate(args),
+    buildProbeTypeUpdate: (component, nextType) => buildInlineProbeTypeUpdate(component, nextType),
     isProbeType,
     parseSpdtSwitchValueSafe,
     buildInlineSwitchState: (args) => uiInlineEditorDomain.buildInlineSwitchState(args),
     formatSpdtSwitchValue,
     getInlineModeFlags,
     supportsComponentValueField,
-    normalizeTextFontValue,
-    normalizeTextSizeValue,
-    normalizeGroundVariantValue,
-    normalizeResistorStyleValue,
+    getInlineSelectSyncEntries,
+    getInlineToggleSyncEntries,
+    getInlineInputSyncEntries,
     parseBoxAnnotationStyle: (value, options) => parseBoxAnnotationStyleValue(value, options),
     parseArrowAnnotationStyle: (value, options) => parseArrowAnnotationStyleValue(value, options),
     parseTextAnnotationStyle: (value, options) => parseTextAnnotationStyleValue(value, options),
@@ -7262,12 +8027,12 @@ function createUI(container, state, actions) {
     }
     const component = getModelComponent(inlineEditingComponentId);
     const componentType = String(component?.type ?? "").toUpperCase();
-    if (componentType !== "BOX" && componentType !== "DBOX") {
+    if (componentType !== "BOX") {
       return;
     }
     const options = {
       type: componentType,
-      defaultLineType: componentType === "DBOX" ? "dashed" : "solid"
+      defaultLineType: "solid"
     };
     const current = parseBoxAnnotationStyleValue(component?.value, options);
     const next = parseBoxAnnotationStyleValue({
@@ -7348,15 +8113,21 @@ function createUI(container, state, actions) {
     getUpdatedComponent: () => getModelComponent(inlineEditingComponentId),
     onResyncComponent: (component) => syncInlineComponentEditor(component)
   });
-  uiInlineEditorBindingsModule.bindInlineGroundVariantSelect({
-    inlineGroundVariantSelect,
-    canEdit: canEditInlineInputs,
-    onPatch: (patch) => applyInlinePatch(patch)
+  inlineSelectUiEntries.forEach((entry) => {
+    uiInlineEditorBindingsModule.bindInlineSelectInput({
+      select: entry.refs.select,
+      propertyKey: entry.spec.key,
+      canEdit: canEditInlineInputs,
+      onPatch: (patch) => applyInlinePatch(patch)
+    });
   });
-  uiInlineEditorBindingsModule.bindInlineResistorStyleSelect({
-    inlineResistorStyleSelect,
-    canEdit: canEditInlineInputs,
-    onPatch: (patch) => applyInlinePatch(patch)
+  inlineToggleUiEntries.forEach((entry) => {
+    uiInlineEditorBindingsModule.bindInlineToggleInput({
+      input: entry.refs.input,
+      propertyKey: entry.spec.key,
+      canEdit: canEditInlineInputs,
+      onPatch: (patch) => applyInlinePatch(patch)
+    });
   });
   uiInlineEditorBindingsModule.bindInlineBoxStyleInputs({
     inlineBoxThicknessInput,
@@ -7396,15 +8167,13 @@ function createUI(container, state, actions) {
       commitInlineTextAnnotationStyle({ opacityPercent });
     }
   });
-  uiInlineEditorBindingsModule.bindInlineTextInputs({
-    inlineTextOnlyInput,
-    inlineTextFontSelect,
-    inlineTextSizeInput,
-    inlineTextBoldInput,
-    inlineTextItalicInput,
-    inlineTextUnderlineInput,
-    canEdit: canEditInlineInputs,
-    onPatch: (patch) => applyInlinePatch(patch)
+  inlineInputUiEntries.forEach((entry) => {
+    uiInlineEditorBindingsModule.bindInlineNameInput({
+      input: entry.refs.input,
+      propertyKey: entry.spec.key,
+      canEdit: canEditInlineInputs,
+      onUpdate: (value) => applyInlinePatch({ [entry.spec.key]: value })
+    });
   });
 
   uiInlineEditorInteractionsModule.bindInlineEditorCloseInteractions({
@@ -7422,19 +8191,14 @@ function createUI(container, state, actions) {
       inlineSwitchShowRonInput,
       inlineSwitchShowRoffInput,
       inlineProbeTypeSelect,
-      inlineGroundVariantSelect,
-      inlineResistorStyleSelect,
+      ...inlineSelectCloseTargets,
+      ...inlineToggleCloseTargets,
       inlineBoxThicknessInput,
       inlineBoxLineTypeSelect,
       inlineBoxFillEnabledInput,
       inlineBoxFillColorInput,
       inlineBoxOpacityInput,
-      inlineTextOnlyInput,
-      inlineTextFontSelect,
-      inlineTextSizeInput,
-      inlineTextBoldInput,
-      inlineTextItalicInput,
-      inlineTextUnderlineInput
+      ...inlineInputCloseTargets
     ],
     netColorSwatches: inlineNetColorPicker.swatches,
     documentRoot: document
@@ -7582,6 +8346,33 @@ function createUI(container, state, actions) {
   container.appendChild(exportDialog);
 
   const { openAboutDialog } = buildAboutDialog(container);
+  const { openSettingsDialog } = buildSettingsDialog(container, {
+    getAutoSwitchToSelectAfterToolUse: () => autoSwitchToSelectOnPlace,
+    onAutoSwitchToSelectAfterToolUseChange: (value) => {
+      autoSwitchToSelectOnPlace = Boolean(value);
+      queueAutosave();
+    },
+    getAutoSwitchToSelectAfterWireUse: () => autoSwitchToSelectOnWire,
+    onAutoSwitchToSelectAfterWireUseChange: (value) => {
+      autoSwitchToSelectOnWire = Boolean(value);
+      queueAutosave();
+    },
+    getSchematicTextStyle: () => ({ ...schematicTextStyle }),
+    getSchematicTextFontOptions: () => textStyleApi.getTextFontOptions(),
+    onSchematicTextStyleChange: (updates) => {
+      schematicTextStyle = normalizeSchematicTextStyle(updates, schematicTextStyle);
+      applySchematicTextStyleToEditor();
+      queueAutosave();
+    },
+    onResetSettings: () => {
+      autoSwitchToSelectOnPlace = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_PLACE;
+      autoSwitchToSelectOnWire = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE;
+      schematicTextStyle = { ...DEFAULT_SCHEMATIC_TEXT_STYLE };
+      schematicTextStyle = normalizeSchematicTextStyle(schematicTextStyle);
+      applySchematicTextStyleToEditor();
+      queueAutosave();
+    }
+  });
 
   const toFilenameLeaf = (value) => getPlotExportApi().toFilenameLeaf(value);
   const withFilenameExtension = (value, extension, fallbackBase) =>

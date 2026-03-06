@@ -25,7 +25,7 @@
   const MIN_ARROW_HEAD_LENGTH = 4;
   const DEFAULT_ARROW_HEAD_LENGTH = 8;
   const DEFAULT_ARROW_HEAD_HALF_HEIGHT = 4.5;
-  const LOW_PRIORITY_SELECTION_TYPES = new Set(["ARR", "BOX", "DBOX"]);
+  const LOW_PRIORITY_SELECTION_TYPES = new Set(["ARR", "BOX"]);
   const DRAG_DEADZONE_PX = 4;
   const DOUBLE_CLICK_INTERVAL_MS = 400;
   const DOUBLE_CLICK_DISTANCE_PX = 8;
@@ -37,8 +37,18 @@
   const FLIP_H = { a: -1, b: 0, c: 0, d: 1 };
   const FLIP_V = { a: 1, b: 0, c: 0, d: -1 };
   const SELECTION_PLACEMENT_TOOL = "__SELECTION_PLACEMENT__";
-  const CROSSHAIR_TOOL_TYPES = new Set(["ARR", "BOX", "DBOX"]);
+  const CROSSHAIR_TOOL_TYPES = new Set(["ARR", "BOX"]);
   const schematicApi = typeof self !== "undefined" ? (self.SpjutSimSchematic ?? {}) : {};
+  const renderPlanContractsModule = typeof self !== "undefined"
+    ? (self.SpjutSimSchematicRenderPlanContracts ?? null)
+    : null;
+  if (!renderPlanContractsModule || typeof renderPlanContractsModule.createRenderPlanContracts !== "function") {
+    throw new Error("Schematic render-plan contracts module unavailable. Check src/schematic/render-plan-contracts.js load order.");
+  }
+  const renderPlanContracts = renderPlanContractsModule.createRenderPlanContracts({
+    schematicApi,
+    contextName: "editor.js"
+  });
 
   const setAttrs = (el, attrs) => {
     Object.entries(attrs).forEach(([key, value]) => {
@@ -142,6 +152,12 @@
     };
     if (Number.isFinite(options?.weight)) {
       attrs["font-weight"] = options.weight;
+    }
+    if (options?.family) {
+      attrs["font-family"] = options.family;
+    }
+    if (options?.style) {
+      attrs["font-style"] = options.style;
     }
     if (options?.baseline) {
       attrs["dominant-baseline"] = options.baseline;
@@ -248,6 +264,56 @@
     return { lineHeight, padding, paddingBelow };
   })();
   const LABEL_LINE_HEIGHT = COMPONENT_LABEL_LAYOUT_DEFAULTS.lineHeight;
+  const DEFAULT_SCHEMATIC_TEXT_STYLE = Object.freeze({
+    font: DEFAULT_TEXT_FONT,
+    size: 12,
+    bold: false,
+    italic: false
+  });
+  const normalizeSchematicTextStyle = (value, fallback = DEFAULT_SCHEMATIC_TEXT_STYLE) => {
+    const base = fallback && typeof fallback === "object"
+      ? fallback
+      : DEFAULT_SCHEMATIC_TEXT_STYLE;
+    const source = value && typeof value === "object"
+      ? value
+      : {};
+    return {
+      font: normalizeTextFontValue(
+        Object.prototype.hasOwnProperty.call(source, "font")
+          ? source.font
+          : base.font
+      ),
+      size: normalizeTextSizeValue(
+        Object.prototype.hasOwnProperty.call(source, "size")
+          ? source.size
+          : base.size
+      ),
+      bold: Object.prototype.hasOwnProperty.call(source, "bold")
+        ? source.bold === true
+        : base.bold === true,
+      italic: Object.prototype.hasOwnProperty.call(source, "italic")
+        ? source.italic === true
+        : base.italic === true
+    };
+  };
+  const resolveSchematicTextStyle = (value) => normalizeSchematicTextStyle(value);
+  const getSchematicTextValueSize = (style) => {
+    const size = Number(style?.size);
+    if (!Number.isFinite(size)) {
+      return 11;
+    }
+    return Math.max(8, Math.round(size) - 1);
+  };
+  const getSchematicTextLineHeight = (style, fallbackLineHeight = LABEL_LINE_HEIGHT) => {
+    const baseLineHeight = Number.isFinite(Number(fallbackLineHeight))
+      ? Number(fallbackLineHeight)
+      : LABEL_LINE_HEIGHT;
+    const textSize = Number(style?.size);
+    if (!Number.isFinite(textSize)) {
+      return baseLineHeight;
+    }
+    return Math.max(baseLineHeight, Math.round(textSize) + 2);
+  };
   const rawMeasurementTextWeight = Number(valueFormatApi.getMeasurementTextWeight());
   const MEASUREMENT_TEXT_WEIGHT = Number.isFinite(rawMeasurementTextWeight)
     ? rawMeasurementTextWeight
@@ -270,6 +336,17 @@
 
   const getLabelLayout = (midX, midY, angle, lineCount, labelRotation) =>
     labelLayoutApi.getComponentLabelLayout(midX, midY, angle, lineCount, labelRotation);
+  const resolveComponentLabelPosition = (layout, options = {}) => {
+    const resolver = renderPlanContracts?.resolveTwoPinLabelPosition;
+    if (typeof resolver !== "function") {
+      throw new Error("Schematic render-plan contracts missing two-pin label position helper.");
+    }
+    return resolver(layout, {
+      ...options,
+      labelLineHeight: LABEL_LINE_HEIGHT,
+      labelLayoutDefaults: COMPONENT_LABEL_LAYOUT_DEFAULTS
+    });
+  };
 
   const formatDisplayValue = (component) => valueFormatApi.formatComponentDisplayValue(component);
 
@@ -383,78 +460,43 @@
   };
 
   const resolveNetLabelStyle = () => {
-    const shared = getNamedNodeHelper("getNamedNodeLabelStyle")();
-    if (!shared || typeof shared !== "object") {
-      throw new Error("Named-node style helper returned invalid data.");
-    }
-    return shared;
-  };
-
-  const getNamedNodeHelper = (name) => {
-    const helper = schematicApi?.[name];
-    if (typeof helper !== "function") {
-      throw new Error(`Named-node helper '${name}' is unavailable. Ensure symbol-render.js loads before editor.js.`);
-    }
-    return helper;
-  };
-
-  const getGroundHelper = (name) => {
-    const helper = schematicApi?.[name];
-    if (typeof helper !== "function") {
-      throw new Error(`Ground helper '${name}' is unavailable. Ensure model.js and symbol-render.js load before editor.js.`);
-    }
-    return helper;
+    return renderPlanContracts.getNamedNodeLabelStyle();
   };
 
   const getGroundExtents = (component) => {
     const rotation = snapRotation(Number(component?.rotation ?? 0));
-    const extents = getGroundHelper("getGroundSymbolExtents")(rotation, component?.groundVariant);
-    if (
-      !extents
-      || !Number.isFinite(extents.minX)
-      || !Number.isFinite(extents.maxX)
-      || !Number.isFinite(extents.minY)
-      || !Number.isFinite(extents.maxY)
-    ) {
-      throw new Error("Ground extents helper returned invalid data.");
-    }
-    return {
-      minX: Number(extents.minX),
-      maxX: Number(extents.maxX),
-      minY: Number(extents.minY),
-      maxY: Number(extents.maxY)
-    };
+    return renderPlanContracts.getGroundExtents(rotation, component?.groundVariant);
   };
 
-  const getNamedNodeGeometry = (component) => {
+  const getNamedNodeGeometry = (component, schematicTextStyle) => {
     const text = getNamedNodeLabelText(component);
-    const style = resolveNetLabelStyle();
-    const textWidth = measureTextWidth(text, Number(style.fontSize), 400);
-    const geometry = getNamedNodeHelper("getNamedNodeGeometry")(textWidth, style);
-    if (
-      !geometry
-      || !Number.isFinite(geometry.halfHeight)
-      || !Number.isFinite(geometry.slopeX)
-      || !Number.isFinite(geometry.textX)
-      || !Number.isFinite(geometry.endX)
-    ) {
-      throw new Error("Named-node geometry helper returned invalid data.");
-    }
+    const baseStyle = resolveNetLabelStyle();
+    const resolvedTextStyle = resolveSchematicTextStyle(schematicTextStyle);
+    const fontSize = Number(resolvedTextStyle.size);
+    const style = {
+      ...baseStyle,
+      fontSize: Number.isFinite(fontSize) ? fontSize : Number(baseStyle.fontSize)
+    };
+    const textWidth = measureTextWidth(
+      text,
+      Number(style.fontSize),
+      resolvedTextStyle.bold ? 700 : 400,
+      resolvedTextStyle.font
+    );
+    const geometry = renderPlanContracts.getNamedNodeGeometry(textWidth, style);
     return {
       text,
       halfHeight: Number(geometry.halfHeight),
       slopeX: Number(geometry.slopeX),
       textX: Number(geometry.textX),
       endX: Number(geometry.endX),
-      style
+      style,
+      schematicTextStyle: resolvedTextStyle
     };
   };
 
   const getNamedNodeTextTransform = (rotation, style, options) => {
-    const transform = getNamedNodeHelper("getNamedNodeTextTransform")(rotation, style, options);
-    if (!transform || !Number.isFinite(transform.rotation) || !Number.isFinite(transform.y)) {
-      throw new Error("Named-node text transform helper returned invalid data.");
-    }
+    const transform = renderPlanContracts.getNamedNodeTextTransform(rotation, style, options);
     return {
       rotation: snapRotation(transform.rotation),
       y: Number(transform.y)
@@ -462,27 +504,14 @@
   };
 
   const getNamedNodeTextAnchorX = (rotation, geometry, options) => {
-    const anchor = getNamedNodeHelper("getNamedNodeTextAnchorX")(rotation, geometry, options);
-    if (!Number.isFinite(anchor)) {
-      throw new Error("Named-node text anchor helper returned invalid data.");
-    }
-    return Number(anchor);
+    return renderPlanContracts.getNamedNodeTextAnchorX(rotation, geometry, options);
   };
 
-  const getNamedNodeExtents = (component) => {
-    const geometry = getNamedNodeGeometry(component);
+  const getNamedNodeExtents = (component, schematicTextStyle) => {
+    const geometry = getNamedNodeGeometry(component, schematicTextStyle);
     const rotation = snapRotation(Number(component?.rotation ?? 0));
     const textOnly = component?.textOnly === true;
-    const extents = getNamedNodeHelper("getNamedNodeExtents")(rotation, geometry, { textOnly, style: geometry?.style });
-    if (
-      !extents
-      || !Number.isFinite(extents.minX)
-      || !Number.isFinite(extents.maxX)
-      || !Number.isFinite(extents.minY)
-      || !Number.isFinite(extents.maxY)
-    ) {
-      throw new Error("Named-node extents helper returned invalid data.");
-    }
+    const extents = renderPlanContracts.getNamedNodeExtents(rotation, geometry, { textOnly, style: geometry?.style });
     return {
       minX: Number(extents.minX),
       maxX: Number(extents.maxX),
@@ -493,7 +522,8 @@
   };
 
   const appendNamedNodeLabelText = (group, component, rotation, options, geometry) => {
-    const metrics = geometry ?? getNamedNodeGeometry(component);
+    const resolvedTextStyle = resolveSchematicTextStyle(options?.schematicTextStyle);
+    const metrics = geometry ?? getNamedNodeGeometry(component, resolvedTextStyle);
     const labelColor = options?.labelColor ?? options?.stroke ?? STROKE;
     const textOnly = options?.textOnly === true || component?.textOnly === true;
     const textTransform = getNamedNodeTextTransform(rotation, metrics.style, { textOnly });
@@ -503,7 +533,10 @@
       size: Number.isFinite(fontSize) ? fontSize : 12,
       fill: labelColor,
       anchor: "middle",
-      baseline: "middle"
+      baseline: "middle",
+      family: resolvedTextStyle.font,
+      weight: resolvedTextStyle.bold ? 700 : 400,
+      style: resolvedTextStyle.italic ? "italic" : "normal"
     });
     if (textTransform.rotation !== 0) {
       label.setAttribute("transform", `rotate(${textTransform.rotation} ${textX} ${textTransform.y})`);
@@ -517,186 +550,60 @@
     return label;
   };
 
-  const getAnnotationHelper = (name) => {
-    const helper = schematicApi?.[name];
-    if (typeof helper !== "function") {
-      throw new Error(`Annotation helper '${name}' is unavailable. Ensure symbol-render.js loads before editor.js.`);
-    }
-    return helper;
-  };
-
   const getAnnotationSymbolName = (type) => {
-    const symbol = getAnnotationHelper("getAnnotationSymbolName")(type);
-    if (symbol === null || symbol === undefined || symbol === "") {
-      return null;
-    }
-    return String(symbol);
+    return renderPlanContracts.getAnnotationSymbolName(type);
   };
 
   const getAnnotationExtents = (component) => {
     const type = String(component?.type ?? "").toUpperCase();
     const rotation = snapRotation(Number(component?.rotation ?? 0));
-    const extents = getAnnotationHelper("getAnnotationExtents")(type, rotation);
-    if (
-      !extents
-      || !Number.isFinite(extents.minX)
-      || !Number.isFinite(extents.maxX)
-      || !Number.isFinite(extents.minY)
-      || !Number.isFinite(extents.maxY)
-    ) {
-      throw new Error("Annotation extents helper returned invalid data.");
-    }
-    return {
-      minX: Number(extents.minX),
-      maxX: Number(extents.maxX),
-      minY: Number(extents.minY),
-      maxY: Number(extents.maxY)
-    };
+    return renderPlanContracts.getAnnotationExtents(type, rotation);
   };
 
   const getArrowAnnotationStyle = (value, options) => {
-    const style = getAnnotationHelper("parseArrowAnnotationStyle")(value, options);
-    if (
-      !style
-      || !Number.isFinite(Number(style.thickness))
-      || typeof style.lineType !== "string"
-      || !Number.isFinite(Number(style.opacity))
-      || !Number.isFinite(Number(style.opacityPercent))
-    ) {
-      throw new Error("Arrow annotation style helper returned invalid data.");
-    }
-    return {
-      thickness: Number(style.thickness),
-      lineType: String(style.lineType),
-      opacity: Number(style.opacity),
-      opacityPercent: Number(style.opacityPercent)
-    };
+    return renderPlanContracts.getArrowAnnotationStyle(value, options);
   };
 
   const getArrowThickness = (value) => getArrowAnnotationStyle(value).thickness;
 
   const getArrowAnnotationDasharray = (lineType, thickness) => {
-    const dash = getAnnotationHelper("getArrowAnnotationDasharray")(lineType, thickness);
-    return String(dash ?? "");
+    return renderPlanContracts.getArrowAnnotationDasharray(lineType, thickness);
   };
 
   const getTextAnnotationStyleValue = (value, options) => {
-    const style = getAnnotationHelper("parseTextAnnotationStyle")(value, options);
-    if (
-      !style
-      || !Number.isFinite(Number(style.opacity))
-      || !Number.isFinite(Number(style.opacityPercent))
-    ) {
-      throw new Error("Text annotation style helper returned invalid data.");
-    }
-    return {
-      opacity: Number(style.opacity),
-      opacityPercent: Number(style.opacityPercent)
-    };
+    return renderPlanContracts.getTextAnnotationStyle(value, options);
   };
 
   const getDefaultBoxAnnotationStyle = (options) => {
-    const style = getAnnotationHelper("getDefaultBoxAnnotationStyle")(options);
-    if (!style || typeof style !== "object") {
-      throw new Error("Box annotation style helper returned invalid defaults.");
-    }
-    return style;
+    return renderPlanContracts.getDefaultBoxAnnotationStyle(options);
   };
 
   const getBoxAnnotationStyle = (value, options) => {
-    const style = getAnnotationHelper("parseBoxAnnotationStyle")(value, options);
-    if (
-      !style
-      || !Number.isFinite(Number(style.thickness))
-      || typeof style.lineType !== "string"
-      || typeof style.fillEnabled !== "boolean"
-      || typeof style.fillColor !== "string"
-      || !Number.isFinite(Number(style.opacity))
-      || !Number.isFinite(Number(style.opacityPercent))
-    ) {
-      throw new Error("Box annotation style helper returned invalid data.");
-    }
-    return {
-      thickness: Number(style.thickness),
-      lineType: String(style.lineType),
-      fillEnabled: style.fillEnabled === true,
-      fillColor: String(style.fillColor),
-      opacity: Number(style.opacity),
-      opacityPercent: Number(style.opacityPercent)
-    };
+    return renderPlanContracts.getBoxAnnotationStyle(value, options);
   };
 
   const formatBoxAnnotationStyle = (style, options) => {
-    const text = String(getAnnotationHelper("formatBoxAnnotationStyle")(style, options) ?? "").trim();
-    if (!text) {
-      throw new Error("Box annotation style formatter returned invalid data.");
-    }
-    return text;
+    return renderPlanContracts.formatBoxAnnotationStyle(style, options);
   };
 
   const getBoxAnnotationDasharray = (lineType, thickness) => {
-    const dash = getAnnotationHelper("getBoxAnnotationDasharray")(lineType, thickness);
-    return String(dash ?? "");
-  };
-
-  const getProbeHelper = (name) => {
-    const helper = schematicApi?.[name];
-    if (typeof helper !== "function") {
-      throw new Error(`Probe helper '${name}' is unavailable. Ensure symbol-render.js loads before editor.js.`);
-    }
-    return helper;
+    return renderPlanContracts.getBoxAnnotationDasharray(lineType, thickness);
   };
 
   const getProbeLabelAnchor = (rotation) => {
-    const anchor = getProbeHelper("getProbeLabelAnchor")(rotation, getProbeHelper("getProbeStyle")());
-    if (!anchor || !Number.isFinite(anchor.x) || !Number.isFinite(anchor.y)) {
-      throw new Error("Probe label helper returned invalid data.");
-    }
-    return {
-      x: Number(anchor.x),
-      y: Number(anchor.y),
-      anchor: anchor.anchor === "end"
-        ? "end"
-        : (anchor.anchor === "middle" ? "middle" : "start")
-    };
+    return renderPlanContracts.getProbeLabelAnchor(rotation);
   };
 
   const getProbeExtents = (rotation) => {
-    const extents = getProbeHelper("getProbeExtents")(rotation, getProbeHelper("getProbeStyle")());
-    if (
-      !extents
-      || !Number.isFinite(extents.minX)
-      || !Number.isFinite(extents.maxX)
-      || !Number.isFinite(extents.minY)
-      || !Number.isFinite(extents.maxY)
-    ) {
-      throw new Error("Probe extents helper returned invalid data.");
-    }
-    return {
-      minX: Number(extents.minX),
-      maxX: Number(extents.maxX),
-      minY: Number(extents.minY),
-      maxY: Number(extents.maxY)
-    };
+    return renderPlanContracts.getProbeExtents(rotation);
   };
 
   const getProbeTipPoint = (rotation) => {
-    const tip = getProbeHelper("getProbeTipPoint")(rotation, getProbeHelper("getProbeStyle")());
-    if (!tip || !Number.isFinite(tip.x) || !Number.isFinite(tip.y)) {
-      throw new Error("Probe tip helper returned invalid data.");
-    }
-    return {
-      x: Number(tip.x),
-      y: Number(tip.y)
-    };
+    return renderPlanContracts.getProbeTipPoint(rotation);
   };
 
   const getProbeFlippedRotation = (rotation, axis) => {
-    const helper = getProbeHelper("getProbeFlippedRotation");
-    const resolved = Number(helper(rotation, axis));
-    if (!Number.isFinite(resolved)) {
-      throw new Error("Probe flipped-rotation helper returned invalid data.");
-    }
+    const resolved = renderPlanContracts.getProbeFlippedRotation(rotation, axis);
     return snapRotation(resolved);
   };
 
@@ -715,172 +622,23 @@
     return snapRotation(snapped + 180);
   };
 
-  const getDifferentialProbeRotations = (component) => {
-    if (!component || String(component?.type ?? "").toUpperCase() !== "PD") {
-      return null;
-    }
-    return component.probeDiffRotations ?? null;
-  };
+  const getDifferentialProbeRotations = (component) =>
+    renderPlanContracts.getDifferentialProbeRotations(component);
 
-  const getDifferentialProbeGeometry = (component) => {
-    const helper = getProbeHelper("getDifferentialProbeGeometry");
-    const geometry = helper(
-      component?.pins,
-      Number(component?.rotation ?? 0),
-      getProbeHelper("getProbeStyle")(),
-      getDifferentialProbeRotations(component)
-    );
-    if (!geometry) {
-      return null;
-    }
-    if (
-      !geometry.pos
-      || !geometry.neg
-      || !geometry.labelAnchor
-      || !geometry.extents
-      || !Number.isFinite(geometry.pos.x)
-      || !Number.isFinite(geometry.pos.y)
-      || !Number.isFinite(geometry.neg.x)
-      || !Number.isFinite(geometry.neg.y)
-      || !geometry.posTip
-      || !geometry.negTip
-      || !Number.isFinite(geometry.posTip.x)
-      || !Number.isFinite(geometry.posTip.y)
-      || !Number.isFinite(geometry.negTip.x)
-      || !Number.isFinite(geometry.negTip.y)
-      || !Number.isFinite(geometry.labelAnchor.x)
-      || !Number.isFinite(geometry.labelAnchor.y)
-      || !Number.isFinite(geometry.extents.minX)
-      || !Number.isFinite(geometry.extents.maxX)
-      || !Number.isFinite(geometry.extents.minY)
-      || !Number.isFinite(geometry.extents.maxY)
-    ) {
-      throw new Error("Differential probe geometry helper returned invalid data.");
-    }
-    return geometry;
-  };
+  const getDifferentialProbeGeometry = (component) =>
+    renderPlanContracts.getDifferentialProbeGeometry(component);
 
-  const getDifferentialProbeRenderPlan = (component) => {
-    const helper = getProbeHelper("getDifferentialProbeRenderPlan");
-    const plan = helper(component?.pins, {
-      rotation: Number(component?.rotation ?? 0),
-      style: getProbeHelper("getProbeStyle")(),
-      rotations: getDifferentialProbeRotations(component)
-    });
-    if (!plan) {
-      return null;
-    }
-    const endpoints = Array.isArray(plan.endpoints) ? plan.endpoints : [];
-    const link = plan.link;
-    if (
-      !plan.geometry
-      || !link
-      || !Number.isFinite(link.x1)
-      || !Number.isFinite(link.y1)
-      || !Number.isFinite(link.x2)
-      || !Number.isFinite(link.y2)
-      || typeof link.dash !== "string"
-      || !link.dash.trim()
-      || !Number.isFinite(Number(plan.headRadius))
-      || endpoints.length < 2
-    ) {
-      throw new Error("Differential probe render plan helper returned invalid data.");
-    }
-    endpoints.forEach((endpoint) => {
-      const polarity = endpoint?.polarityPosition;
-      if (
-        !endpoint
-        || !endpoint.anchor
-        || !endpoint.tip
-        || !polarity
-        || !Number.isFinite(endpoint.anchor.x)
-        || !Number.isFinite(endpoint.anchor.y)
-        || !Number.isFinite(endpoint.tip.x)
-        || !Number.isFinite(endpoint.tip.y)
-        || !Number.isFinite(polarity.x)
-        || !Number.isFinite(polarity.y)
-      ) {
-        throw new Error("Differential probe render plan endpoint payload is invalid.");
-      }
-    });
-    return plan;
-  };
+  const getDifferentialProbeRenderPlan = (component) =>
+    renderPlanContracts.getDifferentialProbeRenderPlan(component);
 
-  const getDifferentialPolarityColor = (fillColor) => {
-    const helper = getProbeHelper("getContrastPolarityColor");
-    const resolved = String(helper(fillColor) ?? "").trim();
-    if (!resolved) {
-      throw new Error("Differential polarity color helper returned invalid data.");
-    }
-    return resolved;
-  };
+  const getDifferentialPolarityColor = (fillColor) =>
+    renderPlanContracts.getDifferentialPolarityColor(fillColor);
 
-  const getSpdtSwitchHelper = (name) => {
-    const helper = schematicApi?.[name];
-    if (typeof helper !== "function") {
-      throw new Error(`SPDT helper '${name}' is unavailable. Ensure symbol-render.js loads before editor.js.`);
-    }
-    return helper;
-  };
+  const getSpdtSwitchRenderPlan = (component) =>
+    renderPlanContracts.getSpdtSwitchRenderPlan(component);
 
-  const getSpdtSwitchRenderPlan = (component) => {
-    const helper = getSpdtSwitchHelper("getSpdtSwitchRenderPlan");
-    const plan = helper(component?.pins, component?.value);
-    if (
-      !plan
-      || !plan.pins
-      || !plan.contacts
-      || !plan.blade
-      || !plan.labelCenter
-      || !Number.isFinite(plan.labelCenter.x)
-      || !Number.isFinite(plan.labelCenter.y)
-      || !Number.isFinite(plan.labelAngle)
-      || !Number.isFinite(plan.pins?.C?.x)
-      || !Number.isFinite(plan.pins?.C?.y)
-      || !Number.isFinite(plan.pins?.A?.x)
-      || !Number.isFinite(plan.pins?.A?.y)
-      || !Number.isFinite(plan.pins?.B?.x)
-      || !Number.isFinite(plan.pins?.B?.y)
-      || !Number.isFinite(plan.contacts?.A?.x)
-      || !Number.isFinite(plan.contacts?.A?.y)
-      || !Number.isFinite(plan.contacts?.B?.x)
-      || !Number.isFinite(plan.contacts?.B?.y)
-      || !Number.isFinite(plan.blade?.from?.x)
-      || !Number.isFinite(plan.blade?.from?.y)
-      || !Number.isFinite(plan.blade?.to?.x)
-      || !Number.isFinite(plan.blade?.to?.y)
-    ) {
-      throw new Error("SPDT switch render plan helper returned invalid data.");
-    }
-    return {
-      ...plan,
-      labelCenter: {
-        x: Number(plan.labelCenter.x),
-        y: Number(plan.labelCenter.y)
-      },
-      labelAngle: Number(plan.labelAngle)
-    };
-  };
-
-  const getSpdtSwitchExtents = (component) => {
-    const helper = getSpdtSwitchHelper("getSpdtSwitchExtents");
-    const extents = helper(component?.pins, component?.value);
-    if (
-      !extents
-      || !Number.isFinite(extents.minX)
-      || !Number.isFinite(extents.maxX)
-      || !Number.isFinite(extents.minY)
-      || !Number.isFinite(extents.maxY)
-    ) {
-      throw new Error("SPDT switch extents helper returned invalid data.");
-    }
-    return {
-      minX: Number(extents.minX),
-      maxX: Number(extents.maxX),
-      minY: Number(extents.minY),
-      maxY: Number(extents.maxY)
-    };
-  };
+  const getSpdtSwitchExtents = (component) =>
+    renderPlanContracts.getSpdtSwitchExtents(component);
 
   const normalizeSpdtThrow = (value) =>
     String(value ?? "").trim().toUpperCase() === "B" ? "B" : "A";
@@ -970,6 +728,20 @@
       midX: (start.x + end.x) / 2,
       midY: (start.y + end.y) / 2
     };
+  };
+  const getTwoPinSymbolHalfExtent = (component, info) => {
+    if (!info || !Number.isFinite(info.length)) {
+      return 0;
+    }
+    const type = String(component?.type ?? "").toUpperCase();
+    const helper = renderPlanContracts?.getTwoPinVisualHalfExtent;
+    if (typeof helper !== "function") {
+      return 0;
+    }
+    const value = helper(type, info.length, {
+      resistorStyle: component?.resistorStyle
+    });
+    return Number.isFinite(value) && value > 0 ? value : 0;
   };
 
   const pointToSegmentDistanceSq = (point, start, end) => {
@@ -1067,7 +839,7 @@
     }
     const style = getBoxAnnotationStyle(component?.value, {
       type,
-      defaultLineType: type === "DBOX" ? "dashed" : "solid"
+      defaultLineType: "solid"
     });
     const minX = Math.min(Number(pins[0].x), Number(pins[1].x));
     const maxX = Math.max(Number(pins[0].x), Number(pins[1].x));
@@ -1157,7 +929,7 @@
     }
     const pin = pins[0];
     const stroke = strokeOptions(options);
-    const geometry = getNamedNodeGeometry(component);
+    const geometry = getNamedNodeGeometry(component, options?.schematicTextStyle);
     const group = document.createElementNS(SVG_NS, "g");
     group.setAttribute("data-component", component.id);
     group.setAttribute("data-symbol", "net");
@@ -1209,14 +981,11 @@
     if (options?.dataHighlight) {
       group.setAttribute("data-component-highlight", String(options.dataHighlight));
     }
-    const previewOpacity = Number(options?.opacity);
-    const hasPreviewOpacity = Number.isFinite(previewOpacity);
-    const baseOpacity = Math.max(0, Math.min(1, annotationStyle.opacity));
-    const combinedOpacity = hasPreviewOpacity
-      ? Math.max(0, Math.min(1, baseOpacity * previewOpacity))
-      : baseOpacity;
-    if (combinedOpacity < 0.9999) {
-      group.setAttribute("opacity", String(combinedOpacity));
+    const annotationRenderStyle = renderPlanContracts.buildTextAnnotationRenderAttributes(annotationStyle, {
+      previewOpacity: options?.opacity
+    });
+    if (annotationRenderStyle.opacity < 0.9999) {
+      group.setAttribute("opacity", String(annotationRenderStyle.opacity));
     }
     const rotate = rotation !== 0 ? ` rotate(${rotation})` : "";
     group.setAttribute("transform", `translate(${pin.x} ${pin.y})${rotate}`);
@@ -1278,35 +1047,32 @@
     if (options?.dataHighlight) {
       group.setAttribute("data-component-highlight", String(options.dataHighlight));
     }
-    const previewOpacity = Number(options?.opacity);
-    const hasPreviewOpacity = Number.isFinite(previewOpacity);
     if (type === "ARR") {
-      const arrowInfo = getTwoPinInfo(component);
-      if (arrowInfo) {
+      const arrowGeometry = renderPlanContracts.buildArrowAnnotationGeometry(component);
+      if (arrowGeometry) {
         const arrowStyle = getArrowAnnotationStyle(component?.value, { type: "ARR" });
         const arrowThickness = resolveAnnotationThickness(arrowStyle.thickness);
-        const dasharray = getArrowAnnotationDasharray(arrowStyle.lineType, arrowThickness);
-        const baseOpacity = Math.max(0, Math.min(1, arrowStyle.opacity));
-        const combinedOpacity = hasPreviewOpacity
-          ? Math.max(0, Math.min(1, baseOpacity * previewOpacity))
-          : baseOpacity;
-        group.setAttribute("transform", `translate(${arrowInfo.start.x} ${arrowInfo.start.y}) rotate(${arrowInfo.angle})`);
-        group.setAttribute("data-arrow-line-type", arrowStyle.lineType);
-        if (combinedOpacity < 0.9999) {
-          group.setAttribute("opacity", String(combinedOpacity));
+        const arrowRenderStyle = renderPlanContracts.buildArrowAnnotationRenderAttributes(arrowStyle, {
+          thickness: arrowThickness,
+          previewOpacity: options?.opacity
+        });
+        group.setAttribute("transform", arrowGeometry.transform);
+        group.setAttribute("data-arrow-line-type", arrowRenderStyle.lineType);
+        if (arrowRenderStyle.opacity < 0.9999) {
+          group.setAttribute("opacity", String(arrowRenderStyle.opacity));
         }
         const handledArrow = typeof symbolApi?.drawShape === "function"
           ? symbolApi.drawShape(symbolCtx, type, group, {
-            length: arrowInfo.length,
+            length: arrowGeometry.length,
             style: {
               ...stroke,
-              width: arrowThickness,
-              arrowThickness,
-              lineType: arrowStyle.lineType,
-              line: arrowStyle.lineType,
-              opacityPercent: arrowStyle.opacityPercent,
-              opacity: arrowStyle.opacity,
-              dasharray,
+              width: arrowRenderStyle.thickness,
+              arrowThickness: arrowRenderStyle.thickness,
+              lineType: arrowRenderStyle.lineType,
+              line: arrowRenderStyle.lineType,
+              opacityPercent: arrowRenderStyle.opacityPercent,
+              opacity: arrowRenderStyle.opacity,
+              dasharray: arrowRenderStyle.dasharray,
               fill: options?.fill
             }
           })
@@ -1318,48 +1084,37 @@
         return;
       }
     }
-    if ((type === "BOX" || type === "DBOX") && pins.length >= 2) {
-      const cornerA = pins[0];
-      const cornerB = pins[1];
-      if (
-        Number.isFinite(Number(cornerA?.x))
-        && Number.isFinite(Number(cornerA?.y))
-        && Number.isFinite(Number(cornerB?.x))
-        && Number.isFinite(Number(cornerB?.y))
-      ) {
+    if (type === "BOX") {
+      const boxGeometry = renderPlanContracts.buildBoxAnnotationGeometry(component);
+      if (boxGeometry) {
         const styleValue = getBoxAnnotationStyle(component?.value, {
           type,
-          defaultLineType: type === "DBOX" ? "dashed" : "solid"
+          defaultLineType: "solid"
         });
-        const minX = Math.min(Number(cornerA.x), Number(cornerB.x));
-        const minY = Math.min(Number(cornerA.y), Number(cornerB.y));
-        const width = Math.abs(Number(cornerB.x) - Number(cornerA.x));
-        const height = Math.abs(Number(cornerB.y) - Number(cornerA.y));
-        const strokeLineCap = styleValue.lineType === "dotted" ? "round" : "square";
         const forcedFill = typeof options?.fill === "string" && options.fill.trim()
           ? options.fill
           : null;
-        const fill = forcedFill ?? (styleValue.fillEnabled ? styleValue.fillColor : "none");
         const boxThickness = resolveAnnotationThickness(styleValue.thickness);
-        const dasharray = getBoxAnnotationDasharray(styleValue.lineType, boxThickness);
-        const baseOpacity = Math.max(0, Math.min(1, styleValue.opacity));
-        const combinedOpacity = hasPreviewOpacity
-          ? Math.max(0, Math.min(1, baseOpacity * previewOpacity))
-          : baseOpacity;
-        group.setAttribute("transform", `translate(${minX} ${minY})`);
-        group.setAttribute("data-box-line-type", styleValue.lineType);
-        if (combinedOpacity < 0.9999) {
-          group.setAttribute("opacity", String(combinedOpacity));
+        const boxRenderStyle = renderPlanContracts.buildBoxAnnotationRenderAttributes(styleValue, {
+          thickness: boxThickness,
+          previewOpacity: options?.opacity
+        });
+        const fill = forcedFill ?? (boxRenderStyle.fillEnabled ? boxRenderStyle.fillColor : "none");
+        group.setAttribute("transform", boxGeometry.transform);
+        group.setAttribute("data-box-line-type", boxRenderStyle.lineType);
+        if (boxRenderStyle.opacity < 0.9999) {
+          group.setAttribute("opacity", String(boxRenderStyle.opacity));
         }
-        const outline = appendPath(group, `M 0 0 L ${width} 0 L ${width} ${height} L 0 ${height} Z`, {
+        const strokeLineCap = boxRenderStyle.lineType === "dotted" ? "round" : "square";
+        const outline = appendPath(group, `M 0 0 L ${boxGeometry.width} 0 L ${boxGeometry.width} ${boxGeometry.height} L 0 ${boxGeometry.height} Z`, {
           stroke: stroke.stroke,
-          width: boxThickness,
+          width: boxRenderStyle.thickness,
           cap: strokeLineCap,
           join: "round"
         });
         outline.setAttribute("fill", fill);
-        if (dasharray) {
-          outline.setAttribute("stroke-dasharray", dasharray);
+        if (boxRenderStyle.dasharray) {
+          outline.setAttribute("stroke-dasharray", boxRenderStyle.dasharray);
         }
         svg.appendChild(group);
         return;
@@ -1368,8 +1123,8 @@
     const rotation = snapRotation(Number(component?.rotation ?? 0));
     const rotate = rotation !== 0 ? ` rotate(${rotation})` : "";
     group.setAttribute("transform", `translate(${pin.x} ${pin.y})${rotate}`);
-    if (hasPreviewOpacity) {
-      group.setAttribute("opacity", String(previewOpacity));
+    if (Number.isFinite(Number(options?.opacity))) {
+      group.setAttribute("opacity", String(Number(options.opacity)));
     }
     const handled = typeof symbolApi?.drawShape === "function"
       ? symbolApi.drawShape(symbolCtx, type, group, {
@@ -1387,6 +1142,9 @@
 
   const drawProbeLabel = (svg, component, options) => {
     const type = String(component?.type ?? "").toUpperCase();
+    const resolvedTextStyle = resolveSchematicTextStyle(options?.schematicTextStyle);
+    const valueSize = getSchematicTextValueSize(resolvedTextStyle);
+    const lineHeight = getSchematicTextLineHeight(resolvedTextStyle);
     const probeLabel = getProbeDisplayLabel(component, options);
     let labelX = 0;
     let labelY = 0;
@@ -1423,10 +1181,13 @@
       ? PROBE_INVALID_COLOR
       : (options?.valueColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value);
     const label = appendText(svg, labelX, labelY, probeLabel, {
-      size: 12,
+      size: resolvedTextStyle.size,
       fill: labelFill,
       anchor: labelAnchor.anchor,
-      baseline: "middle"
+      baseline: "middle",
+      family: resolvedTextStyle.font,
+      weight: resolvedTextStyle.bold ? 700 : 400,
+      style: resolvedTextStyle.italic ? "italic" : "normal"
     });
     if (component?.id) {
       label.setAttribute("data-component-id", String(component.id));
@@ -1439,13 +1200,15 @@
       const valueLabel = appendText(
         svg,
         labelX,
-        labelY + LABEL_LINE_HEIGHT,
+        labelY + lineHeight,
         measurementText,
         {
-          size: 11,
+          size: valueSize,
           fill: valueFill,
           anchor: labelAnchor.anchor,
-          weight: MEASUREMENT_TEXT_WEIGHT
+          family: resolvedTextStyle.font,
+          style: resolvedTextStyle.italic ? "italic" : "normal",
+          weight: resolvedTextStyle.bold ? 700 : MEASUREMENT_TEXT_WEIGHT
         }
       );
       if (component?.id) {
@@ -1562,12 +1325,7 @@
   };
 
   const getSpdtLabelGeometry = (component, plan) => {
-    const resolvedPlan = plan ?? getSpdtSwitchRenderPlan(component);
-    return {
-      midX: Number(resolvedPlan.labelCenter.x),
-      midY: Number(resolvedPlan.labelCenter.y),
-      angle: Number(resolvedPlan.labelAngle)
-    };
+    return renderPlanContracts.getSpdtLabelGeometry(component, plan);
   };
 
   const drawSpdtSwitchSymbol = (svg, component, options) => {
@@ -1601,39 +1359,6 @@
       return;
     }
     svg.appendChild(group);
-    if (options?.showLabel !== false) {
-      const measurementText = options?.measurements?.get?.(component.id);
-      const labelGeometry = getSpdtLabelGeometry(component, plan);
-      const labelInfo = drawComponentLabel(svg, component, {
-        midX: labelGeometry.midX,
-        midY: labelGeometry.midY,
-        angle: labelGeometry.angle,
-        labelColor: options?.labelColor,
-        valueColor: options?.valueColor,
-        dataHighlight: options?.dataHighlight,
-        extraLines: measurementText ? 1 : 0
-      });
-      if (measurementText && labelInfo) {
-        const measurementLabel = appendText(
-          svg,
-          labelInfo.layout.x,
-          labelInfo.layout.y + labelInfo.layout.lineHeight * (labelInfo.lineCount - 1),
-          measurementText,
-          {
-            size: 11,
-            fill: options?.valueColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value,
-            anchor: labelInfo.layout.anchor,
-            weight: MEASUREMENT_TEXT_WEIGHT
-          }
-        );
-        if (component?.id) {
-          measurementLabel.setAttribute("data-component-id", String(component.id));
-        }
-        if (options?.dataHighlight) {
-          measurementLabel.setAttribute("data-component-label-highlight", String(options.dataHighlight));
-        }
-      }
-    }
   };
 
   const drawDifferentialProbeOverlayLink = (svg, component, options) => {
@@ -1756,21 +1481,28 @@
     svg.appendChild(group);
     if (options?.showLabel !== false) {
       const measurementText = options?.measurements?.get?.(component.id);
+      const symbolHalfExtent = getTwoPinSymbolHalfExtent(component, info);
       const labelInfo = drawComponentLabel(svg, component, {
         midX: info.midX,
         midY: info.midY,
         angle: info.angle,
+        symbolHalfExtent,
         labelColor: options?.labelColor,
         valueColor: options?.valueColor,
         dataHighlight: options?.dataHighlight,
+        schematicTextStyle: options?.schematicTextStyle,
         extraLines: measurementText ? 1 : 0
       });
       if (measurementText && labelInfo) {
+        const resolvedTextStyle = resolveSchematicTextStyle(options?.schematicTextStyle);
         const measurementLabel = appendText(svg, labelInfo.layout.x, labelInfo.layout.y + labelInfo.layout.lineHeight * (labelInfo.lineCount - 1), measurementText, {
-          size: 11,
+          size: getSchematicTextValueSize(resolvedTextStyle),
           fill: options?.valueColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value,
           anchor: labelInfo.layout.anchor,
-          weight: MEASUREMENT_TEXT_WEIGHT
+          baseline: labelInfo.layout.baseline ?? undefined,
+          family: resolvedTextStyle.font,
+          style: resolvedTextStyle.italic ? "italic" : "normal",
+          weight: resolvedTextStyle.bold ? 700 : MEASUREMENT_TEXT_WEIGHT
         });
         if (component?.id) {
           measurementLabel.setAttribute("data-component-id", String(component.id));
@@ -1783,11 +1515,14 @@
   };
 
   const drawComponentLabel = (svg, component, options) => {
+    const resolvedTextStyle = resolveSchematicTextStyle(options?.schematicTextStyle);
+    const valueSize = getSchematicTextValueSize(resolvedTextStyle);
     const displayValue = formatDisplayValue(component);
     const hasValue = Boolean(displayValue);
     const displayName = getDisplayName(component);
     const labelRotation = Number(component?.labelRotation ?? 0);
     const lineCount = (hasValue ? 2 : 1) + (options?.extraLines ?? 0);
+    const resolvedLineHeight = getSchematicTextLineHeight(resolvedTextStyle, LABEL_LINE_HEIGHT);
     const layout = getLabelLayout(
       options?.midX ?? 0,
       options?.midY ?? 0,
@@ -1795,12 +1530,30 @@
       lineCount,
       labelRotation
     );
+    const resolvedPosition = resolveComponentLabelPosition(layout, {
+      midX: options?.midX,
+      midY: options?.midY,
+      angle: options?.angle,
+      labelRotation,
+      lineCount,
+      lineHeight: resolvedLineHeight,
+      labelSize: resolvedTextStyle.size,
+      valueSize,
+      symbolHalfExtent: options?.symbolHalfExtent
+    });
+    const resolvedY = resolvedPosition.y;
+    const resolvedX = resolvedPosition.x;
+    const labelBaseline = "middle";
     const labelColor = options?.labelColor ?? DEFAULT_COMPONENT_TEXT_COLORS.label;
     const valueColor = options?.valueColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value;
-    const label = appendText(svg, layout.x, layout.y, displayName, {
-      size: 12,
+    const label = appendText(svg, resolvedX, resolvedY, displayName, {
+      size: resolvedTextStyle.size,
       anchor: layout.anchor,
-      fill: labelColor
+      baseline: labelBaseline ?? undefined,
+      fill: labelColor,
+      family: resolvedTextStyle.font,
+      weight: resolvedTextStyle.bold ? 700 : 400,
+      style: resolvedTextStyle.italic ? "italic" : "normal"
     });
     if (component?.id) {
       label.setAttribute("data-component-id", String(component.id));
@@ -1809,10 +1562,14 @@
       label.setAttribute("data-component-label-highlight", String(options.dataHighlight));
     }
     if (hasValue) {
-      const valueLabel = appendText(svg, layout.x, layout.y + layout.lineHeight, displayValue, {
-        size: 11,
+      const valueLabel = appendText(svg, resolvedX, resolvedY + resolvedLineHeight, displayValue, {
+        size: valueSize,
         fill: valueColor,
-        anchor: layout.anchor
+        anchor: layout.anchor,
+        baseline: labelBaseline ?? undefined,
+        family: resolvedTextStyle.font,
+        weight: resolvedTextStyle.bold ? 700 : 400,
+        style: resolvedTextStyle.italic ? "italic" : "normal"
       });
       if (component?.id) {
         valueLabel.setAttribute("data-component-id", String(component.id));
@@ -1821,7 +1578,16 @@
         valueLabel.setAttribute("data-component-label-highlight", String(options.dataHighlight));
       }
     }
-    return { layout, lineCount };
+    return {
+      layout: {
+        ...layout,
+        x: resolvedX,
+        y: resolvedY,
+        lineHeight: resolvedLineHeight,
+        baseline: labelBaseline
+      },
+      lineCount
+    };
   };
 
   const renderSymbolIcon = (type, options = {}) => {
@@ -1925,7 +1691,7 @@
     return svg;
   };
 
-  const getComponentBounds = (component, padding, probeLabels) => {
+  const getComponentBounds = (component, padding, probeLabels, schematicTextStyle) => {
     const type = String(component?.type ?? "").toUpperCase();
     const pins = Array.isArray(component?.pins) ? component.pins : [];
     if (!pins.length) {
@@ -1969,7 +1735,7 @@
     } else if (type === "NET") {
       const pinX = xs[0];
       const pinY = ys[0];
-      const extents = getNamedNodeExtents(component);
+      const extents = getNamedNodeExtents(component, schematicTextStyle);
       const rotation = snapRotation(Number(component?.rotation ?? 0));
       const verticalTextOnly = component?.textOnly === true && (rotation === 90 || rotation === 270);
       const pad = component?.textOnly === true
@@ -1998,10 +1764,10 @@
         maxX = Math.max(...xs) + pad;
         minY = Math.min(...ys) - pad;
         maxY = Math.max(...ys) + pad;
-      } else if ((type === "BOX" || type === "DBOX") && pins.length >= 2) {
+      } else if (type === "BOX" && pins.length >= 2) {
         const boxStyle = getBoxAnnotationStyle(component?.value, {
           type,
-          defaultLineType: type === "DBOX" ? "dashed" : "solid"
+          defaultLineType: "solid"
         });
         const pad = Math.max(4, Math.ceil(boxStyle.thickness) + 2);
         minX = Math.min(...xs) - pad;
@@ -2160,7 +1926,7 @@
 
   const isBackgroundAnnotationComponent = (component) => {
     const type = String(component?.type ?? "").toUpperCase();
-    return type === "BOX" || type === "DBOX";
+    return type === "BOX";
   };
 
   const createEditor = (container, model, options) => {
@@ -2219,6 +1985,7 @@
       lastSelectClick: null,
       measurements: new Map(),
       probeLabels: new Map(),
+      schematicTextStyle: { ...DEFAULT_SCHEMATIC_TEXT_STYLE },
       externalHighlightComponentIds: new Set(),
       externalHighlightWireIds: new Set(),
       externalHighlightColor: DEFAULT_EXTERNAL_HIGHLIGHT_COLOR,
@@ -2232,6 +1999,7 @@
       isRestoring: false,
       skipViewSyncOnce: false
     };
+    state.schematicTextStyle = normalizeSchematicTextStyle(options?.schematicTextStyle, state.schematicTextStyle);
     let renderRequestId = null;
     let scheduleRender = null;
 
@@ -2268,6 +2036,20 @@
       return current.id > other.id;
     };
 
+    const getRefDesPrefixesForType = (type) => {
+      const key = String(type ?? "").toUpperCase();
+      if (key === "SW") {
+        return {
+          primary: "SPDT",
+          aliases: ["SPDT", "SW"]
+        };
+      }
+      return {
+        primary: key,
+        aliases: [key]
+      };
+    };
+
     const syncCounters = (component) => {
       if (!component || !component.id) {
         return;
@@ -2290,12 +2072,13 @@
     (state.model?.components ?? []).forEach(syncCounters);
 
     const getMaxRefIndex = (type) => {
-      const key = String(type ?? "").toUpperCase();
+      const descriptor = getRefDesPrefixesForType(type);
+      const aliases = new Set(descriptor.aliases);
       let maxIndex = 0;
       (state.model?.components ?? []).forEach((component) => {
         const id = String(component?.id ?? "");
         const match = /^([A-Za-z]+)(\d+)$/.exec(id);
-        if (!match || match[1].toUpperCase() !== key) {
+        if (!match || !aliases.has(match[1].toUpperCase())) {
           return;
         }
         const index = Number(match[2]);
@@ -2326,12 +2109,15 @@
     (state.model?.wires ?? []).forEach(syncWireCount);
 
     const nextRefDes = (type) => {
-      const key = String(type ?? "").toUpperCase();
-      const current = state.refDesCounters.get(key) ?? 0;
-      const maxExisting = getMaxRefIndex(key);
+      const descriptor = getRefDesPrefixesForType(type);
+      const current = descriptor.aliases.reduce((maxValue, prefix) => {
+        const value = state.refDesCounters.get(prefix) ?? 0;
+        return value > maxValue ? value : maxValue;
+      }, 0);
+      const maxExisting = getMaxRefIndex(type);
       const nextIndex = Math.max(current, maxExisting) + 1;
-      state.refDesCounters.set(key, nextIndex);
-      return `${key}${nextIndex}`;
+      state.refDesCounters.set(descriptor.primary, nextIndex);
+      return `${descriptor.primary}${nextIndex}`;
     };
 
     const nextWireId = () => {
@@ -3853,7 +3639,7 @@
         if (isProbeComponentType(component?.type)) {
           return;
         }
-        const bounds = getComponentBounds(component, padding, state.probeLabels);
+        const bounds = getComponentBounds(component, padding, state.probeLabels, state.schematicTextStyle);
         if (bounds) {
           obstacles.push(bounds);
         }
@@ -5774,6 +5560,7 @@
         drawComponentSymbol(targetGroup, component, {
           measurements: state.measurements,
           probeLabels: state.probeLabels,
+          schematicTextStyle: state.schematicTextStyle,
           ...(strokeColor ? {
             stroke: strokeColor,
             labelColor: strokeColor,
@@ -5965,11 +5752,11 @@
       }
       if (state.boxStart && state.tool.mode === "place") {
         const activeBoxType = String(state.tool.type ?? "").toUpperCase();
-        if (activeBoxType === "BOX" || activeBoxType === "DBOX") {
+        if (activeBoxType === "BOX") {
           const preview = state.boxPreview ?? state.boxStart;
           const defaultStyle = getDefaultBoxAnnotationStyle({
             type: activeBoxType,
-            defaultLineType: activeBoxType === "DBOX" ? "dashed" : "solid"
+            defaultLineType: "solid"
           });
           drawComponentSymbol(overlayGroup, {
             id: "__box_preview__",
@@ -6161,7 +5948,8 @@
             labelColor: hoverColor,
             valueColor: hoverColor,
             measurements: state.measurements,
-            probeLabels: state.probeLabels
+            probeLabels: state.probeLabels,
+            schematicTextStyle: state.schematicTextStyle
           });
         }
         if (component?.pins?.length && isElectricalComponentType(component?.type)) {
@@ -6222,7 +6010,7 @@
               tipHandle.setAttribute("data-arrow-endpoint-component", String(component.id));
             }
           }
-          if ((type === "BOX" || type === "DBOX") && Array.isArray(component?.pins) && component.pins.length >= 2) {
+          if (type === "BOX" && Array.isArray(component?.pins) && component.pins.length >= 2) {
             const endpointStyle = {
               fill: "#f6f4ef",
               stroke: "#0f62fe",
@@ -6235,7 +6023,7 @@
               handle.setAttribute("data-box-resize-component", String(component.id));
             });
           }
-          const suppressSelectionText = type === "ARR" || type === "BOX" || type === "DBOX";
+          const suppressSelectionText = type === "ARR" || type === "BOX" || type === "SW";
           const info = getTwoPinInfo(component);
           const labelGeometry = suppressSelectionText
             ? null
@@ -6250,7 +6038,8 @@
               valueColor: "#0f62fe",
               dataHighlight: 1,
               measurements: state.measurements,
-              probeLabels: state.probeLabels
+              probeLabels: state.probeLabels,
+              schematicTextStyle: state.schematicTextStyle
             });
             if (type === "PD") {
               drawDifferentialProbeOverlayLink(overlayGroup, component, {
@@ -6261,26 +6050,33 @@
             }
           } else if (labelGeometry) {
             const measurementText = state.measurements?.get?.(component.id);
+            const symbolHalfExtent = info ? getTwoPinSymbolHalfExtent(component, info) : 0;
             const labelInfo = drawComponentLabel(overlayGroup, component, {
               midX: labelGeometry.midX,
               midY: labelGeometry.midY,
               angle: labelGeometry.angle,
+              symbolHalfExtent,
               extraLines: measurementText ? 1 : 0,
               labelColor: "#0f62fe",
               valueColor: "#0f62fe",
-              dataHighlight: 1
+              dataHighlight: 1,
+              schematicTextStyle: state.schematicTextStyle
             });
             if (measurementText && labelInfo) {
+              const resolvedTextStyle = resolveSchematicTextStyle(state.schematicTextStyle);
               const measurementLabel = appendText(
                 overlayGroup,
                 labelInfo.layout.x,
                 labelInfo.layout.y + labelInfo.layout.lineHeight * (labelInfo.lineCount - 1),
                 measurementText,
                 {
-                  size: 11,
+                  size: getSchematicTextValueSize(resolvedTextStyle),
                   fill: "#0f62fe",
                   anchor: labelInfo.layout.anchor,
-                  weight: MEASUREMENT_TEXT_WEIGHT
+                  baseline: labelInfo.layout.baseline ?? undefined,
+                  family: resolvedTextStyle.font,
+                  style: resolvedTextStyle.italic ? "italic" : "normal",
+                  weight: resolvedTextStyle.bold ? 700 : MEASUREMENT_TEXT_WEIGHT
                 }
               );
               if (component?.id) {
@@ -6297,7 +6093,8 @@
               labelGroup.setAttribute("transform", `translate(${pin.x} ${pin.y})${rotate}`);
               appendNamedNodeLabelText(labelGroup, component, rotation, {
                 labelColor: "#0f62fe",
-                dataHighlight: 1
+                dataHighlight: 1,
+                schematicTextStyle: state.schematicTextStyle
               });
               overlayGroup.appendChild(labelGroup);
             }
@@ -6364,7 +6161,8 @@
               labelColor: externalColor,
               valueColor: externalColor,
               measurements: state.measurements,
-              probeLabels: state.probeLabels
+              probeLabels: state.probeLabels,
+              schematicTextStyle: state.schematicTextStyle
             });
           });
           if (!wireIds.size) {
@@ -7820,7 +7618,7 @@
         state.arrowStart = null;
         state.arrowPreview = null;
       }
-      if (!(state.tool.mode === "place" && (activePlaceType === "BOX" || activePlaceType === "DBOX"))) {
+      if (!(state.tool.mode === "place" && activePlaceType === "BOX")) {
         state.boxStart = null;
         state.boxPreview = null;
       }
@@ -7878,6 +7676,11 @@
       } else if (typeof next === "object") {
         state.probeLabels = new Map(Object.entries(next));
       }
+      render();
+    };
+
+    const setSchematicTextStyle = (next) => {
+      state.schematicTextStyle = normalizeSchematicTextStyle(next, state.schematicTextStyle);
       render();
     };
 
@@ -8193,7 +7996,7 @@
         if (type === "ARR") {
           return isPointInsideArrowSelectionExtent(component, point);
         }
-        if (type === "BOX" || type === "DBOX") {
+        if (type === "BOX") {
           return isPointInsideBoxSelectionExtent(component, point);
         }
         return point.x >= bounds.minX
@@ -8209,7 +8012,7 @@
           if (filter && !filter(component)) {
             return;
           }
-          const bounds = getComponentBounds(component, 10, state.probeLabels);
+          const bounds = getComponentBounds(component, 10, state.probeLabels, state.schematicTextStyle);
           if (!bounds) {
             return;
           }
@@ -8368,7 +8171,7 @@
         let bestDist = Infinity;
         components.forEach((component) => {
           const type = String(component?.type ?? "").toUpperCase();
-          if (type !== "BOX" && type !== "DBOX") {
+          if (type !== "BOX") {
             return;
           }
           if (filter && !filter(component)) {
@@ -8524,7 +8327,7 @@
       return { x, y, wire, segmentIndex: wireHit.segmentIndex };
     };
 
-    const insertWirePoint = (wire, index, point) => {
+    const insertWirePoint = (wire, index, point, options) => {
       if (!wire || !Array.isArray(wire.points) || !point) {
         return null;
       }
@@ -8532,10 +8335,13 @@
       if (existing) {
         return existing;
       }
+      const shouldNotifyModel = options?.notifyModel !== false;
       recordHistory();
       wire.points.splice(index, 0, { x: point.x, y: point.y });
       render();
-      notifyModelChange();
+      if (shouldNotifyModel) {
+        notifyModelChange();
+      }
       return wire.points[index];
     };
 
@@ -8557,7 +8363,7 @@
 
     const getBoxResizePins = (component) => {
       const type = String(component?.type ?? "").toUpperCase();
-      if (type !== "BOX" && type !== "DBOX") {
+      if (type !== "BOX") {
         return null;
       }
       const pins = Array.isArray(component?.pins) ? component.pins : [];
@@ -10460,7 +10266,7 @@
         }
         return;
       }
-      if (toolType === "BOX" || toolType === "DBOX") {
+      if (toolType === "BOX") {
         const point = snapPoint(world) ?? { x: world.x, y: world.y };
         if (!state.boxStart) {
           state.boxStart = { x: point.x, y: point.y };
@@ -10481,7 +10287,7 @@
         state.boxPreview = null;
         const defaultStyle = getDefaultBoxAnnotationStyle({
           type: toolType,
-          defaultLineType: toolType === "DBOX" ? "dashed" : "solid"
+          defaultLineType: "solid"
         });
         const placedBox = addComponent({
           type: "BOX",
@@ -10524,14 +10330,18 @@
 
     const handlePointerDownWireMode = (world) => {
       let hit = hitTestNode(world);
+      let delayedModelNotify = false;
       if (!hit) {
         const wireHit = hitTestWireSegment(world);
         if (wireHit) {
           const junction = getWireSegmentPoint(wireHit, world);
           if (junction) {
-            const inserted = insertWirePoint(junction.wire, junction.segmentIndex + 1, junction);
+            const inserted = insertWirePoint(junction.wire, junction.segmentIndex + 1, junction, {
+              notifyModel: Boolean(state.wireStart)
+            });
             if (inserted) {
               hit = { point: { x: inserted.x, y: inserted.y }, wire: junction.wire };
+              delayedModelNotify = !state.wireStart;
             }
           }
         }
@@ -10549,6 +10359,9 @@
       if (!state.wireStart) {
         state.wireStart = { ...targetPoint, preserveEndpoint };
         state.wirePreview = null;
+        if (delayedModelNotify) {
+          notifyModelChange();
+        }
         renderOverlay();
         return;
       }
@@ -10556,14 +10369,16 @@
         preserveStart: state.wireStart.preserveEndpoint === true,
         preserveEnd: preserveEndpoint
       });
+      const preserveStartEndpoint = state.wireStart.preserveEndpoint === true;
+      const nextWireStart = clickedEmptySpace ? { ...targetPoint, preserveEndpoint: false } : null;
+      state.wireStart = nextWireStart;
+      state.wirePreview = null;
       addWire({ points }, {
         preserveEndpoints: {
-          start: state.wireStart.preserveEndpoint === true,
+          start: preserveStartEndpoint,
           end: preserveEndpoint
         }
       });
-      state.wireStart = clickedEmptySpace ? { ...targetPoint, preserveEndpoint: false } : null;
-      state.wirePreview = null;
       renderOverlay();
     };
 
@@ -10882,7 +10697,7 @@
           renderOverlay();
           return true;
         }
-        if ((toolType === "BOX" || toolType === "DBOX") && state.boxStart) {
+        if (toolType === "BOX" && state.boxStart) {
           const previewPoint = snapPoint(world) ?? { x: world.x, y: world.y };
           state.boxPreview = { x: previewPoint.x, y: previewPoint.y };
           clearPreview();
@@ -10979,7 +10794,7 @@
         const isTouch = box.mode === "touch";
         const components = Array.isArray(state.model?.components) ? state.model.components : [];
         components.forEach((component) => {
-          const bounds = getComponentBounds(component, 10, state.probeLabels);
+          const bounds = getComponentBounds(component, 10, state.probeLabels, state.schematicTextStyle);
           if (!bounds) {
             return;
           }
@@ -11649,12 +11464,15 @@
       render,
       setTool,
       getTool: () => ({ ...state.tool }),
+      isWirePlacementActive: () => Boolean(state.wireStart),
       getView,
       setView,
       resetView,
       setGrid,
       setMeasurements,
       setProbeLabels,
+      setSchematicTextStyle,
+      getSchematicTextStyle: () => ({ ...state.schematicTextStyle }),
       setExternalHighlights,
       getGrid,
       setSelection,
@@ -11696,7 +11514,7 @@
           if (bounds.minY < minY) { minY = bounds.minY; }
           if (bounds.maxY > maxY) { maxY = bounds.maxY; }
         };
-        components.forEach((comp) => expand(getComponentBounds(comp, 0, state.probeLabels)));
+        components.forEach((comp) => expand(getComponentBounds(comp, 0, state.probeLabels, state.schematicTextStyle)));
         wires.forEach((wire) => expand(getWireBounds(wire)));
         if (!Number.isFinite(minX)) {
           return null;

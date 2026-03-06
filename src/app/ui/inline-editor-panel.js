@@ -9,13 +9,346 @@
     return value;
   };
 
+  const requireSelectPropertyContract = (readProperty, key, name) => {
+    const property = readProperty(key);
+    if (!property || typeof property !== "object") {
+      throw new Error(`Inline editor panel module requires '${name}(${key})' to return a property contract object.`);
+    }
+    const label = String(property.label ?? "").trim();
+    if (!label) {
+      throw new Error(`Inline editor panel module property contract '${name}' requires a non-empty label.`);
+    }
+    const rawOptions = Array.isArray(property.options) ? property.options : [];
+    if (!rawOptions.length) {
+      throw new Error(`Inline editor panel module property contract '${name}' requires one or more options.`);
+    }
+    const seenValues = new Set();
+    const options = rawOptions.map((option, index) => {
+      const fieldPath = `${name}.options[${index}]`;
+      const value = String(option?.value ?? "").trim();
+      const optionLabel = String(option?.label ?? "").trim();
+      if (!value) {
+        throw new Error(`Inline editor panel module property contract '${fieldPath}' requires a non-empty value.`);
+      }
+      if (!optionLabel) {
+        throw new Error(`Inline editor panel module property contract '${fieldPath}' requires a non-empty label.`);
+      }
+      if (seenValues.has(value)) {
+        throw new Error(`Inline editor panel module property contract '${name}' contains duplicate option value '${value}'.`);
+      }
+      seenValues.add(value);
+      return { value, label: optionLabel };
+    });
+    return {
+      key: String(property.key ?? "").trim(),
+      label,
+      options
+    };
+  };
+
+  const createInlineSelectRow = (property, rowDatasetKey, selectDatasetKey) => {
+    const row = document.createElement("label");
+    row.className = "inline-edit-row";
+    row.dataset[rowDatasetKey] = "1";
+    const label = document.createElement("span");
+    label.textContent = `${property.label}:`;
+    const field = document.createElement("div");
+    field.className = "inline-edit-field";
+    const select = document.createElement("select");
+    select.className = "schematic-prop-input";
+    select.dataset[selectDatasetKey] = "1";
+    property.options.forEach((entry) => {
+      const option = document.createElement("option");
+      option.value = entry.value;
+      option.textContent = entry.label;
+      select.appendChild(option);
+    });
+    field.append(select);
+    row.append(label, field);
+    return { row, label, select };
+  };
+
+  const requireTogglePropertyContract = (readProperty, key, name) => {
+    const property = readProperty(key);
+    if (!property || typeof property !== "object") {
+      throw new Error(`Inline editor panel module requires '${name}(${key})' to return a property contract object.`);
+    }
+    const label = String(property.label ?? "").trim();
+    if (!label) {
+      throw new Error(`Inline editor panel module property contract '${name}' requires a non-empty label.`);
+    }
+    return {
+      key: String(property.key ?? "").trim(),
+      label
+    };
+  };
+
+  const createInlineToggleRow = (property, rowDatasetKey, inputDatasetKey) => {
+    const row = document.createElement("label");
+    row.className = "inline-edit-row";
+    row.dataset[rowDatasetKey] = "1";
+    const label = document.createElement("span");
+    label.textContent = `${property.label}:`;
+    const field = document.createElement("div");
+    field.className = "inline-edit-field inline-edit-checkbox-field";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.className = "inline-edit-checkbox-input";
+    input.dataset[inputDatasetKey] = "1";
+    field.append(input);
+    row.append(label, field);
+    return { row, label, input };
+  };
+  const INPUT_PROPERTY_CONTROL_TYPES = Object.freeze({
+    text: "text",
+    number: "number",
+    color: "color"
+  });
+  const requireInputPropertyContract = (readProperty, key, name) => {
+    const property = readProperty(key);
+    if (!property || typeof property !== "object") {
+      throw new Error(`Inline editor panel module requires '${name}(${key})' to return a property contract object.`);
+    }
+    const label = String(property.label ?? "").trim();
+    if (!label) {
+      throw new Error(`Inline editor panel module property contract '${name}' requires a non-empty label.`);
+    }
+    const control = String(property.control ?? "").trim().toLowerCase();
+    const inputType = INPUT_PROPERTY_CONTROL_TYPES[control];
+    if (!inputType) {
+      throw new Error(`Inline editor panel module property contract '${name}' requires a supported input control.`);
+    }
+    const input = property.input && typeof property.input === "object" && !Array.isArray(property.input)
+      ? { ...property.input }
+      : {};
+    return {
+      key: String(property.key ?? "").trim(),
+      label,
+      control,
+      input
+    };
+  };
+  const createInlineInputRow = (property, rowDatasetKey, inputDatasetKey) => {
+    const row = document.createElement("label");
+    row.className = "inline-edit-row";
+    row.dataset[rowDatasetKey] = "1";
+    const label = document.createElement("span");
+    label.textContent = `${property.label}:`;
+    const field = document.createElement("div");
+    field.className = "inline-edit-field";
+    const input = document.createElement("input");
+    input.type = INPUT_PROPERTY_CONTROL_TYPES[property.control];
+    input.className = "schematic-prop-input";
+    input.dataset[inputDatasetKey] = "1";
+    if (typeof property.input.placeholder === "string") {
+      input.placeholder = property.input.placeholder;
+    }
+    if (property.control === "number") {
+      const min = Number(property.input.min);
+      const max = Number(property.input.max);
+      const step = Number(property.input.step);
+      if (Number.isFinite(min)) {
+        input.min = String(min);
+      }
+      if (Number.isFinite(max)) {
+        input.max = String(max);
+      }
+      if (Number.isFinite(step)) {
+        input.step = String(step);
+      }
+    }
+    field.append(input);
+    row.append(label, field);
+    return { row, label, input };
+  };
+
+  const normalizeInlineSelectPropertyKeys = (rawKeys) => {
+    if (!Array.isArray(rawKeys) || !rawKeys.length) {
+      throw new Error("Inline editor panel module requires one or more inline select property keys.");
+    }
+    const seen = new Set();
+    return rawKeys.map((entry, index) => {
+      const key = String(entry ?? "").trim();
+      if (!key) {
+        throw new Error(`Inline editor panel module received invalid inline select property key at index ${index}.`);
+      }
+      if (seen.has(key)) {
+        throw new Error(`Inline editor panel module received duplicate inline select property key '${key}'.`);
+      }
+      seen.add(key);
+      return key;
+    });
+  };
+
+  const normalizeInlineTogglePropertyKeys = (rawKeys) => {
+    if (!Array.isArray(rawKeys) || !rawKeys.length) {
+      return [];
+    }
+    const seen = new Set();
+    return rawKeys.map((entry, index) => {
+      const key = String(entry ?? "").trim();
+      if (!key) {
+        throw new Error(`Inline editor panel module received invalid inline toggle property key at index ${index}.`);
+      }
+      if (seen.has(key)) {
+        throw new Error(`Inline editor panel module received duplicate inline toggle property key '${key}'.`);
+      }
+      seen.add(key);
+      return key;
+    });
+  };
+  const normalizeInlineInputPropertyKeys = (rawKeys) => {
+    if (!Array.isArray(rawKeys) || !rawKeys.length) {
+      return [];
+    }
+    const seen = new Set();
+    return rawKeys.map((entry, index) => {
+      const key = String(entry ?? "").trim();
+      if (!key) {
+        throw new Error(`Inline editor panel module received invalid inline input property key at index ${index}.`);
+      }
+      if (seen.has(key)) {
+        throw new Error(`Inline editor panel module received duplicate inline input property key '${key}'.`);
+      }
+      seen.add(key);
+      return key;
+    });
+  };
+
+  const getInlineSelectDatasetKeys = (key) => {
+    const token = String(key ?? "").trim();
+    if (!/^[A-Za-z][A-Za-z0-9]*$/.test(token)) {
+      throw new Error(`Inline editor panel module cannot derive dataset keys from inline select property key '${token || "?"}'.`);
+    }
+    const suffix = `${token.charAt(0).toUpperCase()}${token.slice(1)}`;
+    return {
+      rowDatasetKey: `inline${suffix}Row`,
+      selectDatasetKey: `inline${suffix}`
+    };
+  };
+
+  const getInlineToggleDatasetKeys = (key) => {
+    const token = String(key ?? "").trim();
+    if (!/^[A-Za-z][A-Za-z0-9]*$/.test(token)) {
+      throw new Error(`Inline editor panel module cannot derive dataset keys from inline toggle property key '${token || "?"}'.`);
+    }
+    const suffix = `${token.charAt(0).toUpperCase()}${token.slice(1)}`;
+    return {
+      rowDatasetKey: `inline${suffix}Row`,
+      inputDatasetKey: `inline${suffix}`
+    };
+  };
+  const getInlineInputDatasetKeys = (key) => {
+    const token = String(key ?? "").trim();
+    if (!/^[A-Za-z][A-Za-z0-9]*$/.test(token)) {
+      throw new Error(`Inline editor panel module cannot derive dataset keys from inline input property key '${token || "?"}'.`);
+    }
+    const suffix = `${token.charAt(0).toUpperCase()}${token.slice(1)}`;
+    return {
+      rowDatasetKey: `inline${suffix}Row`,
+      inputDatasetKey: `inline${suffix}`
+    };
+  };
+
   const createInlineEditorPanel = (input) => {
     const args = input && typeof input === "object" ? input : {};
     const createNetColorPicker = requireFunction(args.createNetColorPicker, "createNetColorPicker");
-    const getTextFontOptions = requireFunction(args.getTextFontOptions, "getTextFontOptions");
     const getDefaultTextStyle = requireFunction(args.getDefaultTextStyle, "getDefaultTextStyle");
-    const listGroundVariantValues = requireFunction(args.listGroundVariantValues, "listGroundVariantValues");
-    const listResistorStyleValues = requireFunction(args.listResistorStyleValues, "listResistorStyleValues");
+    const listInlineSelectPropertyKeys = requireFunction(args.listInlineSelectPropertyKeys, "listInlineSelectPropertyKeys");
+    const getSelectPropertyContract = requireFunction(args.getSelectPropertyContract, "getSelectPropertyContract");
+    const listInlineTogglePropertyKeys = typeof args.listInlineTogglePropertyKeys === "function"
+      ? args.listInlineTogglePropertyKeys
+      : () => [];
+    const getTogglePropertyContract = typeof args.getTogglePropertyContract === "function"
+      ? args.getTogglePropertyContract
+      : () => null;
+    const listInlineInputPropertyKeys = typeof args.listInlineInputPropertyKeys === "function"
+      ? args.listInlineInputPropertyKeys
+      : () => [];
+    const getInputPropertyContract = typeof args.getInputPropertyContract === "function"
+      ? args.getInputPropertyContract
+      : () => null;
+    const inlineSelectPropertyKeys = normalizeInlineSelectPropertyKeys(listInlineSelectPropertyKeys());
+    const inlineTogglePropertyKeys = normalizeInlineTogglePropertyKeys(listInlineTogglePropertyKeys());
+    const inlineInputPropertyKeys = normalizeInlineInputPropertyKeys(listInlineInputPropertyKeys());
+    const inlineSelectControlsByKey = Object.freeze(
+      inlineSelectPropertyKeys.reduce((accumulator, key) => {
+        const datasetKeys = getInlineSelectDatasetKeys(key);
+        const property = requireSelectPropertyContract(
+          getSelectPropertyContract,
+          key,
+          "getSelectPropertyContract"
+        );
+        const controls = createInlineSelectRow(property, datasetKeys.rowDatasetKey, datasetKeys.selectDatasetKey);
+        accumulator[key] = Object.freeze({
+          property,
+          row: controls.row,
+          label: controls.label,
+          select: controls.select
+        });
+        return accumulator;
+      }, {})
+    );
+    const inlineToggleControlsByKey = Object.freeze(
+      inlineTogglePropertyKeys.reduce((accumulator, key) => {
+        const datasetKeys = getInlineToggleDatasetKeys(key);
+        const property = requireTogglePropertyContract(
+          getTogglePropertyContract,
+          key,
+          "getTogglePropertyContract"
+        );
+        const controls = createInlineToggleRow(property, datasetKeys.rowDatasetKey, datasetKeys.inputDatasetKey);
+        accumulator[key] = Object.freeze({
+          property,
+          row: controls.row,
+          label: controls.label,
+          input: controls.input
+        });
+        return accumulator;
+      }, {})
+    );
+    const inlineInputControlsByKey = Object.freeze(
+      inlineInputPropertyKeys.reduce((accumulator, key) => {
+        const datasetKeys = getInlineInputDatasetKeys(key);
+        const property = requireInputPropertyContract(
+          getInputPropertyContract,
+          key,
+          "getInputPropertyContract"
+        );
+        const controls = createInlineInputRow(property, datasetKeys.rowDatasetKey, datasetKeys.inputDatasetKey);
+        accumulator[key] = Object.freeze({
+          property,
+          row: controls.row,
+          label: controls.label,
+          input: controls.input
+        });
+        return accumulator;
+      }, {})
+    );
+    Object.entries(inlineSelectControlsByKey).forEach(([key, entry]) => {
+      if (!(entry?.row instanceof HTMLElement)) {
+        throw new Error(`Inline editor panel module requires inline select row for property '${key || "?"}'.`);
+      }
+      if (!(entry?.select instanceof HTMLSelectElement)) {
+        throw new Error(`Inline editor panel module requires inline select input for property '${key || "?"}'.`);
+      }
+    });
+    Object.entries(inlineToggleControlsByKey).forEach(([key, entry]) => {
+      if (!(entry?.row instanceof HTMLElement)) {
+        throw new Error(`Inline editor panel module requires inline toggle row for property '${key || "?"}'.`);
+      }
+      if (!(entry?.input instanceof HTMLInputElement) || entry.input.type !== "checkbox") {
+        throw new Error(`Inline editor panel module requires inline toggle checkbox input for property '${key || "?"}'.`);
+      }
+    });
+    Object.values(inlineInputControlsByKey).forEach((entry) => {
+      if (!(entry?.row instanceof HTMLElement)) {
+        throw new Error("Inline editor panel module requires inline input row element.");
+      }
+      if (!(entry?.input instanceof HTMLInputElement)) {
+        throw new Error("Inline editor panel module requires inline input element.");
+      }
+    });
     const onPickNetColor = typeof args.onPickNetColor === "function" ? args.onPickNetColor : () => { };
 
     const inlineEditor = document.createElement("div");
@@ -90,7 +423,11 @@
     inlineSwitchRonInput.type = "text";
     inlineSwitchRonInput.className = "schematic-prop-input";
     inlineSwitchRonInput.dataset.inlineSwitchRon = "1";
-    inlineSwitchRonField.append(inlineSwitchRonInput);
+    const inlineSwitchRonUnit = document.createElement("span");
+    inlineSwitchRonUnit.className = "inline-edit-unit";
+    inlineSwitchRonUnit.dataset.inlineSwitchRonUnit = "1";
+    inlineSwitchRonUnit.textContent = "\u03a9";
+    inlineSwitchRonField.append(inlineSwitchRonInput, inlineSwitchRonUnit);
     inlineSwitchRonRow.append(inlineSwitchRonLabel, inlineSwitchRonField);
 
     const inlineSwitchRoffRow = document.createElement("label");
@@ -103,7 +440,11 @@
     inlineSwitchRoffInput.type = "text";
     inlineSwitchRoffInput.className = "schematic-prop-input";
     inlineSwitchRoffInput.dataset.inlineSwitchRoff = "1";
-    inlineSwitchRoffField.append(inlineSwitchRoffInput);
+    const inlineSwitchRoffUnit = document.createElement("span");
+    inlineSwitchRoffUnit.className = "inline-edit-unit";
+    inlineSwitchRoffUnit.dataset.inlineSwitchRoffUnit = "1";
+    inlineSwitchRoffUnit.textContent = "\u03a9";
+    inlineSwitchRoffField.append(inlineSwitchRoffInput, inlineSwitchRoffUnit);
     inlineSwitchRoffRow.append(inlineSwitchRoffLabel, inlineSwitchRoffField);
 
     const inlineSwitchShowRonRow = document.createElement("label");
@@ -155,52 +496,9 @@
     inlineProbeTypeField.append(inlineProbeTypeSelect);
     inlineProbeTypeRow.append(inlineProbeTypeLabel, inlineProbeTypeField);
 
-    const inlineGroundVariantRow = document.createElement("label");
-    inlineGroundVariantRow.className = "inline-edit-row";
-    inlineGroundVariantRow.dataset.inlineGroundVariantRow = "1";
-    const inlineGroundVariantLabel = document.createElement("span");
-    inlineGroundVariantLabel.textContent = "Ground:";
-    const inlineGroundVariantField = document.createElement("div");
-    inlineGroundVariantField.className = "inline-edit-field";
-    const inlineGroundVariantSelect = document.createElement("select");
-    inlineGroundVariantSelect.className = "schematic-prop-input";
-    inlineGroundVariantSelect.dataset.inlineGroundVariant = "1";
-    const groundVariantLabelByValue = Object.freeze({
-      earth: "Earth",
-      chassis: "Chassis",
-      signal: "Signal Ground"
-    });
-    listGroundVariantValues().forEach((variant) => {
-      const option = document.createElement("option");
-      option.value = variant;
-      option.textContent = groundVariantLabelByValue[variant] ?? variant;
-      inlineGroundVariantSelect.appendChild(option);
-    });
-    inlineGroundVariantField.append(inlineGroundVariantSelect);
-    inlineGroundVariantRow.append(inlineGroundVariantLabel, inlineGroundVariantField);
-
-    const inlineResistorStyleRow = document.createElement("label");
-    inlineResistorStyleRow.className = "inline-edit-row";
-    inlineResistorStyleRow.dataset.inlineResistorStyleRow = "1";
-    const inlineResistorStyleLabel = document.createElement("span");
-    inlineResistorStyleLabel.textContent = "Style:";
-    const inlineResistorStyleField = document.createElement("div");
-    inlineResistorStyleField.className = "inline-edit-field";
-    const inlineResistorStyleSelect = document.createElement("select");
-    inlineResistorStyleSelect.className = "schematic-prop-input";
-    inlineResistorStyleSelect.dataset.inlineResistorStyle = "1";
-    const resistorStyleLabelByValue = Object.freeze({
-      zigzag: "Zigzag",
-      box: "Box"
-    });
-    listResistorStyleValues().forEach((style) => {
-      const option = document.createElement("option");
-      option.value = style;
-      option.textContent = resistorStyleLabelByValue[style] ?? style;
-      inlineResistorStyleSelect.appendChild(option);
-    });
-    inlineResistorStyleField.append(inlineResistorStyleSelect);
-    inlineResistorStyleRow.append(inlineResistorStyleLabel, inlineResistorStyleField);
+    const inlineSelectRows = inlineSelectPropertyKeys.map((key) => inlineSelectControlsByKey[key].row);
+    const inlineToggleRows = inlineTogglePropertyKeys.map((key) => inlineToggleControlsByKey[key].row);
+    const inlineInputRows = inlineInputPropertyKeys.map((key) => inlineInputControlsByKey[key].row);
 
     const inlineBoxThicknessRow = document.createElement("label");
     inlineBoxThicknessRow.className = "inline-edit-row";
@@ -305,97 +603,60 @@
       }
     });
 
-    const inlineTextOnlyRow = document.createElement("label");
-    inlineTextOnlyRow.className = "inline-edit-row";
-    inlineTextOnlyRow.dataset.inlineNetTextOnlyRow = "1";
-    const inlineTextOnlyLabel = document.createElement("span");
-    inlineTextOnlyLabel.textContent = "Text only:";
-    const inlineTextOnlyField = document.createElement("div");
-    inlineTextOnlyField.className = "inline-edit-field inline-edit-checkbox-field";
-    const inlineTextOnlyInput = document.createElement("input");
-    inlineTextOnlyInput.type = "checkbox";
-    inlineTextOnlyInput.className = "inline-edit-checkbox-input";
-    inlineTextOnlyInput.dataset.inlineNetTextOnly = "1";
-    inlineTextOnlyField.append(inlineTextOnlyInput);
-    inlineTextOnlyRow.append(inlineTextOnlyLabel, inlineTextOnlyField);
-
-    const inlineTextFontRow = document.createElement("label");
-    inlineTextFontRow.className = "inline-edit-row";
-    inlineTextFontRow.dataset.inlineTextFontRow = "1";
-    const inlineTextFontLabel = document.createElement("span");
-    inlineTextFontLabel.textContent = "Font:";
-    const inlineTextFontField = document.createElement("div");
-    inlineTextFontField.className = "inline-edit-field";
-    const inlineTextFontSelect = document.createElement("select");
-    inlineTextFontSelect.className = "schematic-prop-input";
-    inlineTextFontSelect.dataset.inlineTextFont = "1";
-    getTextFontOptions().forEach((fontName) => {
-      const option = document.createElement("option");
-      option.value = fontName;
-      option.textContent = fontName;
-      inlineTextFontSelect.appendChild(option);
-    });
-    inlineTextFontField.append(inlineTextFontSelect);
-    inlineTextFontRow.append(inlineTextFontLabel, inlineTextFontField);
-
-    const inlineTextSizeRow = document.createElement("label");
-    inlineTextSizeRow.className = "inline-edit-row";
-    inlineTextSizeRow.dataset.inlineTextSizeRow = "1";
-    const inlineTextSizeLabel = document.createElement("span");
-    inlineTextSizeLabel.textContent = "Size:";
-    const inlineTextSizeField = document.createElement("div");
-    inlineTextSizeField.className = "inline-edit-field";
-    const inlineTextSizeInput = document.createElement("input");
-    inlineTextSizeInput.type = "number";
-    inlineTextSizeInput.min = "8";
-    inlineTextSizeInput.max = "72";
-    inlineTextSizeInput.step = "1";
-    inlineTextSizeInput.className = "schematic-prop-input";
-    inlineTextSizeInput.dataset.inlineTextSize = "1";
-    inlineTextSizeField.append(inlineTextSizeInput);
-    inlineTextSizeRow.append(inlineTextSizeLabel, inlineTextSizeField);
-
-    const inlineTextBoldRow = document.createElement("label");
-    inlineTextBoldRow.className = "inline-edit-row";
-    inlineTextBoldRow.dataset.inlineTextBoldRow = "1";
-    const inlineTextBoldLabel = document.createElement("span");
-    inlineTextBoldLabel.textContent = "Bold:";
-    const inlineTextBoldField = document.createElement("div");
-    inlineTextBoldField.className = "inline-edit-field inline-edit-checkbox-field";
-    const inlineTextBoldInput = document.createElement("input");
-    inlineTextBoldInput.type = "checkbox";
-    inlineTextBoldInput.className = "inline-edit-checkbox-input";
-    inlineTextBoldInput.dataset.inlineTextBold = "1";
-    inlineTextBoldField.append(inlineTextBoldInput);
-    inlineTextBoldRow.append(inlineTextBoldLabel, inlineTextBoldField);
-
-    const inlineTextItalicRow = document.createElement("label");
-    inlineTextItalicRow.className = "inline-edit-row";
-    inlineTextItalicRow.dataset.inlineTextItalicRow = "1";
-    const inlineTextItalicLabel = document.createElement("span");
-    inlineTextItalicLabel.textContent = "Italic:";
-    const inlineTextItalicField = document.createElement("div");
-    inlineTextItalicField.className = "inline-edit-field inline-edit-checkbox-field";
-    const inlineTextItalicInput = document.createElement("input");
-    inlineTextItalicInput.type = "checkbox";
-    inlineTextItalicInput.className = "inline-edit-checkbox-input";
-    inlineTextItalicInput.dataset.inlineTextItalic = "1";
-    inlineTextItalicField.append(inlineTextItalicInput);
-    inlineTextItalicRow.append(inlineTextItalicLabel, inlineTextItalicField);
-
-    const inlineTextUnderlineRow = document.createElement("label");
-    inlineTextUnderlineRow.className = "inline-edit-row";
-    inlineTextUnderlineRow.dataset.inlineTextUnderlineRow = "1";
-    const inlineTextUnderlineLabel = document.createElement("span");
-    inlineTextUnderlineLabel.textContent = "Underline:";
-    const inlineTextUnderlineField = document.createElement("div");
-    inlineTextUnderlineField.className = "inline-edit-field inline-edit-checkbox-field";
-    const inlineTextUnderlineInput = document.createElement("input");
-    inlineTextUnderlineInput.type = "checkbox";
-    inlineTextUnderlineInput.className = "inline-edit-checkbox-input";
-    inlineTextUnderlineInput.dataset.inlineTextUnderline = "1";
-    inlineTextUnderlineField.append(inlineTextUnderlineInput);
-    inlineTextUnderlineRow.append(inlineTextUnderlineLabel, inlineTextUnderlineField);
+    const inlineTextFontControls = inlineSelectControlsByKey.textFont;
+    if (!inlineTextFontControls
+      || !(inlineTextFontControls.row instanceof HTMLElement)
+      || !(inlineTextFontControls.label instanceof HTMLElement)
+      || !(inlineTextFontControls.select instanceof HTMLSelectElement)) {
+      throw new Error("Inline editor panel module requires inline textFont select controls.");
+    }
+    const inlineTextBoldControls = inlineToggleControlsByKey.textBold;
+    if (!inlineTextBoldControls
+      || !(inlineTextBoldControls.row instanceof HTMLElement)
+      || !(inlineTextBoldControls.label instanceof HTMLElement)
+      || !(inlineTextBoldControls.input instanceof HTMLInputElement)
+      || inlineTextBoldControls.input.type !== "checkbox") {
+      throw new Error("Inline editor panel module requires inline textBold toggle controls.");
+    }
+    const inlineTextItalicControls = inlineToggleControlsByKey.textItalic;
+    if (!inlineTextItalicControls
+      || !(inlineTextItalicControls.row instanceof HTMLElement)
+      || !(inlineTextItalicControls.label instanceof HTMLElement)
+      || !(inlineTextItalicControls.input instanceof HTMLInputElement)
+      || inlineTextItalicControls.input.type !== "checkbox") {
+      throw new Error("Inline editor panel module requires inline textItalic toggle controls.");
+    }
+    const inlineTextUnderlineControls = inlineToggleControlsByKey.textUnderline;
+    if (!inlineTextUnderlineControls
+      || !(inlineTextUnderlineControls.row instanceof HTMLElement)
+      || !(inlineTextUnderlineControls.label instanceof HTMLElement)
+      || !(inlineTextUnderlineControls.input instanceof HTMLInputElement)
+      || inlineTextUnderlineControls.input.type !== "checkbox") {
+      throw new Error("Inline editor panel module requires inline textUnderline toggle controls.");
+    }
+    const inlineTextFontRow = inlineTextFontControls.row;
+    const inlineTextFontLabel = inlineTextFontControls.label;
+    const inlineTextFontSelect = inlineTextFontControls.select;
+    const inlineTextBoldRow = inlineTextBoldControls.row;
+    const inlineTextBoldLabel = inlineTextBoldControls.label;
+    const inlineTextBoldInput = inlineTextBoldControls.input;
+    const inlineTextItalicRow = inlineTextItalicControls.row;
+    const inlineTextItalicLabel = inlineTextItalicControls.label;
+    const inlineTextItalicInput = inlineTextItalicControls.input;
+    const inlineTextUnderlineRow = inlineTextUnderlineControls.row;
+    const inlineTextUnderlineLabel = inlineTextUnderlineControls.label;
+    const inlineTextUnderlineInput = inlineTextUnderlineControls.input;
+    const inlineTextSizeControls = inlineInputControlsByKey.textSize;
+    if (!inlineTextSizeControls
+      || !(inlineTextSizeControls.row instanceof HTMLElement)
+      || !(inlineTextSizeControls.label instanceof HTMLElement)
+      || !(inlineTextSizeControls.input instanceof HTMLInputElement)
+      || inlineTextSizeControls.input.type !== "number") {
+      throw new Error("Inline editor panel module requires inline textSize input controls.");
+    }
+    const inlineTextSizeRow = inlineTextSizeControls.row;
+    const inlineTextSizeLabel = inlineTextSizeControls.label;
+    const inlineTextSizeInput = inlineTextSizeControls.input;
 
     const defaultTextStyle = getDefaultTextStyle();
     inlineTextFontSelect.value = defaultTextStyle.font;
@@ -405,6 +666,9 @@
     inlineTextUnderlineInput.checked = defaultTextStyle.underline;
 
     const inlineNetColorLabel = inlineNetColorPicker.row.querySelector("span");
+    const inlineSelectLabels = Object.values(inlineSelectControlsByKey).map((entry) => entry.label);
+    const inlineToggleLabels = Object.values(inlineToggleControlsByKey).map((entry) => entry.label);
+    const inlineInputLabels = Object.values(inlineInputControlsByKey).map((entry) => entry.label);
     const syncInlineLabelColumnWidth = () => {
       const labels = [
         inlineNameLabel,
@@ -415,20 +679,15 @@
         inlineSwitchRoffLabel,
         inlineSwitchShowRonLabel,
         inlineSwitchShowRoffLabel,
-        inlineGroundVariantLabel,
-        inlineResistorStyleLabel,
+        ...inlineSelectLabels,
+        ...inlineToggleLabels,
+        ...inlineInputLabels,
         inlineBoxThicknessLabel,
         inlineBoxLineTypeLabel,
         inlineBoxFillEnabledLabel,
         inlineBoxFillColorLabel,
         inlineBoxOpacityLabel,
-        inlineNetColorLabel,
-        inlineTextOnlyLabel,
-        inlineTextFontLabel,
-        inlineTextSizeLabel,
-        inlineTextBoldLabel,
-        inlineTextItalicLabel,
-        inlineTextUnderlineLabel
+        inlineNetColorLabel
       ];
       let maxTextWidth = 0;
       labels.forEach((label) => {
@@ -455,8 +714,15 @@
     };
 
     inlineProbeTypeRow.hidden = true;
-    inlineGroundVariantRow.hidden = true;
-    inlineResistorStyleRow.hidden = true;
+    Object.values(inlineSelectControlsByKey).forEach((entry) => {
+      entry.row.hidden = true;
+    });
+    Object.values(inlineToggleControlsByKey).forEach((entry) => {
+      entry.row.hidden = true;
+    });
+    Object.values(inlineInputControlsByKey).forEach((entry) => {
+      entry.row.hidden = true;
+    });
     inlineSwitchPositionRow.hidden = true;
     inlineSwitchRonRow.hidden = true;
     inlineSwitchRoffRow.hidden = true;
@@ -468,18 +734,11 @@
     inlineBoxFillColorRow.hidden = true;
     inlineBoxOpacityRow.hidden = true;
     inlineNetColorPicker.row.hidden = true;
-    inlineTextOnlyRow.hidden = true;
-    inlineTextFontRow.hidden = true;
-    inlineTextSizeRow.hidden = true;
-    inlineTextBoldRow.hidden = true;
-    inlineTextItalicRow.hidden = true;
-    inlineTextUnderlineRow.hidden = true;
 
     inlineEditor.append(
       inlineNameRow,
       inlineProbeTypeRow,
-      inlineGroundVariantRow,
-      inlineResistorStyleRow,
+      ...inlineSelectRows,
       inlineValueRow,
       inlineBoxThicknessRow,
       inlineBoxLineTypeRow,
@@ -492,12 +751,8 @@
       inlineSwitchShowRonRow,
       inlineSwitchShowRoffRow,
       inlineNetColorPicker.row,
-      inlineTextOnlyRow,
-      inlineTextFontRow,
-      inlineTextSizeRow,
-      inlineTextBoldRow,
-      inlineTextItalicRow,
-      inlineTextUnderlineRow
+      ...inlineToggleRows,
+      ...inlineInputRows
     );
 
     return {
@@ -516,9 +771,11 @@
       inlineSwitchRonRow,
       inlineSwitchRonLabel,
       inlineSwitchRonInput,
+      inlineSwitchRonUnit,
       inlineSwitchRoffRow,
       inlineSwitchRoffLabel,
       inlineSwitchRoffInput,
+      inlineSwitchRoffUnit,
       inlineSwitchShowRonRow,
       inlineSwitchShowRonLabel,
       inlineSwitchShowRonInput,
@@ -528,12 +785,9 @@
       inlineProbeTypeRow,
       inlineProbeTypeLabel,
       inlineProbeTypeSelect,
-      inlineGroundVariantRow,
-      inlineGroundVariantLabel,
-      inlineGroundVariantSelect,
-      inlineResistorStyleRow,
-      inlineResistorStyleLabel,
-      inlineResistorStyleSelect,
+      inlineSelectControlsByKey,
+      inlineToggleControlsByKey,
+      inlineInputControlsByKey,
       inlineBoxThicknessRow,
       inlineBoxThicknessLabel,
       inlineBoxThicknessUnit,
@@ -552,9 +806,6 @@
       inlineBoxOpacityInput,
       inlineBoxOpacityValue,
       inlineNetColorPicker,
-      inlineTextOnlyRow,
-      inlineTextOnlyLabel,
-      inlineTextOnlyInput,
       inlineTextFontRow,
       inlineTextFontLabel,
       inlineTextFontSelect,

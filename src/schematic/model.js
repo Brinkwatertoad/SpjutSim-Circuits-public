@@ -43,7 +43,7 @@
   const DEFAULT_COMPONENT_LABEL_LAYOUT = Object.freeze({
     lineHeight: 14,
     padding: 16,
-    paddingBelow: 24
+    paddingBelow: 16
   });
   const DEFAULT_COMPONENT_TEXT_COLORS = Object.freeze({
     label: "#1d1d1f",
@@ -60,7 +60,8 @@
     V: "V",
     I: "A",
     VM: "\u03a9",
-    AM: "\u03a9"
+    AM: "\u03a9",
+    SW: "\u03a9"
   });
   const METRIC_PREFIXES = Object.freeze([
     { symbol: "T", exponent: 12 },
@@ -119,6 +120,13 @@
     return "zigzag";
   };
   const listResistorStyles = () => RESISTOR_STYLES.slice();
+  const normalizeTextOnly = (value) => {
+    if (value === true) {
+      return true;
+    }
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on";
+  };
 
   const normalizeNetColor = (value) => {
     if (typeof value !== "string") {
@@ -180,6 +188,8 @@
     }
     return rounded;
   };
+
+  const normalizeTextStyleToggle = (value) => value === true;
 
   const escapeRegExp = (value) => String(value ?? "").replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
 
@@ -346,17 +356,36 @@
       return "";
     }
     if (String(component?.type ?? "").toUpperCase() === "SW") {
+      const formatSwitchResistanceDisplay = (value) => {
+        const unit = getComponentValueUnit("SW");
+        const trimmedValue = String(value ?? "").trim();
+        if (trimmedValue.toLowerCase() === "open") {
+          return "open";
+        }
+        const numeric = parseMetricValue(trimmedValue, unit);
+        if (numeric !== null) {
+          const formatted = formatMetricValue(numeric);
+          if (formatted) {
+            return formatWithUnit(formatted.number, unit, formatted.prefix);
+          }
+        }
+        const fallback = stripUnitSuffix(trimmedValue, unit);
+        if (!fallback) {
+          return unit;
+        }
+        return `${fallback} ${unit}`;
+      };
       const fallbackValue = trimmed.replace(/\s+/g, " ").trim();
       try {
         const parsed = parseSpdtSwitchValue(component?.value);
         const parts = [String(parsed?.activeThrow ?? "A").toUpperCase() === "B" ? "B" : "A"];
         if (parsed?.showRon === true) {
-          parts.push(`Ron=${String(parsed?.ron ?? "0").trim() || "0"}`);
+          parts.push(`Ron=${formatSwitchResistanceDisplay(String(parsed?.ron ?? "0").trim() || "0")}`);
         }
         if (parsed?.showRoff === true) {
           const roffValue = parsed?.roff === null || parsed?.roff === undefined
             ? "open"
-            : (String(parsed.roff).trim() || "open");
+            : formatSwitchResistanceDisplay(String(parsed.roff).trim() || "open");
           parts.push(`Roff=${roffValue}`);
         }
         return parts.join(" ");
@@ -431,7 +460,7 @@
       anchor = "start";
     } else if (rotation === 180) {
       x = safeMidX;
-      y = safeMidY + DEFAULT_COMPONENT_LABEL_LAYOUT.paddingBelow;
+      y = safeMidY + DEFAULT_COMPONENT_LABEL_LAYOUT.padding;
       anchor = "middle";
     } else {
       x = safeMidX - DEFAULT_COMPONENT_LABEL_LAYOUT.padding;
@@ -475,16 +504,22 @@
         y: point?.y ?? 0
       };
     });
+    const type = String(component.type ?? "").toUpperCase();
+    const isLegacyDashedBox = type === "DBOX";
+    const normalizedType = isLegacyDashedBox ? "BOX" : String(component.type ?? "");
+    const rawValue = component.value ? String(component.value) : "";
+    const normalizedValue = isLegacyDashedBox && !/\bline\s*=/.test(rawValue)
+      ? (rawValue ? `${rawValue} line=dashed` : "line=dashed")
+      : rawValue;
     const normalized = {
       id: String(component.id ?? ""),
       name: Object.prototype.hasOwnProperty.call(component, "name")
         ? String(component.name ?? "")
         : String(component.id ?? ""),
-      type: String(component.type ?? ""),
-      value: component.value ? String(component.value) : "",
+      type: normalizedType,
+      value: normalizedValue,
       pins: normalizedPins
     };
-    const type = String(component.type ?? "").toUpperCase();
     const rotation = Number(component.rotation);
     if (Number.isFinite(rotation)) {
       normalized.rotation = rotation;
@@ -506,19 +541,19 @@
     if (netColor) {
       normalized.netColor = netColor;
     }
-    if (component.textOnly === true) {
+    if (normalizeTextOnly(component.textOnly)) {
       normalized.textOnly = true;
     }
     if (type === "TEXT") {
       normalized.textFont = normalizeTextFont(component.textFont);
       normalized.textSize = normalizeTextSize(component.textSize);
-      if (component.textBold === true) {
+      if (normalizeTextStyleToggle(component.textBold)) {
         normalized.textBold = true;
       }
-      if (component.textItalic === true) {
+      if (normalizeTextStyleToggle(component.textItalic)) {
         normalized.textItalic = true;
       }
-      if (component.textUnderline === true) {
+      if (normalizeTextStyleToggle(component.textUnderline)) {
         normalized.textUnderline = true;
       }
     }
@@ -804,10 +839,12 @@
     listGroundVariants,
     normalizeResistorStyle,
     listResistorStyles,
+    normalizeTextOnly,
     resolveNetColors,
     getTextFontOptions: () => TEXT_FONT_OPTIONS.slice(),
     normalizeTextFont,
     normalizeTextSize,
+    normalizeTextStyleToggle,
     normalizeProbeDiffRotations,
     getDefaultComponentLabelLayout,
     getComponentLabelLayout,

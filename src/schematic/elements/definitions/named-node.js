@@ -18,6 +18,16 @@
       summary: "Places a named node label for simulation traces.",
       definition: "Click a wire node to place a label and edit its name immediately."
     },
-    valueField: { label: "Value", unit: "", visible: false }
+    valueField: { label: "Value", unit: "", visible: false },
+    properties: [
+      {
+        key: "textOnly",
+        label: "Text only",
+        control: "toggle",
+        defaultValue: false,
+        normalizeMethod: "normalizeTextOnly",
+        inlineEditVisible: true
+      }
+    ]
   });
 })();

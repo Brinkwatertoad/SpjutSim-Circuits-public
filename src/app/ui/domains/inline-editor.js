@@ -40,7 +40,7 @@
     const isNamedNode = type === "NET";
     const isTextAnnotation = type === "TEXT";
     const isArrowAnnotation = type === "ARR";
-    const isBoxAnnotation = type === "BOX" || type === "DBOX";
+    const isBoxAnnotation = type === "BOX";
     const showValueRow = supportsValueField && !isSwitchComponent && !isArrowAnnotation;
     return {
       type,

@@ -53,12 +53,6 @@
       symbol: "box",
       halfWidth: 14,
       halfHeight: 10
-    }),
-    DBOX: Object.freeze({
-      type: "DBOX",
-      symbol: "dashed-rectangle",
-      halfWidth: 14,
-      halfHeight: 10
     })
   });
   const DEFAULT_ARROW_THICKNESS = 2;
@@ -559,7 +553,7 @@
     const type = String(options?.type ?? "").trim().toUpperCase();
     const defaultLineType = explicitLineType
       ? normalizeBoxAnnotationLineType(explicitLineType)
-      : (type === "DBOX" ? "dashed" : DEFAULT_BOX_LINE_TYPE);
+      : DEFAULT_BOX_LINE_TYPE;
     const opacityPercent = DEFAULT_BOX_OPACITY_PERCENT;
     return {
       thickness: DEFAULT_BOX_THICKNESS,
@@ -1483,8 +1477,7 @@
   const ANNOTATION_DRAW_HANDLERS = Object.freeze({
     IMG: (ctx, group, style, shape, length) => drawAnnotationImage(ctx, group, style, shape, length),
     ARR: (ctx, group, style, shape, length) => drawAnnotationArrow(ctx, group, style, shape, length),
-    BOX: (ctx, group, style, shape, length) => drawAnnotationBox(ctx, group, style, shape, false, length),
-    DBOX: (ctx, group, style, shape, length) => drawAnnotationBox(ctx, group, style, shape, true, length)
+    BOX: (ctx, group, style, shape, length) => drawAnnotationBox(ctx, group, style, shape, false, length)
   });
 
   const drawAnnotationShape = (ctx, group, type, style, length) => {
@@ -1687,7 +1680,6 @@
     IMG: (ctx, group, length, style) => drawAnnotationShape(ctx, group, "IMG", style, length),
     ARR: (ctx, group, length, style) => drawAnnotationShape(ctx, group, "ARR", style, length),
     BOX: (ctx, group, length, style) => drawAnnotationShape(ctx, group, "BOX", style, length),
-    DBOX: (ctx, group, length, style) => drawAnnotationShape(ctx, group, "DBOX", style, length),
     PV: (ctx, group, _length, style) => drawProbeSymbol(ctx, group, style),
     PI: (ctx, group, _length, style) => drawProbeSymbol(ctx, group, style),
     PD: (ctx, group, _length, style) => drawProbeSymbol(ctx, group, style),
@@ -1712,7 +1704,6 @@
     IMG: (ctx, group, options) => drawSymbol(ctx, "IMG", group, 0, options?.style, options),
     ARR: (ctx, group, options) => drawSymbol(ctx, "ARR", group, 0, options?.style, options),
     BOX: (ctx, group, options) => drawSymbol(ctx, "BOX", group, 0, options?.style, options),
-    DBOX: (ctx, group, options) => drawSymbol(ctx, "DBOX", group, 0, options?.style, options),
     PV: (ctx, group, options) => drawSymbol(ctx, "PV", group, 0, options?.style, options),
     PI: (ctx, group, options) => drawSymbol(ctx, "PI", group, 0, options?.style, options),
     PD: (ctx, group, options) => drawSymbol(ctx, "PD", group, 0, options?.style, options),

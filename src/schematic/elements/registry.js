@@ -48,6 +48,103 @@
     return num;
   };
 
+  const PROPERTY_CONTROL_TYPES = new Set(["select", "toggle", "text", "number", "color"]);
+
+  const normalizePropertyOption = (option, fieldPath) => ({
+    value: assertNonEmptyString(option?.value, `${fieldPath}.value`),
+    label: assertNonEmptyString(option?.label, `${fieldPath}.label`)
+  });
+  const normalizePropertyInput = (control, input, fieldPath) => {
+    if (input === null || input === undefined) {
+      return {};
+    }
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw new Error(`Element registry property '${fieldPath}' requires object input metadata when provided.`);
+    }
+    const normalized = {};
+    if (Object.prototype.hasOwnProperty.call(input, "placeholder")) {
+      normalized.placeholder = String(input.placeholder ?? "");
+    }
+    if (control === "number") {
+      ["min", "max", "step"].forEach((key) => {
+        if (!Object.prototype.hasOwnProperty.call(input, key)) {
+          return;
+        }
+        const value = Number(input[key]);
+        if (!Number.isFinite(value)) {
+          throw new Error(`Element registry property '${fieldPath}.input.${key}' requires a finite number.`);
+        }
+        normalized[key] = value;
+      });
+    }
+    return normalized;
+  };
+
+  const normalizePropertyDefinitions = (properties) => {
+    if (properties === null || properties === undefined) {
+      return [];
+    }
+    if (!Array.isArray(properties)) {
+      throw new Error("Element registry requires 'properties' to be an array when provided.");
+    }
+    const seenKeys = new Set();
+    return properties.map((property, index) => {
+      const fieldPath = `properties[${index}]`;
+      const key = assertNonEmptyString(property?.key, `${fieldPath}.key`);
+      if (seenKeys.has(key)) {
+        throw new Error(`Element registry requires unique property keys. Duplicate '${key}'.`);
+      }
+      seenKeys.add(key);
+      const control = String(property?.control ?? "").trim().toLowerCase();
+      if (!PROPERTY_CONTROL_TYPES.has(control)) {
+        throw new Error(`Element registry property '${key}' has invalid control '${property?.control ?? ""}'.`);
+      }
+      const normalizeMethod = assertNonEmptyString(property?.normalizeMethod, "properties.normalizeMethod");
+      const options = Array.isArray(property?.options)
+        ? property.options.map((option, optionIndex) => normalizePropertyOption(option, `${fieldPath}.options[${optionIndex}]`))
+        : [];
+      if (control === "select" && options.length < 1) {
+        throw new Error(`Element registry property '${key}' requires one or more options for select control.`);
+      }
+      const defaultValue = property?.defaultValue;
+      if (control === "select") {
+        const defaultToken = assertNonEmptyString(defaultValue, `${fieldPath}.defaultValue`);
+        const allowed = new Set(options.map((option) => option.value));
+        if (!allowed.has(defaultToken)) {
+          throw new Error(`Element registry property '${key}' default '${defaultToken}' is not in options.`);
+        }
+      }
+      return {
+        key,
+        label: assertNonEmptyString(property?.label, `${fieldPath}.label`),
+        control,
+        defaultValue,
+        normalizeMethod,
+        inlineEditVisible: property?.inlineEditVisible !== false,
+        options,
+        input: normalizePropertyInput(control, property?.input, fieldPath)
+      };
+    });
+  };
+
+  const clonePropertyDefinition = (property) => ({
+    key: String(property?.key ?? ""),
+    label: String(property?.label ?? ""),
+    control: String(property?.control ?? ""),
+    defaultValue: property?.defaultValue,
+    normalizeMethod: String(property?.normalizeMethod ?? ""),
+    inlineEditVisible: property?.inlineEditVisible !== false,
+    options: Array.isArray(property?.options)
+      ? property.options.map((option) => ({
+        value: String(option?.value ?? ""),
+        label: String(option?.label ?? "")
+      }))
+      : [],
+    input: property?.input && typeof property.input === "object" && !Array.isArray(property.input)
+      ? { ...property.input }
+      : {}
+  });
+
   const cloneDefinition = (entry) => ({
     type: String(entry?.type ?? ""),
     label: String(entry?.label ?? ""),
@@ -67,7 +164,10 @@
       label: String(entry?.valueField?.label ?? "Value"),
       unit: String(entry?.valueField?.unit ?? ""),
       visible: entry?.valueField?.visible === true
-    }
+    },
+    properties: Array.isArray(entry?.properties)
+      ? entry.properties.map((property) => clonePropertyDefinition(property))
+      : []
   });
 
   const registerElementDefinition = (definition) => {
@@ -90,7 +190,13 @@
       catalogOrder: normalizeOrderNumber(definition?.catalogOrder ?? Number.POSITIVE_INFINITY, "catalogOrder"),
       classification: normalizeClassification(definition?.classification),
       help: Object.freeze(normalizeHelp(definition?.help ?? {})),
-      valueField: Object.freeze(normalizeValueField(definition?.valueField ?? {}))
+      valueField: Object.freeze(normalizeValueField(definition?.valueField ?? {})),
+      properties: Object.freeze(
+        normalizePropertyDefinitions(definition?.properties).map((property) => Object.freeze({
+          ...property,
+          options: Object.freeze(property.options.map((option) => Object.freeze({ ...option })))
+        }))
+      )
     });
 
     definitionMap.set(type, normalized);

@@ -2,6 +2,149 @@
  * UI inline editor workflow/orchestration helpers.
  */
 (function initUIInlineEditorWorkflowModule() {
+  const requireFunction = (value, name) => {
+    if (typeof value !== "function") {
+      throw new Error(`Inline editor workflow requires '${name}' helper function.`);
+    }
+    return value;
+  };
+  const INLINE_SELECT_SYNC_ENTRIES_NORMALIZED = Symbol("inlineSelectSyncEntriesNormalized");
+  const INLINE_TOGGLE_SYNC_ENTRIES_NORMALIZED = Symbol("inlineToggleSyncEntriesNormalized");
+  const INLINE_INPUT_SYNC_ENTRIES_NORMALIZED = Symbol("inlineInputSyncEntriesNormalized");
+
+  const normalizeInlineSelectSyncEntries = (rawEntries) => {
+    if (!Array.isArray(rawEntries)) {
+      throw new Error("Inline editor workflow requires inline select sync entries array.");
+    }
+    const normalizedEntries = rawEntries.map((entry, index) => {
+      const fieldPath = `inlineSelectSyncEntries[${index}]`;
+      const componentType = String(entry?.componentType ?? "").trim().toUpperCase();
+      if (!componentType) {
+        throw new Error(`Inline editor workflow ${fieldPath} requires non-empty componentType.`);
+      }
+      const propertyKey = String(entry?.propertyKey ?? "").trim();
+      if (!propertyKey) {
+        throw new Error(`Inline editor workflow ${fieldPath} requires non-empty propertyKey.`);
+      }
+      if (!(entry?.row && typeof entry.row === "object")) {
+        throw new Error(`Inline editor workflow ${fieldPath} requires row element.`);
+      }
+      if (!(entry?.select && typeof entry.select === "object")) {
+        throw new Error(`Inline editor workflow ${fieldPath} requires select element.`);
+      }
+      const normalizeValue = requireFunction(entry?.normalizeValue, `${fieldPath}.normalizeValue`);
+      return {
+        componentType,
+        propertyKey,
+        row: entry.row,
+        select: entry.select,
+        normalizeValue
+      };
+    });
+    Object.defineProperty(normalizedEntries, INLINE_SELECT_SYNC_ENTRIES_NORMALIZED, {
+      value: true,
+      writable: false,
+      enumerable: false,
+      configurable: false
+    });
+    return normalizedEntries;
+  };
+  const requireInlineSelectSyncEntries = (args) => {
+    const inlineSelectSyncEntries = args?.inlineSelectSyncEntries;
+    if (Array.isArray(inlineSelectSyncEntries) && inlineSelectSyncEntries[INLINE_SELECT_SYNC_ENTRIES_NORMALIZED] === true) {
+      return inlineSelectSyncEntries;
+    }
+    return normalizeInlineSelectSyncEntries(inlineSelectSyncEntries);
+  };
+  const normalizeInlineToggleSyncEntries = (rawEntries) => {
+    if (!Array.isArray(rawEntries)) {
+      throw new Error("Inline editor workflow requires inline toggle sync entries array.");
+    }
+    const normalizedEntries = rawEntries.map((entry, index) => {
+      const fieldPath = `inlineToggleSyncEntries[${index}]`;
+      const componentType = String(entry?.componentType ?? "").trim().toUpperCase();
+      if (!componentType) {
+        throw new Error(`Inline editor workflow ${fieldPath} requires non-empty componentType.`);
+      }
+      const propertyKey = String(entry?.propertyKey ?? "").trim();
+      if (!propertyKey) {
+        throw new Error(`Inline editor workflow ${fieldPath} requires non-empty propertyKey.`);
+      }
+      if (!(entry?.row && typeof entry.row === "object")) {
+        throw new Error(`Inline editor workflow ${fieldPath} requires row element.`);
+      }
+      if (!(entry?.input && typeof entry.input === "object")) {
+        throw new Error(`Inline editor workflow ${fieldPath} requires input element.`);
+      }
+      const normalizeValue = requireFunction(entry?.normalizeValue, `${fieldPath}.normalizeValue`);
+      return {
+        componentType,
+        propertyKey,
+        row: entry.row,
+        input: entry.input,
+        normalizeValue
+      };
+    });
+    Object.defineProperty(normalizedEntries, INLINE_TOGGLE_SYNC_ENTRIES_NORMALIZED, {
+      value: true,
+      writable: false,
+      enumerable: false,
+      configurable: false
+    });
+    return normalizedEntries;
+  };
+  const requireInlineToggleSyncEntries = (args) => {
+    const inlineToggleSyncEntries = args?.inlineToggleSyncEntries;
+    if (Array.isArray(inlineToggleSyncEntries) && inlineToggleSyncEntries[INLINE_TOGGLE_SYNC_ENTRIES_NORMALIZED] === true) {
+      return inlineToggleSyncEntries;
+    }
+    return normalizeInlineToggleSyncEntries(inlineToggleSyncEntries);
+  };
+  const normalizeInlineInputSyncEntries = (rawEntries) => {
+    if (!Array.isArray(rawEntries)) {
+      throw new Error("Inline editor workflow requires inline input sync entries array.");
+    }
+    const normalizedEntries = rawEntries.map((entry, index) => {
+      const fieldPath = `inlineInputSyncEntries[${index}]`;
+      const componentType = String(entry?.componentType ?? "").trim().toUpperCase();
+      if (!componentType) {
+        throw new Error(`Inline editor workflow ${fieldPath} requires non-empty componentType.`);
+      }
+      const propertyKey = String(entry?.propertyKey ?? "").trim();
+      if (!propertyKey) {
+        throw new Error(`Inline editor workflow ${fieldPath} requires non-empty propertyKey.`);
+      }
+      if (!(entry?.row && typeof entry.row === "object")) {
+        throw new Error(`Inline editor workflow ${fieldPath} requires row element.`);
+      }
+      if (!(entry?.input && typeof entry.input === "object")) {
+        throw new Error(`Inline editor workflow ${fieldPath} requires input element.`);
+      }
+      const normalizeValue = requireFunction(entry?.normalizeValue, `${fieldPath}.normalizeValue`);
+      return {
+        componentType,
+        propertyKey,
+        row: entry.row,
+        input: entry.input,
+        normalizeValue
+      };
+    });
+    Object.defineProperty(normalizedEntries, INLINE_INPUT_SYNC_ENTRIES_NORMALIZED, {
+      value: true,
+      writable: false,
+      enumerable: false,
+      configurable: false
+    });
+    return normalizedEntries;
+  };
+  const requireInlineInputSyncEntries = (args) => {
+    const inlineInputSyncEntries = args?.inlineInputSyncEntries;
+    if (Array.isArray(inlineInputSyncEntries) && inlineInputSyncEntries[INLINE_INPUT_SYNC_ENTRIES_NORMALIZED] === true) {
+      return inlineInputSyncEntries;
+    }
+    return normalizeInlineInputSyncEntries(inlineInputSyncEntries);
+  };
+
   const createGetModelComponent = (input) => {
     const args = input && typeof input === "object" ? input : {};
     const getModel = typeof args.getModel === "function" ? args.getModel : () => null;
@@ -17,7 +160,7 @@
 
   const applyValueFieldMetaToElements = (input) => {
     const args = input && typeof input === "object" ? input : {};
-    const getValueFieldMeta = typeof args.getValueFieldMeta === "function" ? args.getValueFieldMeta : () => ({ label: "Value", unit: "" });
+    const getValueFieldMeta = requireFunction(args.getValueFieldMeta, "getValueFieldMeta");
     const meta = getValueFieldMeta(args.type);
     if (args.labelEl) {
       args.labelEl.textContent = `${String(meta?.label ?? "Value")}:`;
@@ -147,33 +290,9 @@
     const getInlineModeFlags = typeof args.getInlineModeFlags === "function" ? args.getInlineModeFlags : () => ({ supportsValueField: false });
     const isProbeType = typeof args.isProbeType === "function" ? args.isProbeType : () => false;
     const supportsComponentValueField = typeof args.supportsComponentValueField === "function" ? args.supportsComponentValueField : () => false;
-    const normalizeGroundVariantValue = typeof args.normalizeGroundVariantValue === "function"
-      ? args.normalizeGroundVariantValue
-      : (value) => String(value ?? "").trim().toLowerCase() || "earth";
-    const normalizeResistorStyleValue = typeof args.normalizeResistorStyleValue === "function"
-      ? args.normalizeResistorStyleValue
-      : (value) => String(value ?? "").trim().toLowerCase() || "zigzag";
-    const parseBoxAnnotationStyle = typeof args.parseBoxAnnotationStyle === "function"
-      ? args.parseBoxAnnotationStyle
-      : () => ({
-        thickness: 2,
-        lineType: "solid",
-        fillEnabled: false,
-        fillColor: "#d8d1c6",
-        opacityPercent: 100
-      });
-    const parseArrowAnnotationStyle = typeof args.parseArrowAnnotationStyle === "function"
-      ? args.parseArrowAnnotationStyle
-      : () => ({
-        thickness: 2,
-        lineType: "solid",
-        opacityPercent: 100
-      });
-    const parseTextAnnotationStyle = typeof args.parseTextAnnotationStyle === "function"
-      ? args.parseTextAnnotationStyle
-      : () => ({
-        opacityPercent: 100
-      });
+    const parseBoxAnnotationStyle = requireFunction(args.parseBoxAnnotationStyle, "parseBoxAnnotationStyle");
+    const parseArrowAnnotationStyle = requireFunction(args.parseArrowAnnotationStyle, "parseArrowAnnotationStyle");
+    const parseTextAnnotationStyle = requireFunction(args.parseTextAnnotationStyle, "parseTextAnnotationStyle");
     const setRowHidden = (row, hidden) => {
       if (row && typeof row === "object") {
         row.hidden = hidden;
@@ -195,16 +314,30 @@
     panel.inlineValueInput.value = inlineModeFlags.supportsValueField ? String(component.value ?? "") : "";
     panel.inlineValueRow.hidden = !inlineModeFlags.showValueRow;
     panel.inlineValueInput.disabled = !inlineModeFlags.showValueRow;
-    const isGroundComponent = type === "GND";
-    panel.inlineGroundVariantRow.hidden = !isGroundComponent;
-    if (isGroundComponent) {
-      panel.inlineGroundVariantSelect.value = normalizeGroundVariantValue(component.groundVariant);
-    }
-    const isResistorComponent = type === "R";
-    panel.inlineResistorStyleRow.hidden = !isResistorComponent;
-    if (isResistorComponent) {
-      panel.inlineResistorStyleSelect.value = normalizeResistorStyleValue(component.resistorStyle);
-    }
+    const inlineSelectSyncEntries = requireInlineSelectSyncEntries(args);
+    inlineSelectSyncEntries.forEach((entry) => {
+      const isMatch = type === entry.componentType;
+      setRowHidden(entry.row, !isMatch);
+      if (isMatch) {
+        entry.select.value = entry.normalizeValue(component?.[entry.propertyKey]);
+      }
+    });
+    const inlineToggleSyncEntries = requireInlineToggleSyncEntries(args);
+    inlineToggleSyncEntries.forEach((entry) => {
+      const isMatch = type === entry.componentType;
+      setRowHidden(entry.row, !isMatch);
+      if (isMatch) {
+        entry.input.checked = entry.normalizeValue(component?.[entry.propertyKey]) === true;
+      }
+    });
+    const inlineInputSyncEntries = requireInlineInputSyncEntries(args);
+    inlineInputSyncEntries.forEach((entry) => {
+      const isMatch = type === entry.componentType;
+      setRowHidden(entry.row, !isMatch);
+      if (isMatch) {
+        entry.input.value = String(entry.normalizeValue(component?.[entry.propertyKey]));
+      }
+    });
     const isBoxComponent = inlineModeFlags.isBoxAnnotation === true;
     const isArrowComponent = type === "ARR";
     const isTextComponent = inlineModeFlags.isTextAnnotation === true;
@@ -212,7 +345,7 @@
     const boxStyle = isBoxComponent
       ? parseBoxAnnotationStyle(component.value, {
         type,
-        defaultLineType: type === "DBOX" ? "dashed" : "solid"
+        defaultLineType: "solid"
       })
       : null;
     const arrowStyle = isArrowComponent
@@ -289,21 +422,6 @@
     if (typeof panel.inlineNetColorPicker.setSelected === "function") {
       panel.inlineNetColorPicker.setSelected(component.netColor ?? "");
     }
-    panel.inlineTextOnlyRow.hidden = !inlineModeFlags.isNamedNode;
-    panel.inlineTextOnlyInput.checked = inlineModeFlags.isNamedNode && component.textOnly === true;
-    panel.inlineTextFontRow.hidden = !inlineModeFlags.isTextAnnotation;
-    panel.inlineTextSizeRow.hidden = !inlineModeFlags.isTextAnnotation;
-    panel.inlineTextBoldRow.hidden = !inlineModeFlags.isTextAnnotation;
-    panel.inlineTextItalicRow.hidden = !inlineModeFlags.isTextAnnotation;
-    panel.inlineTextUnderlineRow.hidden = !inlineModeFlags.isTextAnnotation;
-
-    const normalizeTextFontValue = typeof args.normalizeTextFontValue === "function" ? args.normalizeTextFontValue : (value) => String(value ?? "");
-    const normalizeTextSizeValue = typeof args.normalizeTextSizeValue === "function" ? args.normalizeTextSizeValue : (value) => Number(value);
-    panel.inlineTextFontSelect.value = normalizeTextFontValue(component.textFont);
-    panel.inlineTextSizeInput.value = String(normalizeTextSizeValue(component.textSize));
-    panel.inlineTextBoldInput.checked = inlineModeFlags.isTextAnnotation && component.textBold === true;
-    panel.inlineTextItalicInput.checked = inlineModeFlags.isTextAnnotation && component.textItalic === true;
-    panel.inlineTextUnderlineInput.checked = inlineModeFlags.isTextAnnotation && component.textUnderline === true;
 
     if (typeof args.applyValueFieldMeta === "function") {
       args.applyValueFieldMeta(component.type, panel.inlineValueLabel, panel.inlineValueUnit);
@@ -369,11 +487,8 @@
     const getInlineSync = typeof args.getInlineSync === "function" ? args.getInlineSync : () => false;
     const setInlineSync = typeof args.setInlineSync === "function" ? args.setInlineSync : () => { };
     const panel = args.panel && typeof args.panel === "object" ? args.panel : {};
-    const findNearestProbeTargetComponentId = typeof args.findNearestProbeTargetComponentId === "function"
-      ? args.findNearestProbeTargetComponentId
-      : () => "";
-    const buildProbeTypeUpdateFromDomain = typeof args.buildProbeTypeUpdateFromDomain === "function"
-      ? args.buildProbeTypeUpdateFromDomain
+    const buildProbeTypeUpdate = typeof args.buildProbeTypeUpdate === "function"
+      ? args.buildProbeTypeUpdate
       : () => null;
     const isProbeType = typeof args.isProbeType === "function" ? args.isProbeType : () => false;
     const parseSpdtSwitchValueSafe = typeof args.parseSpdtSwitchValueSafe === "function" ? args.parseSpdtSwitchValueSafe : () => null;
@@ -381,35 +496,15 @@
     const formatSpdtSwitchValue = typeof args.formatSpdtSwitchValue === "function" ? args.formatSpdtSwitchValue : () => "";
     const getInlineModeFlags = typeof args.getInlineModeFlags === "function" ? args.getInlineModeFlags : () => ({});
     const supportsComponentValueField = typeof args.supportsComponentValueField === "function" ? args.supportsComponentValueField : () => false;
-    const normalizeTextFontValue = typeof args.normalizeTextFontValue === "function" ? args.normalizeTextFontValue : (value) => value;
-    const normalizeTextSizeValue = typeof args.normalizeTextSizeValue === "function" ? args.normalizeTextSizeValue : (value) => value;
-    const normalizeGroundVariantValue = typeof args.normalizeGroundVariantValue === "function"
-      ? args.normalizeGroundVariantValue
-      : (value) => String(value ?? "").trim().toLowerCase() || "earth";
-    const normalizeResistorStyleValue = typeof args.normalizeResistorStyleValue === "function"
-      ? args.normalizeResistorStyleValue
-      : (value) => String(value ?? "").trim().toLowerCase() || "zigzag";
-    const parseBoxAnnotationStyle = typeof args.parseBoxAnnotationStyle === "function"
-      ? args.parseBoxAnnotationStyle
-      : () => ({
-        thickness: 2,
-        lineType: "solid",
-        fillEnabled: false,
-        fillColor: "#d8d1c6",
-        opacityPercent: 100
-      });
-    const parseArrowAnnotationStyle = typeof args.parseArrowAnnotationStyle === "function"
-      ? args.parseArrowAnnotationStyle
-      : () => ({
-        thickness: 2,
-        lineType: "solid",
-        opacityPercent: 100
-      });
-    const parseTextAnnotationStyle = typeof args.parseTextAnnotationStyle === "function"
-      ? args.parseTextAnnotationStyle
-      : () => ({
-        opacityPercent: 100
-      });
+    const getInlineSelectSyncEntries = requireFunction(args.getInlineSelectSyncEntries, "getInlineSelectSyncEntries");
+    const getInlineToggleSyncEntries = requireFunction(args.getInlineToggleSyncEntries, "getInlineToggleSyncEntries");
+    const getInlineInputSyncEntries = requireFunction(args.getInlineInputSyncEntries, "getInlineInputSyncEntries");
+    const inlineSelectSyncEntries = normalizeInlineSelectSyncEntries(getInlineSelectSyncEntries());
+    const inlineToggleSyncEntries = normalizeInlineToggleSyncEntries(getInlineToggleSyncEntries());
+    const inlineInputSyncEntries = normalizeInlineInputSyncEntries(getInlineInputSyncEntries());
+    const parseBoxAnnotationStyle = requireFunction(args.parseBoxAnnotationStyle, "parseBoxAnnotationStyle");
+    const parseArrowAnnotationStyle = requireFunction(args.parseArrowAnnotationStyle, "parseArrowAnnotationStyle");
+    const parseTextAnnotationStyle = requireFunction(args.parseTextAnnotationStyle, "parseTextAnnotationStyle");
     const applyValueFieldMeta = typeof args.applyValueFieldMeta === "function" ? args.applyValueFieldMeta : () => { };
     const setInlineSwitchActiveThrowState = typeof args.setInlineSwitchActiveThrowState === "function"
       ? args.setInlineSwitchActiveThrowState
@@ -439,27 +534,6 @@
       getEditor
     });
     const applyInlinePatch = (patch) => inlinePatchHelpers.applyInlinePatch(patch);
-
-    const resolveProbeTargetComponentIdAtPin = (probeComponent, probePin) => {
-      const editor = getEditor();
-      if (!editor || typeof editor.getModel !== "function" || !probePin) {
-        return "";
-      }
-      const components = Array.isArray(editor.getModel()?.components) ? editor.getModel().components : [];
-      return findNearestProbeTargetComponentId({
-        probeComponent,
-        probePin,
-        components,
-        isProbeComponentType: (type) => isProbeType(type)
-      });
-    };
-
-    const buildProbeTypeUpdate = (component, nextTypeRaw) => buildProbeTypeUpdateFromDomain({
-      component,
-      nextType: nextTypeRaw,
-      resolveTargetComponentId: (probeComponent, probePin) =>
-        resolveProbeTargetComponentIdAtPin(probeComponent, probePin)
-    });
 
     const setInlineSwitchActiveThrow = (activeThrow) => {
       setInlineSwitchActiveThrowState(activeThrow);
@@ -507,10 +581,9 @@
         panel,
         parseSpdtSwitchValueSafe,
         setInlineSwitchActiveThrow,
-        normalizeTextFontValue,
-        normalizeTextSizeValue,
-        normalizeGroundVariantValue,
-        normalizeResistorStyleValue,
+        inlineSelectSyncEntries,
+        inlineToggleSyncEntries,
+        inlineInputSyncEntries,
         parseBoxAnnotationStyle,
         parseArrowAnnotationStyle,
         parseTextAnnotationStyle,

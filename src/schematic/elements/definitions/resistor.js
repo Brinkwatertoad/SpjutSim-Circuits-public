@@ -16,8 +16,22 @@
     help: {
       title: "Resistor (R)",
       summary: "Limits current and drops voltage.",
-      definition: "A passive element measured in ohms (Ω) that resists current flow."
+      definition: "A passive element measured in ohms (\u03a9) that resists current flow."
     },
-    valueField: { label: "Resistance", unit: "Ω", visible: true }
+    valueField: { label: "Resistance", unit: "\u03a9", visible: true },
+    properties: [
+      {
+        key: "resistorStyle",
+        label: "Style",
+        control: "select",
+        defaultValue: "zigzag",
+        normalizeMethod: "normalizeResistorStyle",
+        inlineEditVisible: true,
+        options: [
+          { value: "zigzag", label: "Zigzag" },
+          { value: "box", label: "Box" }
+        ]
+      }
+    ]
   });
 })();

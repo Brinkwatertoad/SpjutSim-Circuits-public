@@ -140,21 +140,13 @@
       pins: [
         { id: "A", name: "A", x: 0, y: 0 }
       ]
-    },
-    DBOX: {
-      type: "DBOX",
-      label: "Dashed Rectangle",
-      pins: [
-        { id: "A", name: "A", x: 0, y: 0 }
-      ]
     }
   };
   const ANNOTATION_DEFAULT_NAMES = Object.freeze({
     TEXT: "Text",
     IMG: "Image",
     ARR: "Arrow",
-    BOX: "Box",
-    DBOX: "Dashed Rectangle"
+    BOX: "Box"
   });
 
   const cloneSymbol = (symbol) => ({
