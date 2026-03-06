@@ -661,7 +661,7 @@
       const labelHalf = estimateMiddleBaselineHalfHeight(options.labelSize, safeLabelLineHeight * 0.5);
       const valueHalf = estimateMiddleBaselineHalfHeight(options.valueSize, labelHalf);
       const trailingHalf = lineCount > 1 ? valueHalf : labelHalf;
-      const topPerceptionCompensation = Math.max(0, (labelHalf - trailingHalf) * 2);
+      const topPerceptionCompensation = Math.max(0, (labelHalf - valueHalf) * 2);
       const topMargin = Math.max(1, labelEdgeMargin - topPerceptionCompensation);
       const symbolHalf = Number(options.symbolHalfExtent);
       const safeSymbolHalf = Number.isFinite(symbolHalf) && symbolHalf > 0

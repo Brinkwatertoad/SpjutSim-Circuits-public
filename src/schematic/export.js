@@ -861,9 +861,12 @@
       }
       const labelText = getProbeDisplayName(component, probeLabels);
       const measurementText = measurements?.get?.(component.id);
+      const primaryLabelY = measurementText
+        ? (labelY - (textLineHeight * 0.5))
+        : labelY;
       const labelBounds = getTextBounds(
         labelX,
-        labelY,
+        primaryLabelY,
         labelText,
         resolvedTextStyle.size,
         labelAnchor,
@@ -876,7 +879,7 @@
       if (measurementText) {
         const valueBounds = getTextBounds(
           labelX,
-          labelY + textLineHeight,
+          primaryLabelY + textLineHeight,
           measurementText,
           valueTextSize,
           labelAnchor,
@@ -1328,7 +1331,11 @@
       anchor = singleAnchor;
     }
     const invalidColor = isInvalidDifferentialProbeLabel(component, probeLabel) ? PROBE_INVALID_COLOR : null;
-    const label = appendText(svg, labelX, labelY, probeLabel, {
+    const measurementText = options?.measurements?.get?.(component.id);
+    const primaryLabelY = measurementText
+      ? (labelY - (textLineHeight * 0.5))
+      : labelY;
+    const label = appendText(svg, labelX, primaryLabelY, probeLabel, {
       size: resolvedTextStyle.size,
       fill: invalidColor ?? options?.labelColor ?? DEFAULT_COMPONENT_TEXT_COLORS.label,
       anchor: anchor.anchor,
@@ -1340,12 +1347,12 @@
     if (component?.id) {
       label.setAttribute("data-component-id", String(component.id));
     }
-    const measurementText = options?.measurements?.get?.(component.id);
     if (measurementText) {
-      appendText(svg, labelX, labelY + textLineHeight, measurementText, {
+      appendText(svg, labelX, primaryLabelY + textLineHeight, measurementText, {
         size: valueTextSize,
         fill: invalidColor ?? options?.valueColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value,
         anchor: anchor.anchor,
+        baseline: "middle",
         family: getSchematicFontFamily(resolvedTextStyle.font),
         style: resolvedTextStyle.italic ? "italic" : "normal",
         weight: measurementWeight

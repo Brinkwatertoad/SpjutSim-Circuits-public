@@ -1180,7 +1180,12 @@
     const valueFill = useInvalidColor
       ? PROBE_INVALID_COLOR
       : (options?.valueColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value);
-    const label = appendText(svg, labelX, labelY, probeLabel, {
+    const measurementText = options?.measurements?.get?.(component.id);
+    const probeLineGap = lineHeight;
+    const primaryLabelY = measurementText
+      ? (labelY - (probeLineGap * 0.5))
+      : labelY;
+    const label = appendText(svg, labelX, primaryLabelY, probeLabel, {
       size: resolvedTextStyle.size,
       fill: labelFill,
       anchor: labelAnchor.anchor,
@@ -1195,17 +1200,17 @@
     if (options?.dataHighlight) {
       label.setAttribute("data-component-label-highlight", String(options.dataHighlight));
     }
-    const measurementText = options?.measurements?.get?.(component.id);
     if (measurementText) {
       const valueLabel = appendText(
         svg,
         labelX,
-        labelY + lineHeight,
+        primaryLabelY + probeLineGap,
         measurementText,
         {
           size: valueSize,
           fill: valueFill,
           anchor: labelAnchor.anchor,
+          baseline: "middle",
           family: resolvedTextStyle.font,
           style: resolvedTextStyle.italic ? "italic" : "normal",
           weight: resolvedTextStyle.bold ? 700 : MEASUREMENT_TEXT_WEIGHT
