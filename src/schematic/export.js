@@ -152,7 +152,7 @@
     if (!Number.isFinite(textSize)) {
       return baseLineHeight;
     }
-    return Math.max(baseLineHeight, Math.round(textSize) + 2);
+    return Math.max(8, Math.round(textSize) + 2);
   };
   const getSchematicFontFamily = (font) => {
     const normalized = normalizeTextFontValue(font);

@@ -312,7 +312,7 @@
     if (!Number.isFinite(textSize)) {
       return baseLineHeight;
     }
-    return Math.max(baseLineHeight, Math.round(textSize) + 2);
+    return Math.max(8, Math.round(textSize) + 2);
   };
   const rawMeasurementTextWeight = Number(valueFormatApi.getMeasurementTextWeight());
   const MEASUREMENT_TEXT_WEIGHT = Number.isFinite(rawMeasurementTextWeight)
