@@ -178,7 +178,7 @@
     const hasValue = value !== undefined && value !== null;
     const resolvedValue = hasValue
       ? String(value)
-      : (symbol.type === "SW" ? "A" : "");
+      : "";
     return {
       id: String(id ?? ""),
       name: ANNOTATION_DEFAULT_NAMES[symbol.type] ?? String(id ?? ""),

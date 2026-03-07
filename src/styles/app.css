@@ -248,12 +248,23 @@ button.menu-button:hover,
   max-height: calc(100dvh - (var(--space-6) * 2));
 }
 
+.settings-modal-dialog {
+  width: min(720px, 94vw);
+  max-height: calc(100dvh - (var(--space-6) * 2));
+}
+
 .about-modal-body {
   min-height: 0;
   overflow-y: auto;
 }
 
+.settings-modal-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .about-modal-body,
+.settings-modal-body,
 .workspace-tools,
 .tab-panel.active,
 .context-menu,
@@ -274,6 +285,34 @@ button.menu-button:hover,
 
 .modal-field[hidden] {
   display: none;
+}
+
+.settings-component-default-row {
+  align-items: center;
+  row-gap: var(--space-2);
+}
+
+.settings-component-default-row [data-settings-component-default-label] {
+  min-width: 130px;
+  font-weight: 600;
+}
+
+.settings-short-value-input {
+  width: 6ch;
+  min-width: 6ch;
+}
+
+.settings-component-default-color-picker {
+  align-items: center;
+  margin-left: auto;
+}
+
+.settings-component-default-color-picker .schematic-net-color-grid {
+  width: auto;
+}
+
+.settings-component-default-color-clear {
+  min-width: 68px;
 }
 
 .modal-field select {

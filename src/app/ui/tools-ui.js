@@ -473,7 +473,7 @@
         definition: "Click to select; drag to move; shift-click to multi-select."
       },
       wire: {
-        title: "Wire",
+        title: "Wire (W)",
         summary: "Draw orthogonal wires between nodes.",
         definition: "Click to start and click to finish a wire segment."
       },

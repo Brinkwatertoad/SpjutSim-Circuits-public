@@ -1,6 +1,6 @@
 /**
  * @typedef {{ id: string, name?: string, type: string, value?: string, groundVariant?: string, resistorStyle?: string, netColor?: string, textOnly?: boolean, textFont?: string, textSize?: number, textBold?: boolean, textItalic?: boolean, textUnderline?: boolean, rotation?: number, labelRotation?: number, probeDiffRotations?: { "P+"?: number, "P-"?: number }, pins: { id: string, name: string, x: number, y: number }[] }} Component
- * @typedef {{ components: Component[], wires: { id: string, points: { x: number, y: number }[] }[] }} SchematicModel
+ * @typedef {{ components: Component[], wires: { id: string, points: { x: number, y: number }[], netColor?: string }[] }} SchematicModel
  */
 
 (function initSchematicExport() {
@@ -1636,7 +1636,8 @@
     });
     backgroundAnnotations.forEach((component) => drawComponentWithResolvedColors(component));
     wires.forEach((wire) => {
-      const wireColor = normalizeNetColorValue(wireColors[String(wire?.id ?? "")]);
+      const wireColor = normalizeNetColorValue(wireColors[String(wire?.id ?? "")])
+        ?? normalizeNetColorValue(wire?.netColor);
       drawWire(svg, wire, wireColor);
     });
     foregroundComponents.forEach((component) => drawComponentWithResolvedColors(component));

@@ -14,7 +14,7 @@
     catalogOrder: 100,
     classification: "electrical",
     help: {
-      title: "Ground (GND)",
+      title: "Ground (G)",
       summary: "Defines the reference node (0 V).",
       definition: "The circuit reference used for all node voltages."
     },

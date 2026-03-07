@@ -38,6 +38,64 @@
   const MAX_SCHEMATIC_TEXT_SIZE = 72;
 
   const nowIso = () => new Date().toISOString();
+  const getSchematicApi = () => (typeof self !== "undefined" ? (self.SpjutSimSchematic ?? null) : null);
+  const requireSchematicMethod = (name) => {
+    const api = getSchematicApi();
+    const method = api?.[name];
+    if (typeof method !== "function") {
+      throw new Error(`Schematic API missing '${name}'. Check src/schematic/model.js load order.`);
+    }
+    return method.bind(api);
+  };
+  const normalizeComponentDefaults = (value, fallback) => {
+    return requireSchematicMethod("normalizeComponentDefaults")(value, fallback);
+  };
+  const normalizeNetColor = (value) => {
+    return requireSchematicMethod("normalizeNetColor")(value);
+  };
+  const normalizeResistorStyle = (value) => {
+    return requireSchematicMethod("normalizeResistorStyle")(value);
+  };
+  const normalizeGroundVariant = (value) => {
+    return requireSchematicMethod("normalizeGroundVariant")(value);
+  };
+  const normalizeToolDisplayDefaults = (value, fallback) => {
+    const source = value && typeof value === "object" ? value : {};
+    const base = fallback && typeof fallback === "object"
+      ? fallback
+      : { resistorStyle: "zigzag", groundVariant: "earth", groundColor: null };
+    return {
+      resistorStyle: normalizeResistorStyle(
+        Object.prototype.hasOwnProperty.call(source, "resistorStyle")
+          ? source.resistorStyle
+          : base.resistorStyle
+      ),
+      groundVariant: normalizeGroundVariant(
+        Object.prototype.hasOwnProperty.call(source, "groundVariant")
+          ? source.groundVariant
+          : base.groundVariant
+      ),
+      groundColor: normalizeWireDefaultColor(
+        Object.prototype.hasOwnProperty.call(source, "groundColor")
+          ? source.groundColor
+          : undefined,
+        base.groundColor
+      )
+    };
+  };
+  const normalizeWireDefaultColor = (value, fallback = null) => {
+    if (value === undefined) {
+      return normalizeNetColor(fallback) ?? null;
+    }
+    if (value === null || String(value ?? "").trim() === "") {
+      return null;
+    }
+    const normalized = normalizeNetColor(value);
+    if (normalized) {
+      return normalized;
+    }
+    return normalizeNetColor(fallback) ?? null;
+  };
 
   const resolvePreferenceKey = (name) => {
     const normalized = String(name ?? "").trim();
@@ -159,6 +217,9 @@
       ? uiSettings.autoSwitchToSelectOnWire
       : DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE;
     const schematicText = normalizeSchematicTextStyle(uiSettings.schematicText);
+    const componentDefaults = normalizeComponentDefaults(uiSettings.componentDefaults);
+    const toolDisplayDefaults = normalizeToolDisplayDefaults(uiSettings.toolDisplayDefaults);
+    const wireDefaultColor = normalizeWireDefaultColor(uiSettings.wireDefaultColor);
     const doc = {
       schema: "spjutsim/schematic",
       version: 1,
@@ -189,7 +250,10 @@
         settings: {
           autoSwitchToSelectOnPlace,
           autoSwitchToSelectOnWire,
-          schematicText
+          schematicText,
+          componentDefaults,
+          toolDisplayDefaults,
+          wireDefaultColor
         }
       }
     };
@@ -237,6 +301,9 @@
         bold: null,
         italic: null
       };
+    const componentDefaults = normalizeComponentDefaults(doc.ui?.settings?.componentDefaults);
+    const toolDisplayDefaults = normalizeToolDisplayDefaults(doc.ui?.settings?.toolDisplayDefaults);
+    const wireDefaultColor = normalizeWireDefaultColor(doc.ui?.settings?.wireDefaultColor);
     return {
       meta: {
         title: typeof doc.title === "string" ? doc.title : "",
@@ -267,7 +334,10 @@
         settings: {
           autoSwitchToSelectOnPlace: typeof autoSwitchToSelectOnPlace === "boolean" ? autoSwitchToSelectOnPlace : null,
           autoSwitchToSelectOnWire: typeof autoSwitchToSelectOnWire === "boolean" ? autoSwitchToSelectOnWire : null,
-          schematicText
+          schematicText,
+          componentDefaults,
+          toolDisplayDefaults,
+          wireDefaultColor
         }
       },
       results: doc.results ?? null

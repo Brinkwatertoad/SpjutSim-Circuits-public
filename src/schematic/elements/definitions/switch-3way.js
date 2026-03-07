@@ -14,9 +14,9 @@
     catalogOrder: 60,
     classification: "electrical",
     help: {
-      title: "3-Way Switch (SW)",
-      summary: "SPDT switch with inline throw/Ron/Roff and label-visibility toggles.",
-      definition: "Default Ron is 0 (short). Value tokens also support showron/showroff label toggles."
+      title: "3-Way Switch (3)",
+      summary: "3-way SPDT (Single Pole Double Throw) switch with inline throw/Ron/Roff and label-visibility toggles.",
+      definition: "Default Ron is 0 (short); Default Roff is infinite (open)."
     },
     valueField: { label: "Position", unit: "", visible: true }
   });

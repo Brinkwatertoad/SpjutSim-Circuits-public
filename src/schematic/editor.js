@@ -1,6 +1,6 @@
 ﻿/**
  * @typedef {{ id: string, name?: string, type: string, value?: string, groundVariant?: string, resistorStyle?: string, netColor?: string, textOnly?: boolean, textFont?: string, textSize?: number, textBold?: boolean, textItalic?: boolean, textUnderline?: boolean, rotation?: number, labelRotation?: number, probeDiffRotations?: { "P+"?: number, "P-"?: number }, pins: { id: string, name: string, x: number, y: number }[] }} Component
- * @typedef {{ components: Component[], wires: { id: string, points: { x: number, y: number }[] }[] }} SchematicModel
+ * @typedef {{ components: Component[], wires: { id: string, points: { x: number, y: number }[], netColor?: string }[] }} SchematicModel
  */
 
 (function initSchematicEditor() {
@@ -185,6 +185,9 @@
     normalizeTextSize: requireSchematicMethod("normalizeTextSize"),
     getDefaultTextStyle: requireSchematicMethod("getDefaultTextStyle"),
     getDefaultComponentTextColors: requireSchematicMethod("getDefaultComponentTextColors"),
+    listComponentDefaultTypes: requireSchematicMethod("listComponentDefaultTypes"),
+    getBuiltInComponentDefaults: requireSchematicMethod("getBuiltInComponentDefaults"),
+    normalizeComponentDefaults: requireSchematicMethod("normalizeComponentDefaults"),
     normalizeGroundVariant: requireSchematicMethod("normalizeGroundVariant"),
     listGroundVariants: requireSchematicMethod("listGroundVariants"),
     normalizeResistorStyle: requireSchematicMethod("normalizeResistorStyle"),
@@ -219,6 +222,22 @@
       throw new Error("Schematic API listResistorStyles() returned invalid data.");
     }
     return Array.from(new Set(raw.map((entry) => normalizeResistorStyleValue(entry))));
+  };
+  const listComponentDefaultTypes = () => {
+    const raw = textStyleApi.listComponentDefaultTypes();
+    if (!Array.isArray(raw) || !raw.length) {
+      throw new Error("Schematic API listComponentDefaultTypes() returned invalid data.");
+    }
+    return raw
+      .map((entry) => String(entry ?? "").trim().toUpperCase())
+      .filter(Boolean);
+  };
+  const normalizeComponentDefaultsValue = (value, fallback) => {
+    return textStyleApi.normalizeComponentDefaults(value, fallback);
+  };
+  const getBuiltInComponentDefaults = () => {
+    const defaults = textStyleApi.getBuiltInComponentDefaults();
+    return normalizeComponentDefaultsValue(defaults);
   };
   const isElectricalComponentType = (type) => textStyleApi.isElectricalComponentType(type);
   const isProbeComponentType = (type) => textStyleApi.isProbeComponentType(type);
@@ -1956,6 +1975,8 @@
       model,
       tool: { mode: "select" },
       groundPlacementVariant: normalizeGroundVariantValue("earth"),
+      groundPlacementColor: null,
+      resistorPlacementStyle: normalizeResistorStyleValue("zigzag"),
       view: { ...DEFAULT_VIEW },
       grid: { ...DEFAULT_GRID },
       selectionIds: [],
@@ -1991,6 +2012,8 @@
       measurements: new Map(),
       probeLabels: new Map(),
       schematicTextStyle: { ...DEFAULT_SCHEMATIC_TEXT_STYLE },
+      componentDefaults: getBuiltInComponentDefaults(),
+      wireDefaultColor: null,
       externalHighlightComponentIds: new Set(),
       externalHighlightWireIds: new Set(),
       externalHighlightColor: DEFAULT_EXTERNAL_HIGHLIGHT_COLOR,
@@ -2005,6 +2028,19 @@
       skipViewSyncOnce: false
     };
     state.schematicTextStyle = normalizeSchematicTextStyle(options?.schematicTextStyle, state.schematicTextStyle);
+    state.componentDefaults = normalizeComponentDefaultsValue(options?.componentDefaults, state.componentDefaults);
+    if (options?.placementDefaults && typeof options.placementDefaults === "object") {
+      state.groundPlacementVariant = normalizeGroundVariantValue(
+        Object.prototype.hasOwnProperty.call(options.placementDefaults, "groundVariant")
+          ? options.placementDefaults.groundVariant
+          : state.groundPlacementVariant
+      );
+      state.resistorPlacementStyle = normalizeResistorStyleValue(
+        Object.prototype.hasOwnProperty.call(options.placementDefaults, "resistorStyle")
+          ? options.placementDefaults.resistorStyle
+          : state.resistorPlacementStyle
+      );
+    }
     let renderRequestId = null;
     let scheduleRender = null;
 
@@ -2174,6 +2210,92 @@
       }
       return api.normalizeNetColor(value);
     };
+    const normalizeWireDefaultColorValue = (value, fallback = null) => {
+      if (value === undefined) {
+        return normalizeNetColorValue(fallback) ?? null;
+      }
+      if (value === null || String(value ?? "").trim() === "") {
+        return null;
+      }
+      const normalized = normalizeNetColorValue(value);
+      if (normalized) {
+        return normalized;
+      }
+      return normalizeNetColorValue(fallback) ?? null;
+    };
+    state.wireDefaultColor = normalizeWireDefaultColorValue(options?.wireDefaultColor, state.wireDefaultColor);
+    if (options?.placementDefaults && typeof options.placementDefaults === "object") {
+      state.groundPlacementColor = normalizeWireDefaultColorValue(
+        Object.prototype.hasOwnProperty.call(options.placementDefaults, "groundColor")
+          ? options.placementDefaults.groundColor
+          : undefined,
+        state.groundPlacementColor
+      );
+    }
+
+    const getComponentDefaults = () => {
+      return normalizeComponentDefaultsValue(state.componentDefaults, getBuiltInComponentDefaults());
+    };
+
+    const setComponentDefaults = (value) => {
+      state.componentDefaults = normalizeComponentDefaultsValue(value, state.componentDefaults);
+      return getComponentDefaults();
+    };
+    const getWireDefaultColor = () => normalizeWireDefaultColorValue(state.wireDefaultColor, null);
+    const setWireDefaultColor = (value) => {
+      state.wireDefaultColor = normalizeWireDefaultColorValue(value, state.wireDefaultColor);
+      return getWireDefaultColor();
+    };
+    const getPlacementDefaults = () => ({
+      resistorStyle: normalizeResistorStyleValue(state.resistorPlacementStyle),
+      groundVariant: normalizeGroundVariantValue(state.groundPlacementVariant),
+      groundColor: normalizeWireDefaultColorValue(state.groundPlacementColor, null)
+    });
+    const setPlacementDefaults = (value) => {
+      const source = value && typeof value === "object" ? value : {};
+      state.resistorPlacementStyle = normalizeResistorStyleValue(
+        Object.prototype.hasOwnProperty.call(source, "resistorStyle")
+          ? source.resistorStyle
+          : state.resistorPlacementStyle
+      );
+      state.groundPlacementVariant = normalizeGroundVariantValue(
+        Object.prototype.hasOwnProperty.call(source, "groundVariant")
+          ? source.groundVariant
+          : state.groundPlacementVariant
+      );
+      state.groundPlacementColor = normalizeWireDefaultColorValue(
+        Object.prototype.hasOwnProperty.call(source, "groundColor")
+          ? source.groundColor
+          : undefined,
+        state.groundPlacementColor
+      );
+      if (state.preview) {
+        const previewType = String(state.preview.type ?? "").toUpperCase();
+        if (previewType === "GND") {
+          state.preview.groundVariant = normalizeGroundVariantValue(state.groundPlacementVariant);
+        } else if (previewType === "R") {
+          state.preview.resistorStyle = normalizeResistorStyleValue(state.resistorPlacementStyle);
+        }
+      }
+      renderOverlay();
+      return getPlacementDefaults();
+    };
+
+    const getComponentDefaultForType = (type) => {
+      const key = String(type ?? "").trim().toUpperCase();
+      if (!key) {
+        return { value: "", netColor: null };
+      }
+      const defaults = getComponentDefaults();
+      if (!Object.prototype.hasOwnProperty.call(defaults, key)) {
+        return { value: "", netColor: null };
+      }
+      const entry = defaults[key];
+      return {
+        value: String(entry?.value ?? ""),
+        netColor: normalizeNetColorValue(entry?.netColor) ?? null
+      };
+    };
 
     const resolveNetColorState = () => {
       if (typeof api.resolveNetColors !== "function") {
@@ -2187,6 +2309,18 @@
         wireColors: (resolved && typeof resolved.wireColors === "object") ? resolved.wireColors : {},
         netColors: (resolved && typeof resolved.netColors === "object") ? resolved.netColors : {}
       };
+    };
+    const getWireDisplayColor = (wire, netColorState) => {
+      const wireId = String(wire?.id ?? "");
+      const netColor = normalizeNetColorValue(netColorState?.wireColors?.[wireId]);
+      if (netColor) {
+        return netColor;
+      }
+      const wireColor = normalizeNetColorValue(wire?.netColor);
+      if (wireColor) {
+        return wireColor;
+      }
+      return STROKE;
     };
 
     const getEquivalentNamedNodeIds = (componentId) => {
@@ -4064,6 +4198,9 @@
           usedOriginalId = true;
           const created = {
             id,
+            ...(Object.prototype.hasOwnProperty.call(wire, "netColor")
+              ? { netColor: wire.netColor ?? "" }
+              : {}),
             points: currentPoints.map((point) => ({ x: point.x, y: point.y }))
           };
           newWires.push(created);
@@ -4182,6 +4319,9 @@
           usedOriginalId = true;
           const created = {
             id,
+            ...(Object.prototype.hasOwnProperty.call(wire, "netColor")
+              ? { netColor: wire.netColor ?? "" }
+              : {}),
             points: segmentPoints.map((point) => ({ x: point.x, y: point.y }))
           };
           newWires.push(created);
@@ -4354,7 +4494,13 @@
       const newWires = [];
       const selectionMap = new Map();
       wires.forEach((wire) => {
-        let segments = [{ id: wire.id, points: (wire.points ?? []).map((point) => ({ x: point.x, y: point.y })) }];
+        let segments = [{
+          id: wire.id,
+          ...(Object.prototype.hasOwnProperty.call(wire, "netColor")
+            ? { netColor: wire.netColor ?? "" }
+            : {}),
+          points: (wire.points ?? []).map((point) => ({ x: point.x, y: point.y }))
+        }];
         shorts.forEach((short) => {
           const nextSegments = [];
           segments.forEach((segment) => {
@@ -4371,7 +4517,13 @@
               }
               const id = usedOriginal ? nextWireId() : segment.id;
               usedOriginal = true;
-              nextSegments.push({ id, points });
+              nextSegments.push({
+                id,
+                ...(Object.prototype.hasOwnProperty.call(segment, "netColor")
+                  ? { netColor: segment.netColor ?? "" }
+                  : {}),
+                points
+              });
               if (!selectionMap.has(segment.id)) {
                 selectionMap.set(segment.id, []);
               }
@@ -5496,7 +5648,7 @@
       displayWires.forEach((wire) => {
         (wire.points ?? []).forEach((point) => {
           pointKeys.add(pointKey(point));
-          const color = netColorState?.wireColors?.[String(wire?.id ?? "")];
+          const color = getWireDisplayColor(wire, netColorState);
           if (!color) {
             return;
           }
@@ -5511,7 +5663,7 @@
         if (points.length < 2) {
           return;
         }
-        const stroke = netColorState?.wireColors?.[String(wire?.id ?? "")] ?? STROKE;
+        const stroke = getWireDisplayColor(wire, netColorState);
         renderWirePath(wireGroup, points, wire.id, segments, pointKeys, {
           stroke,
           width: STROKE_WIDTH,
@@ -5781,12 +5933,28 @@
       }
       if (state.preview) {
         const preview = state.preview;
+        const previewDefaults = getComponentDefaultForType(preview.type);
         const previewComponent = typeof api.createComponentFromSymbol === "function"
-          ? api.createComponentFromSymbol(preview.type, "PREVIEW", "", preview.position.x, preview.position.y)
+          ? api.createComponentFromSymbol(
+            preview.type,
+            "PREVIEW",
+            String(previewDefaults.value ?? ""),
+            preview.position.x,
+            preview.position.y
+          )
           : null;
         if (previewComponent) {
+          if (previewDefaults.netColor) {
+            previewComponent.netColor = previewDefaults.netColor;
+          }
           if (String(previewComponent.type ?? "").toUpperCase() === "GND") {
             previewComponent.groundVariant = normalizeGroundVariantValue(preview.groundVariant);
+            const groundPlacementColor = normalizeWireDefaultColorValue(state.groundPlacementColor, null);
+            if (groundPlacementColor) {
+              previewComponent.netColor = groundPlacementColor;
+            } else if (!previewDefaults.netColor && Object.prototype.hasOwnProperty.call(previewComponent, "netColor")) {
+              delete previewComponent.netColor;
+            }
           } else if (String(previewComponent.type ?? "").toUpperCase() === "R"
             && Object.prototype.hasOwnProperty.call(preview, "resistorStyle")) {
             previewComponent.resistorStyle = normalizeResistorStyleValue(preview.resistorStyle);
@@ -5922,7 +6090,7 @@
               pointKeys.add(pointKey(point));
             });
           });
-          const wireColor = netColorState?.wireColors?.[String(wire?.id ?? "")] ?? STROKE;
+          const wireColor = getWireDisplayColor(wire, netColorState);
           renderWirePath(overlayGroup, points, wire.id, segments, pointKeys, {
             stroke: wireColor,
             width: 3,
@@ -6526,6 +6694,9 @@
       })),
       wires: (source?.wires ?? []).map((wire) => ({
         id: wire.id,
+        ...(Object.prototype.hasOwnProperty.call(wire, "netColor")
+          ? { netColor: String(wire.netColor ?? "") }
+          : {}),
         points: (wire.points ?? []).map((point) => ({
           x: point.x,
           y: point.y
@@ -7074,6 +7245,77 @@
       }, { notifySelection: true });
     };
 
+    const applyComponentDefaultsToExisting = (defaults, options) => {
+      const nextDefaults = setComponentDefaults(defaults);
+      const defaultScope = listComponentDefaultTypes();
+      const scopedTypes = Array.isArray(options?.types) && options.types.length
+        ? options.types
+        : defaultScope;
+      const scopedTypeSet = new Set(
+        scopedTypes
+          .map((entry) => String(entry ?? "").trim().toUpperCase())
+          .filter((entry) => defaultScope.includes(entry))
+      );
+      if (!scopedTypeSet.size) {
+        return {
+          updatedComponents: 0,
+          valueUpdates: 0,
+          colorUpdates: 0
+        };
+      }
+      const plannedUpdates = [];
+      (state.model?.components ?? []).forEach((component) => {
+        const type = String(component?.type ?? "").trim().toUpperCase();
+        if (!scopedTypeSet.has(type)) {
+          return;
+        }
+        const defaultsForType = nextDefaults[type];
+        if (!defaultsForType || typeof defaultsForType !== "object") {
+          return;
+        }
+        const nextValue = String(defaultsForType.value ?? "");
+        const nextColor = normalizeNetColorValue(defaultsForType.netColor) ?? null;
+        const currentValue = String(component?.value ?? "");
+        const currentColor = Object.prototype.hasOwnProperty.call(component, "netColor")
+          ? (normalizeNetColorValue(component.netColor) ?? null)
+          : null;
+        if (currentValue === nextValue && currentColor === nextColor) {
+          return;
+        }
+        plannedUpdates.push({
+          component,
+          nextValue,
+          nextColor,
+          valueChanged: currentValue !== nextValue,
+          colorChanged: currentColor !== nextColor
+        });
+      });
+      if (!plannedUpdates.length) {
+        return {
+          updatedComponents: 0,
+          valueUpdates: 0,
+          colorUpdates: 0
+        };
+      }
+      const summary = {
+        updatedComponents: plannedUpdates.length,
+        valueUpdates: plannedUpdates.filter((entry) => entry.valueChanged).length,
+        colorUpdates: plannedUpdates.filter((entry) => entry.colorChanged).length
+      };
+      return commitModelMutation(() => {
+        plannedUpdates.forEach((entry) => {
+          const target = entry.component;
+          target.value = entry.nextValue;
+          if (entry.nextColor) {
+            target.netColor = entry.nextColor;
+          } else if (Object.prototype.hasOwnProperty.call(target, "netColor")) {
+            delete target.netColor;
+          }
+        });
+        return summary;
+      });
+    };
+
     const rotateSelection = (direction) => {
       const ids = state.selectionIds.slice();
       if (!ids.length) {
@@ -7472,7 +7714,12 @@
           x: point.x + offset,
           y: point.y + offset
         }));
-        const normalized = addWireInternal({ points });
+        const normalized = addWireInternal({
+          points,
+          ...(Object.prototype.hasOwnProperty.call(wire, "netColor")
+            ? { netColor: wire.netColor ?? "" }
+            : {})
+        });
         if (!normalized) {
           return;
         }
@@ -7600,6 +7847,8 @@
         } else if (previousPlaceTypeNormalized === "GND") {
           state.groundPlacementVariant = cycleGroundVariant(state.groundPlacementVariant);
         }
+      } else if (activePlaceType === "R" && Object.prototype.hasOwnProperty.call(state.tool, "resistorStyle")) {
+        state.resistorPlacementStyle = normalizeResistorStyleValue(state.tool.resistorStyle);
       }
       if (state.tool.mode === "place") {
         if (state.tool.type !== previousPlaceType) {
@@ -7803,17 +8052,24 @@
       if (!spec) {
         return null;
       }
+      const useSymbolFactory = !Array.isArray(spec.pins) || !spec.pins.length;
+      const hasExplicitValue = Object.prototype.hasOwnProperty.call(spec, "value");
+      const hasExplicitNetColor = Object.prototype.hasOwnProperty.call(spec, "netColor");
       const transform = spec.transform ?? null;
       let component = spec;
-      if (!Array.isArray(spec.pins) || !spec.pins.length) {
+      if (useSymbolFactory) {
         const type = spec.type;
+        const typeDefaults = getComponentDefaultForType(type);
         const id = spec.id || nextRefDes(type);
         const baseX = Number.isFinite(spec.x) ? spec.x : state.view.x + state.view.width / 2;
         const baseY = Number.isFinite(spec.y) ? spec.y : state.view.y + state.view.height / 2;
         const snappedX = state.grid.snap ? Math.round(baseX / state.grid.size) * state.grid.size : baseX;
         const snappedY = state.grid.snap ? Math.round(baseY / state.grid.size) * state.grid.size : baseY;
+        const placementValue = hasExplicitValue
+          ? String(spec.value ?? "")
+          : String(typeDefaults.value ?? "");
         if (typeof api.createComponentFromSymbol === "function") {
-          component = api.createComponentFromSymbol(type, id, spec.value, snappedX, snappedY);
+          component = api.createComponentFromSymbol(type, id, placementValue, snappedX, snappedY);
         }
       }
       if (component && !String(component.id ?? "").trim()) {
@@ -7827,6 +8083,24 @@
       }
       if (component && Object.prototype.hasOwnProperty.call(spec, "value")) {
         component.value = String(spec.value ?? "");
+      } else if (component && useSymbolFactory) {
+        const typeDefaults = getComponentDefaultForType(component.type);
+        component.value = String(typeDefaults.value ?? "");
+      }
+      if (component && hasExplicitNetColor) {
+        const normalizedColor = normalizeNetColorValue(spec.netColor);
+        if (normalizedColor) {
+          component.netColor = normalizedColor;
+        } else if (Object.prototype.hasOwnProperty.call(component, "netColor")) {
+          delete component.netColor;
+        }
+      } else if (component && useSymbolFactory) {
+        const typeDefaults = getComponentDefaultForType(component.type);
+        if (typeDefaults.netColor) {
+          component.netColor = typeDefaults.netColor;
+        } else if (Object.prototype.hasOwnProperty.call(component, "netColor")) {
+          delete component.netColor;
+        }
       }
       if (component && Object.prototype.hasOwnProperty.call(spec, "groundVariant")) {
         component.groundVariant = normalizeGroundVariantValue(spec.groundVariant);
@@ -7838,7 +8112,18 @@
         component.resistorStyle = normalizeResistorStyleValue(spec.resistorStyle);
       } else if (String(component?.type ?? "").toUpperCase() === "R"
         && !Object.prototype.hasOwnProperty.call(component, "resistorStyle")) {
-        component.resistorStyle = normalizeResistorStyleValue(component.resistorStyle);
+        component.resistorStyle = normalizeResistorStyleValue(state.resistorPlacementStyle);
+      }
+      if (!hasExplicitNetColor
+        && component
+        && useSymbolFactory
+        && String(component?.type ?? "").toUpperCase() === "GND") {
+        const groundPlacementColor = normalizeWireDefaultColorValue(state.groundPlacementColor, null);
+        if (groundPlacementColor) {
+          component.netColor = groundPlacementColor;
+        } else if (Object.prototype.hasOwnProperty.call(component, "netColor")) {
+          delete component.netColor;
+        }
       }
       if (component && transform && !isIdentityTransform(transform)) {
         const cloned = {
@@ -7912,6 +8197,10 @@
       if (!wire) {
         return null;
       }
+      const hasExplicitNetColor = Object.prototype.hasOwnProperty.call(wire, "netColor");
+      const explicitNetColor = hasExplicitNetColor
+        ? normalizeNetColorValue(wire.netColor)
+        : null;
       const points = Array.isArray(wire.points) ? wire.points : [];
       const preserveStart = options?.preserveEndpoints?.start === true;
       const preserveEnd = options?.preserveEndpoints?.end === true;
@@ -7954,6 +8243,16 @@
         id: wire.id || nextWireId(),
         points: snappedPoints.map((point) => ({ x: point.x, y: point.y }))
       };
+      if (hasExplicitNetColor) {
+        if (explicitNetColor) {
+          prepared.netColor = explicitNetColor;
+        }
+      } else if (options?.applyDefaultColor !== false) {
+        const defaultWireColor = getWireDefaultColor();
+        if (defaultWireColor) {
+          prepared.netColor = defaultWireColor;
+        }
+      }
       normalizeWirePoints(prepared, {
         snap: options?.snap !== false,
         snapMode: options?.snapMode,
@@ -7966,7 +8265,10 @@
       if (!wire || typeof api.addWire !== "function") {
         return null;
       }
-      const prepared = prepareWire(wire, options);
+      const prepared = prepareWire(wire, {
+        ...(options ?? {}),
+        applyDefaultColor: options?.applyDefaultColor !== false
+      });
       if (!prepared) {
         return null;
       }
@@ -7982,7 +8284,10 @@
       if (!wire || typeof api.addWire !== "function") {
         return null;
       }
-      const prepared = prepareWire(wire, options);
+      const prepared = prepareWire(wire, {
+        ...(options ?? {}),
+        applyDefaultColor: options?.applyDefaultColor === true
+      });
       if (!prepared) {
         return null;
       }
@@ -10979,6 +11284,9 @@
         snapped,
         ...(String(type ?? "").toUpperCase() === "GND"
           ? { groundVariant: normalizeGroundVariantValue(state.groundPlacementVariant) }
+          : {}),
+        ...(String(type ?? "").toUpperCase() === "R"
+          ? { resistorStyle: normalizeResistorStyleValue(state.resistorPlacementStyle) }
           : {})
       };
       renderOverlay();
@@ -11055,6 +11363,9 @@
         return null;
       }
       return {
+        ...(Object.prototype.hasOwnProperty.call(wire, "netColor")
+          ? { netColor: wire.netColor ?? "" }
+          : {}),
         points: points.map((point) => ({
           x: point.x - anchor.x,
           y: point.y - anchor.y
@@ -11339,7 +11650,12 @@
             return;
           }
           const points = template.points.map((point) => mapSelectionPlacementPoint(point, position, transform, true));
-          const normalized = addWireInternal({ points });
+          const normalized = addWireInternal({
+            points,
+            ...(Object.prototype.hasOwnProperty.call(template, "netColor")
+              ? { netColor: template.netColor ?? "" }
+              : {})
+          });
           if (!normalized) {
             return;
           }
@@ -11466,6 +11782,13 @@
       addComponent,
       addWire,
       getModel: () => state.model,
+      setComponentDefaults,
+      getComponentDefaults,
+      setWireDefaultColor,
+      getWireDefaultColor,
+      setPlacementDefaults,
+      getPlacementDefaults,
+      applyComponentDefaultsToExisting,
       render,
       setTool,
       getTool: () => ({ ...state.tool }),

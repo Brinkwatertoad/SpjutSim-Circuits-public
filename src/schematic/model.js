@@ -1,7 +1,7 @@
 /**
  * @typedef {{ id: string, name: string, x: number, y: number }} Pin
  * @typedef {{ id: string, name?: string, type: string, value?: string, groundVariant?: string, resistorStyle?: string, netColor?: string, textOnly?: boolean, textFont?: string, textSize?: number, textBold?: boolean, textItalic?: boolean, textUnderline?: boolean, rotation?: number, labelRotation?: number, probeDiffRotations?: { "P+"?: number, "P-"?: number }, pins: Pin[] }} Component
- * @typedef {{ id: string, points: { x: number, y: number }[] }} Wire
+ * @typedef {{ id: string, points: { x: number, y: number }[], netColor?: string }} Wire
  * @typedef {{ components: Component[], wires: Wire[] }} SchematicModel
  * @typedef {{ id: string, nodes: { x: number, y: number }[], pins: { componentId: string, pinId: string, name: string, x: number, y: number }[] }} Net
  */
@@ -62,6 +62,18 @@
     VM: "\u03a9",
     AM: "\u03a9",
     SW: "\u03a9"
+  });
+  const COMPONENT_DEFAULT_TYPES = Object.freeze(["R", "C", "L", "V", "I", "VM", "AM", "SW"]);
+  const COMPONENT_DEFAULT_TYPE_SET = new Set(COMPONENT_DEFAULT_TYPES);
+  const BUILT_IN_COMPONENT_DEFAULTS = Object.freeze({
+    R: Object.freeze({ value: "1k", netColor: null }),
+    C: Object.freeze({ value: "1u", netColor: null }),
+    L: Object.freeze({ value: "1m", netColor: null }),
+    V: Object.freeze({ value: "1", netColor: null }),
+    I: Object.freeze({ value: "1", netColor: null }),
+    VM: Object.freeze({ value: "", netColor: null }),
+    AM: Object.freeze({ value: "", netColor: null }),
+    SW: Object.freeze({ value: "", netColor: null })
   });
   const METRIC_PREFIXES = Object.freeze([
     { symbol: "T", exponent: 12 },
@@ -137,6 +149,80 @@
       return null;
     }
     return NET_COLOR_SET.has(trimmed) ? trimmed : null;
+  };
+
+  const listComponentDefaultTypes = () => COMPONENT_DEFAULT_TYPES.slice();
+
+  const getBuiltInComponentDefaults = () => {
+    const clone = {};
+    COMPONENT_DEFAULT_TYPES.forEach((type) => {
+      const entry = BUILT_IN_COMPONENT_DEFAULTS[type];
+      clone[type] = {
+        value: String(entry?.value ?? ""),
+        netColor: normalizeNetColor(entry?.netColor) ?? null
+      };
+    });
+    return clone;
+  };
+
+  const normalizeComponentDefaultTypeKey = (value) => {
+    const normalized = String(value ?? "").trim().toUpperCase();
+    return COMPONENT_DEFAULT_TYPE_SET.has(normalized) ? normalized : "";
+  };
+
+  const normalizeComponentDefaultEntry = (entry, fallbackEntry) => {
+    const fallbackValue = String(fallbackEntry?.value ?? "").trim();
+    const fallbackColor = normalizeNetColor(fallbackEntry?.netColor) ?? null;
+    let rawValue = undefined;
+    let rawColor = undefined;
+    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+      if (Object.prototype.hasOwnProperty.call(entry, "value")) {
+        rawValue = entry.value;
+      }
+      if (Object.prototype.hasOwnProperty.call(entry, "netColor")) {
+        rawColor = entry.netColor;
+      }
+    } else if (entry !== undefined) {
+      rawValue = entry;
+    }
+    const value = rawValue === undefined
+      ? fallbackValue
+      : String(rawValue ?? "").trim();
+    let netColor = fallbackColor;
+    if (rawColor !== undefined) {
+      if (rawColor === null || String(rawColor).trim() === "") {
+        netColor = null;
+      } else {
+        netColor = normalizeNetColor(rawColor) ?? null;
+      }
+    }
+    return { value, netColor };
+  };
+
+  const normalizeComponentDefaults = (value, fallback) => {
+    const source = value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
+    const fallbackSource = fallback && typeof fallback === "object" && !Array.isArray(fallback)
+      ? fallback
+      : getBuiltInComponentDefaults();
+    const sourceByType = {};
+    Object.entries(source).forEach(([rawType, rawEntry]) => {
+      const type = normalizeComponentDefaultTypeKey(rawType);
+      if (!type) {
+        return;
+      }
+      sourceByType[type] = rawEntry;
+    });
+    const normalized = {};
+    COMPONENT_DEFAULT_TYPES.forEach((type) => {
+      const fallbackEntry = normalizeComponentDefaultEntry(
+        fallbackSource?.[type],
+        BUILT_IN_COMPONENT_DEFAULTS[type]
+      );
+      normalized[type] = normalizeComponentDefaultEntry(sourceByType[type], fallbackEntry);
+    });
+    return normalized;
   };
 
   const requireElementClassificationMethod = (name) => {
@@ -576,6 +662,10 @@
       id: String(wire.id ?? ""),
       points: normalizedPoints
     };
+    const netColor = normalizeNetColor(wire.netColor);
+    if (netColor) {
+      normalized.netColor = netColor;
+    }
     model.wires.push(normalized);
     return normalized;
   };
@@ -835,6 +925,9 @@
     isProbeComponentType,
     getNetColorPalette: () => NET_COLOR_PALETTE.slice(),
     normalizeNetColor,
+    listComponentDefaultTypes,
+    getBuiltInComponentDefaults,
+    normalizeComponentDefaults,
     normalizeGroundVariant,
     listGroundVariants,
     normalizeResistorStyle,

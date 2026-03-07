@@ -274,6 +274,16 @@
     return `${label} ${first} ${second} ${value}`;
   };
 
+  const getComponentFallbackValue = (context, type, fallbackValue) => {
+    const defaults = context?.componentDefaults;
+    if (!defaults || typeof defaults !== "object") {
+      return fallbackValue;
+    }
+    const key = String(type ?? "").trim().toUpperCase();
+    const value = String(defaults?.[key]?.value ?? "").trim();
+    return value || fallbackValue;
+  };
+
   const buildComponentLineMetadata = (component, type, lineText) => {
     const text = String(lineText ?? "").trim();
     if (!text) {
@@ -485,23 +495,23 @@
 
   const COMPONENT_NETLIST_LINE_BUILDERS = Object.freeze({
     R: (component, context) => ({
-      line: buildLine(component, context?.pinNetMap, "1k", "R"),
+      line: buildLine(component, context?.pinNetMap, getComponentFallbackValue(context, "R", "1k"), "R"),
       additionalLines: []
     }),
     C: (component, context) => ({
-      line: buildLine(component, context?.pinNetMap, "1u", "C"),
+      line: buildLine(component, context?.pinNetMap, getComponentFallbackValue(context, "C", "1u"), "C"),
       additionalLines: []
     }),
     L: (component, context) => ({
-      line: buildLine(component, context?.pinNetMap, "1m", "L"),
+      line: buildLine(component, context?.pinNetMap, getComponentFallbackValue(context, "L", "1m"), "L"),
       additionalLines: []
     }),
     V: (component, context) => ({
-      line: buildLine(component, context?.pinNetMap, "1", "V"),
+      line: buildLine(component, context?.pinNetMap, getComponentFallbackValue(context, "V", "1"), "V"),
       additionalLines: []
     }),
     I: (component, context) => ({
-      line: buildLine(component, context?.pinNetMap, "1", "I"),
+      line: buildLine(component, context?.pinNetMap, getComponentFallbackValue(context, "I", "1"), "I"),
       additionalLines: []
     }),
     VM: (component, context) => ({
@@ -528,6 +538,8 @@
     const buildNets = requireSchematicMethod("buildNets");
     const isElectricalComponentType = requireSchematicMethod("isElectricalComponentType");
     const parseSpdtSwitchValue = requireSchematicMethod("parseSpdtSwitchValue");
+    const getBuiltInComponentDefaults = requireSchematicMethod("getBuiltInComponentDefaults");
+    const componentDefaults = getBuiltInComponentDefaults();
     const nets = buildNets(model);
     const netResolution = resolveNetNames(model, nets);
     const netNames = netResolution.netNames;
@@ -570,7 +582,8 @@
       const built = builder(component, {
         pinNetMap,
         parseSpdtSwitchValue,
-        compileErrors
+        compileErrors,
+        componentDefaults
       });
       if (!built) {
         return;

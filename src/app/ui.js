@@ -420,9 +420,45 @@ const buildSettingsDialog = (container, config = {}) => {
   const onSchematicTextStyleChange = typeof config.onSchematicTextStyleChange === "function"
     ? config.onSchematicTextStyleChange
     : () => { };
+  const getComponentDefaultSpecs = typeof config.getComponentDefaultSpecs === "function"
+    ? config.getComponentDefaultSpecs
+    : () => [];
+  const getComponentDefaults = typeof config.getComponentDefaults === "function"
+    ? config.getComponentDefaults
+    : () => ({});
+  const onComponentDefaultChange = typeof config.onComponentDefaultChange === "function"
+    ? config.onComponentDefaultChange
+    : () => { };
+  const onApplyComponentDefaultsToExisting = typeof config.onApplyComponentDefaultsToExisting === "function"
+    ? config.onApplyComponentDefaultsToExisting
+    : () => { };
   const onResetSettings = typeof config.onResetSettings === "function"
     ? config.onResetSettings
     : () => { };
+  const getToolDisplayDefaults = typeof config.getToolDisplayDefaults === "function"
+    ? config.getToolDisplayDefaults
+    : () => ({ resistorStyle: "zigzag", groundVariant: "earth", groundColor: null });
+  const getResistorDisplayTypeOptions = typeof config.getResistorDisplayTypeOptions === "function"
+    ? config.getResistorDisplayTypeOptions
+    : () => [];
+  const getGroundDisplayTypeOptions = typeof config.getGroundDisplayTypeOptions === "function"
+    ? config.getGroundDisplayTypeOptions
+    : () => [];
+  const getWireDefaultColor = typeof config.getWireDefaultColor === "function"
+    ? config.getWireDefaultColor
+    : () => null;
+  const onToolDisplayDefaultChange = typeof config.onToolDisplayDefaultChange === "function"
+    ? config.onToolDisplayDefaultChange
+    : () => { };
+  const onWireDefaultColorChange = typeof config.onWireDefaultColorChange === "function"
+    ? config.onWireDefaultColorChange
+    : () => { };
+  const parseSwitchComponentDefaultValue = typeof config.parseSwitchComponentDefaultValue === "function"
+    ? config.parseSwitchComponentDefaultValue
+    : () => ({ ron: "0", roff: "" });
+  const createNetColorPicker = typeof config.createNetColorPicker === "function"
+    ? config.createNetColorPicker
+    : null;
   const settingsDialog = document.createElement("div");
   settingsDialog.className = "modal-backdrop hidden";
   settingsDialog.dataset.settingsDialog = "1";
@@ -430,14 +466,14 @@ const buildSettingsDialog = (container, config = {}) => {
   settingsDialog.setAttribute("aria-modal", "true");
   settingsDialog.hidden = true;
   const settingsPanel = document.createElement("div");
-  settingsPanel.className = "modal-dialog";
+  settingsPanel.className = "modal-dialog settings-modal-dialog";
   settingsPanel.dataset.settingsPanel = "1";
   const settingsTitle = document.createElement("div");
   settingsTitle.className = "modal-title";
   settingsTitle.dataset.settingsTitle = "1";
   settingsTitle.textContent = "Settings";
   const settingsBody = document.createElement("div");
-  settingsBody.className = "modal-body";
+  settingsBody.className = "modal-body settings-modal-body";
   settingsBody.dataset.settingsBody = "1";
   const autoSwitchToolUseRow = document.createElement("label");
   autoSwitchToolUseRow.className = "modal-field";
@@ -509,16 +545,247 @@ const buildSettingsDialog = (container, config = {}) => {
   const schematicTextItalicLabel = document.createElement("span");
   schematicTextItalicLabel.textContent = "Schematic text italic";
   schematicTextItalicRow.append(schematicTextItalicToggle, schematicTextItalicLabel);
+  const componentDefaultSpecsRaw = getComponentDefaultSpecs();
+  const componentDefaultSpecs = Array.isArray(componentDefaultSpecsRaw)
+    ? componentDefaultSpecsRaw
+      .map((entry) => ({
+        type: String(entry?.type ?? "").trim().toUpperCase(),
+        label: String(entry?.label ?? "").trim(),
+        valueLabel: String(entry?.valueLabel ?? "").trim(),
+        unit: String(entry?.unit ?? "").trim()
+      }))
+      .filter((entry) => entry.type)
+    : [];
+  const componentDefaultsTitle = document.createElement("div");
+  componentDefaultsTitle.className = "modal-subtitle";
+  componentDefaultsTitle.textContent = "Component defaults (new placements)";
+  const resistorDisplayTypeSelect = document.createElement("select");
+  resistorDisplayTypeSelect.dataset.settingsToolDisplayResistorStyle = "1";
+  const resistorDisplayTypeOptions = Array.isArray(getResistorDisplayTypeOptions())
+    ? getResistorDisplayTypeOptions()
+    : [];
+  resistorDisplayTypeOptions.forEach((entry) => {
+    const value = String(entry?.value ?? "").trim().toLowerCase();
+    if (!value) {
+      return;
+    }
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = String(entry?.label ?? value).trim() || value;
+    resistorDisplayTypeSelect.appendChild(option);
+  });
+  const componentDefaultRows = componentDefaultSpecs.map((spec) => {
+    const row = document.createElement("div");
+    row.className = "modal-field settings-component-default-row";
+    row.dataset.settingsComponentDefaultRow = spec.type;
+    const typeLabel = document.createElement("span");
+    typeLabel.dataset.settingsComponentDefaultLabel = spec.type;
+    typeLabel.textContent = spec.label || spec.type;
+    const valueInput = document.createElement("input");
+    valueInput.type = "text";
+    valueInput.className = "settings-short-value-input";
+    valueInput.dataset.settingsComponentDefaultValue = spec.type;
+    valueInput.placeholder = spec.valueLabel || "Value";
+    const valueLabel = document.createElement("span");
+    valueLabel.textContent = `${spec.valueLabel || "Value"}:`;
+    const valueUnit = document.createElement("span");
+    valueUnit.className = "inline-edit-unit";
+    valueUnit.dataset.settingsComponentDefaultUnit = spec.type;
+    valueUnit.textContent = spec.unit || "";
+    valueUnit.hidden = !spec.unit;
+    const switchRonLabel = document.createElement("span");
+    switchRonLabel.textContent = "Ron:";
+    const switchRonInput = document.createElement("input");
+    switchRonInput.type = "text";
+    switchRonInput.className = "settings-short-value-input";
+    switchRonInput.dataset.settingsComponentDefaultSwitchRon = spec.type;
+    switchRonInput.placeholder = "0";
+    const switchRonUnit = document.createElement("span");
+    switchRonUnit.className = "inline-edit-unit";
+    switchRonUnit.textContent = spec.unit || "\u03a9";
+    const switchRoffLabel = document.createElement("span");
+    switchRoffLabel.textContent = "Roff:";
+    const switchRoffInput = document.createElement("input");
+    switchRoffInput.type = "text";
+    switchRoffInput.className = "settings-short-value-input";
+    switchRoffInput.dataset.settingsComponentDefaultSwitchRoff = spec.type;
+    switchRoffInput.placeholder = "open";
+    const switchRoffUnit = document.createElement("span");
+    switchRoffUnit.className = "inline-edit-unit";
+    switchRoffUnit.textContent = spec.unit || "\u03a9";
+    const isSwitchDefaults = spec.type === "SW";
+    let colorPicker = null;
+    if (typeof createNetColorPicker === "function") {
+      colorPicker = createNetColorPicker({
+        rowClassName: "schematic-net-color-row settings-component-default-color-picker",
+        swatchAttribute: "data-settings-component-default-color-swatch",
+        labelText: "Color:",
+        decorateSwatch: (button) => {
+          button.dataset.settingsComponentDefaultColorType = spec.type;
+        },
+        onPick: (color) => {
+          const currentColor = String(colorClear.dataset.settingsComponentDefaultCurrentColor ?? "").trim().toLowerCase();
+          const normalizedPick = String(color ?? "").trim().toLowerCase();
+          const nextColor = currentColor === normalizedPick ? null : normalizedPick;
+          onComponentDefaultChange(spec.type, { netColor: nextColor });
+          colorClear.dataset.settingsComponentDefaultCurrentColor = nextColor ?? "";
+          colorPicker?.setSelected(nextColor);
+        }
+      });
+      colorPicker.row.dataset.settingsComponentDefaultColorRow = spec.type;
+    }
+    const colorClear = document.createElement("button");
+    colorClear.type = "button";
+    colorClear.className = "secondary settings-component-default-color-clear";
+    colorClear.textContent = "Default";
+    colorClear.dataset.settingsComponentDefaultColorClear = spec.type;
+    colorClear.dataset.settingsComponentDefaultCurrentColor = "";
+    colorClear.addEventListener("click", () => {
+      onComponentDefaultChange(spec.type, { netColor: null });
+      colorClear.dataset.settingsComponentDefaultCurrentColor = "";
+      colorPicker?.setSelected(null);
+    });
+    row.append(typeLabel);
+    if (isSwitchDefaults) {
+      row.append(
+        switchRonLabel,
+        switchRonInput,
+        switchRonUnit,
+        switchRoffLabel,
+        switchRoffInput,
+        switchRoffUnit
+      );
+    } else {
+      row.append(valueLabel, valueInput, valueUnit);
+      if (spec.type === "R") {
+        const resistorDisplayTypeLabel = document.createElement("span");
+        resistorDisplayTypeLabel.textContent = "Type:";
+        row.append(resistorDisplayTypeLabel, resistorDisplayTypeSelect);
+      }
+    }
+    if (colorPicker?.row) {
+      row.append(colorPicker.row);
+    }
+    row.append(colorClear);
+    return {
+      ...spec,
+      row,
+      valueInput,
+      valueUnit,
+      switchRonInput,
+      switchRoffInput,
+      colorPicker,
+      colorClear
+    };
+  });
+  const displayDefaultsTitle = document.createElement("div");
+  displayDefaultsTitle.className = "modal-subtitle";
+  displayDefaultsTitle.textContent = "Tool display defaults";
+  const groundDisplayTypeRow = document.createElement("label");
+  groundDisplayTypeRow.className = "modal-field";
+  const groundDisplayTypeLabel = document.createElement("span");
+  groundDisplayTypeLabel.textContent = "Ground display type";
+  const groundDisplayTypeSelect = document.createElement("select");
+  groundDisplayTypeSelect.dataset.settingsToolDisplayGroundVariant = "1";
+  const groundDisplayTypeOptions = Array.isArray(getGroundDisplayTypeOptions())
+    ? getGroundDisplayTypeOptions()
+    : [];
+  groundDisplayTypeOptions.forEach((entry) => {
+    const value = String(entry?.value ?? "").trim().toLowerCase();
+    if (!value) {
+      return;
+    }
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = String(entry?.label ?? value).trim() || value;
+    groundDisplayTypeSelect.appendChild(option);
+  });
+  groundDisplayTypeRow.append(groundDisplayTypeLabel, groundDisplayTypeSelect);
+  let groundColorPicker = null;
+  if (typeof createNetColorPicker === "function") {
+    groundColorPicker = createNetColorPicker({
+      rowClassName: "schematic-net-color-row settings-component-default-color-picker",
+      swatchAttribute: "data-settings-tool-display-ground-color-swatch",
+      labelText: "Ground color:",
+      onPick: (color) => {
+        const currentColor = String(groundColorClear.dataset.settingsToolDisplayGroundColorCurrentColor ?? "").trim().toLowerCase();
+        const normalizedPick = String(color ?? "").trim().toLowerCase();
+        const nextColor = currentColor === normalizedPick ? null : normalizedPick;
+        onToolDisplayDefaultChange("groundColor", nextColor);
+        groundColorClear.dataset.settingsToolDisplayGroundColorCurrentColor = nextColor ?? "";
+        groundColorPicker?.setSelected(nextColor);
+      }
+    });
+  }
+  const groundColorRow = groundColorPicker?.row ?? document.createElement("label");
+  groundColorRow.dataset.settingsToolDisplayGroundColorRow = "1";
+  const groundColorClear = document.createElement("button");
+  groundColorClear.type = "button";
+  groundColorClear.className = "secondary settings-component-default-color-clear";
+  groundColorClear.textContent = "Default";
+  groundColorClear.dataset.settingsToolDisplayGroundColorClear = "1";
+  groundColorClear.dataset.settingsToolDisplayGroundColorCurrentColor = "";
+  groundColorClear.addEventListener("click", () => {
+    onToolDisplayDefaultChange("groundColor", null);
+    groundColorClear.dataset.settingsToolDisplayGroundColorCurrentColor = "";
+    groundColorPicker?.setSelected(null);
+  });
+  groundColorRow.append(groundColorClear);
+  const groundDefaultsGroup = document.createElement("div");
+  groundDefaultsGroup.className = "settings-ground-default-group";
+  groundDefaultsGroup.dataset.settingsToolDisplayGroundGroup = "1";
+  groundDefaultsGroup.append(groundDisplayTypeRow, groundColorRow);
+  let wireDefaultColorPicker = null;
+  if (typeof createNetColorPicker === "function") {
+    wireDefaultColorPicker = createNetColorPicker({
+      rowClassName: "schematic-net-color-row settings-component-default-color-picker",
+      swatchAttribute: "data-settings-wire-default-color-swatch",
+      labelText: "Wire default color:",
+      onPick: (color) => {
+        const currentColor = String(wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor ?? "").trim().toLowerCase();
+        const normalizedPick = String(color ?? "").trim().toLowerCase();
+        const nextColor = currentColor === normalizedPick ? null : normalizedPick;
+        onWireDefaultColorChange(nextColor);
+        wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor = nextColor ?? "";
+        wireDefaultColorPicker?.setSelected(nextColor);
+      }
+    });
+  }
+  const wireDefaultColorRow = wireDefaultColorPicker?.row ?? document.createElement("label");
+  wireDefaultColorRow.dataset.settingsWireDefaultColorRow = "1";
+  const wireDefaultColorClear = document.createElement("button");
+  wireDefaultColorClear.type = "button";
+  wireDefaultColorClear.className = "secondary settings-component-default-color-clear";
+  wireDefaultColorClear.textContent = "Default";
+  wireDefaultColorClear.dataset.settingsWireDefaultColorClear = "1";
+  wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor = "";
+  wireDefaultColorClear.addEventListener("click", () => {
+    onWireDefaultColorChange(null);
+    wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor = "";
+    wireDefaultColorPicker?.setSelected(null);
+  });
+  wireDefaultColorRow.append(wireDefaultColorClear);
   settingsBody.append(
     autoSwitchToolUseRow,
     autoSwitchWireUseRow,
     schematicTextFontRow,
     schematicTextSizeRow,
     schematicTextBoldRow,
-    schematicTextItalicRow
+    schematicTextItalicRow,
+    componentDefaultsTitle,
+    ...componentDefaultRows.map((entry) => entry.row),
+    displayDefaultsTitle,
+    groundDefaultsGroup,
+    wireDefaultColorRow
   );
   const settingsActions = document.createElement("div");
   settingsActions.className = "modal-actions";
+  const settingsApplyComponentDefaults = document.createElement("button");
+  settingsApplyComponentDefaults.type = "button";
+  settingsApplyComponentDefaults.className = "secondary";
+  settingsApplyComponentDefaults.textContent = "Apply defaults to existing";
+  settingsApplyComponentDefaults.dataset.settingsApplyComponentDefaults = "1";
+  settingsApplyComponentDefaults.hidden = componentDefaultRows.length < 1;
   const settingsReset = document.createElement("button");
   settingsReset.type = "button";
   settingsReset.className = "secondary";
@@ -528,7 +795,7 @@ const buildSettingsDialog = (container, config = {}) => {
   settingsClose.type = "button";
   settingsClose.textContent = "Close";
   settingsClose.dataset.settingsClose = "1";
-  settingsActions.append(settingsReset, settingsClose);
+  settingsActions.append(settingsApplyComponentDefaults, settingsReset, settingsClose);
   settingsPanel.append(settingsTitle, settingsBody, settingsActions);
   settingsDialog.append(settingsPanel);
   container.appendChild(settingsDialog);
@@ -548,6 +815,42 @@ const buildSettingsDialog = (container, config = {}) => {
       : String(DEFAULT_SCHEMATIC_TEXT_STYLE.size);
     schematicTextBoldToggle.checked = textSettings?.bold === true;
     schematicTextItalicToggle.checked = textSettings?.italic === true;
+    const componentDefaults = getComponentDefaults();
+    componentDefaultRows.forEach((entry) => {
+      const typeDefaults = componentDefaults && typeof componentDefaults === "object"
+        ? componentDefaults[entry.type]
+        : null;
+      const normalizedValue = String(typeDefaults?.value ?? "");
+      if (entry.type === "SW") {
+        const parsedSwitchDefaults = parseSwitchComponentDefaultValue(normalizedValue);
+        entry.switchRonInput.value = String(parsedSwitchDefaults?.ron ?? "0");
+        entry.switchRoffInput.value = String(parsedSwitchDefaults?.roff ?? "");
+      } else {
+        entry.valueInput.value = normalizedValue;
+      }
+      const normalizedColor = String(typeDefaults?.netColor ?? "").trim().toLowerCase();
+      entry.colorClear.dataset.settingsComponentDefaultCurrentColor = normalizedColor;
+      entry.colorPicker?.setSelected(normalizedColor);
+    });
+    const displayDefaults = getToolDisplayDefaults();
+    const normalizedResistorStyle = String(displayDefaults?.resistorStyle ?? "").trim().toLowerCase();
+    const normalizedGroundVariant = String(displayDefaults?.groundVariant ?? "").trim().toLowerCase();
+    const hasResistorStyleOption = Array.from(resistorDisplayTypeSelect.options)
+      .some((option) => option.value === normalizedResistorStyle);
+    const hasGroundVariantOption = Array.from(groundDisplayTypeSelect.options)
+      .some((option) => option.value === normalizedGroundVariant);
+    if (hasResistorStyleOption) {
+      resistorDisplayTypeSelect.value = normalizedResistorStyle;
+    }
+    if (hasGroundVariantOption) {
+      groundDisplayTypeSelect.value = normalizedGroundVariant;
+    }
+    const normalizedGroundColor = String(displayDefaults?.groundColor ?? "").trim().toLowerCase();
+    groundColorClear.dataset.settingsToolDisplayGroundColorCurrentColor = normalizedGroundColor;
+    groundColorPicker?.setSelected(normalizedGroundColor);
+    const normalizedWireDefaultColor = String(getWireDefaultColor() ?? "").trim().toLowerCase();
+    wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor = normalizedWireDefaultColor;
+    wireDefaultColorPicker?.setSelected(normalizedWireDefaultColor);
   };
   const openSettingsDialog = () => {
     syncSettingsState();
@@ -577,6 +880,29 @@ const buildSettingsDialog = (container, config = {}) => {
   });
   schematicTextItalicToggle.addEventListener("change", () => {
     onSchematicTextStyleChange({ italic: schematicTextItalicToggle.checked });
+  });
+  resistorDisplayTypeSelect.addEventListener("change", () => {
+    onToolDisplayDefaultChange("resistorStyle", resistorDisplayTypeSelect.value);
+  });
+  groundDisplayTypeSelect.addEventListener("change", () => {
+    onToolDisplayDefaultChange("groundVariant", groundDisplayTypeSelect.value);
+  });
+  componentDefaultRows.forEach((entry) => {
+    if (entry.type === "SW") {
+      entry.switchRonInput.addEventListener("change", () => {
+        onComponentDefaultChange(entry.type, { switchRon: entry.switchRonInput.value });
+      });
+      entry.switchRoffInput.addEventListener("change", () => {
+        onComponentDefaultChange(entry.type, { switchRoff: entry.switchRoffInput.value });
+      });
+      return;
+    }
+    entry.valueInput.addEventListener("change", () => {
+      onComponentDefaultChange(entry.type, { value: entry.valueInput.value });
+    });
+  });
+  settingsApplyComponentDefaults.addEventListener("click", () => {
+    onApplyComponentDefaultsToExisting();
   });
   settingsReset.addEventListener("click", () => {
     onResetSettings();
@@ -626,6 +952,9 @@ function createUI(container, state, actions) {
   let autoSwitchToSelectOnPlace = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_PLACE;
   let autoSwitchToSelectOnWire = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE;
   let schematicTextStyle = { ...DEFAULT_SCHEMATIC_TEXT_STYLE };
+  let componentDefaults = {};
+  let wireDefaultColor = null;
+  let toolDisplayDefaults = { resistorStyle: "zigzag", groundVariant: "earth", groundColor: null };
   let activeTraceHighlightTokens = new Set();
   let activeTraceSelectionTokens = new Set();
   let activeTraceHoverTokens = new Set();
@@ -755,6 +1084,17 @@ function createUI(container, state, actions) {
     normalizeTextFont: requireSchematicMethod("normalizeTextFont"),
     normalizeTextSize: requireSchematicMethod("normalizeTextSize"),
     getDefaultTextStyle: requireSchematicMethod("getDefaultTextStyle")
+  });
+  const componentDefaultsApi = Object.freeze({
+    listComponentDefaultTypes: requireSchematicMethod("listComponentDefaultTypes"),
+    getBuiltInComponentDefaults: requireSchematicMethod("getBuiltInComponentDefaults"),
+    normalizeComponentDefaults: requireSchematicMethod("normalizeComponentDefaults")
+  });
+  const componentDisplayApi = Object.freeze({
+    normalizeResistorStyle: requireSchematicMethod("normalizeResistorStyle"),
+    listResistorStyles: requireSchematicMethod("listResistorStyles"),
+    normalizeGroundVariant: requireSchematicMethod("normalizeGroundVariant"),
+    listGroundVariants: requireSchematicMethod("listGroundVariants")
   });
   const elementCatalogApi = Object.freeze({
     listElementDefinitions: requireSchematicMethod("listElementDefinitions"),
@@ -1220,17 +1560,150 @@ function createUI(container, state, actions) {
         : base.italic === true
     };
   };
+  const listComponentDefaultTypes = () => {
+    const raw = componentDefaultsApi.listComponentDefaultTypes();
+    if (!Array.isArray(raw) || !raw.length) {
+      throw new Error("Schematic API listComponentDefaultTypes() returned invalid payload.");
+    }
+    return raw
+      .map((entry) => String(entry ?? "").trim().toUpperCase())
+      .filter(Boolean);
+  };
+  const getBuiltInComponentDefaults = () => {
+    return componentDefaultsApi.normalizeComponentDefaults(componentDefaultsApi.getBuiltInComponentDefaults());
+  };
+  const normalizeComponentDefaults = (value, fallback = getBuiltInComponentDefaults()) => {
+    return componentDefaultsApi.normalizeComponentDefaults(value, fallback);
+  };
+  const getBuiltInToolDisplayDefaults = () => ({
+    resistorStyle: componentDisplayApi.normalizeResistorStyle("zigzag"),
+    groundVariant: componentDisplayApi.normalizeGroundVariant("earth"),
+    groundColor: null
+  });
+  const normalizeToolDisplayDefaults = (value, fallback = getBuiltInToolDisplayDefaults()) => {
+    const source = value && typeof value === "object" ? value : {};
+    const base = fallback && typeof fallback === "object" ? fallback : getBuiltInToolDisplayDefaults();
+    return {
+      resistorStyle: componentDisplayApi.normalizeResistorStyle(
+        Object.prototype.hasOwnProperty.call(source, "resistorStyle")
+          ? source.resistorStyle
+          : base.resistorStyle
+      ),
+      groundVariant: componentDisplayApi.normalizeGroundVariant(
+        Object.prototype.hasOwnProperty.call(source, "groundVariant")
+          ? source.groundVariant
+          : base.groundVariant
+      ),
+      groundColor: normalizeWireDefaultColor(
+        Object.prototype.hasOwnProperty.call(source, "groundColor")
+          ? source.groundColor
+          : undefined,
+        base.groundColor
+      )
+    };
+  };
+  const normalizeWireDefaultColor = (value, fallback = null) => {
+    if (value === undefined) {
+      return normalizeNetColorValue(fallback) ?? null;
+    }
+    if (value === null || String(value ?? "").trim() === "") {
+      return null;
+    }
+    const normalized = normalizeNetColorValue(value);
+    if (normalized) {
+      return normalized;
+    }
+    return normalizeNetColorValue(fallback) ?? null;
+  };
+  const getResistorDisplayTypeOptions = () => {
+    const options = componentDisplayApi.listResistorStyles();
+    return (Array.isArray(options) ? options : [])
+      .map((value) => {
+        const normalized = componentDisplayApi.normalizeResistorStyle(value);
+        const label = normalized === "box" ? "Box" : "Zigzag";
+        return { value: normalized, label };
+      });
+  };
+  const getGroundDisplayTypeOptions = () => {
+    const options = componentDisplayApi.listGroundVariants();
+    return (Array.isArray(options) ? options : [])
+      .map((value) => {
+        const normalized = componentDisplayApi.normalizeGroundVariant(value);
+        const label = normalized === "chassis"
+          ? "Chassis"
+          : (normalized === "signal" ? "Signal" : "Earth");
+        return { value: normalized, label };
+      });
+  };
+  const buildComponentDefaultSpecs = () => {
+    const definitionMap = new Map(
+      elementCatalogApi
+        .listElementDefinitions()
+        .map((definition) => [String(definition?.type ?? "").trim().toUpperCase(), definition])
+    );
+    return listComponentDefaultTypes().map((type) => {
+      const definition = definitionMap.get(type) ?? null;
+      const valueField = uiInlineEditorDomain.normalizeValueFieldMeta(elementCatalogApi.getValueFieldMeta(type));
+      return Object.freeze({
+        type,
+        label: String(definition?.label ?? type).trim() || type,
+        valueLabel: String(valueField?.label ?? "Value").trim() || "Value",
+        unit: String(valueField?.unit ?? "").trim()
+      });
+    });
+  };
+  const COMPONENT_DEFAULT_SPECS = Object.freeze(buildComponentDefaultSpecs());
   const applySchematicTextStyleToEditor = () => {
     if (!schematicEditor || typeof schematicEditor.setSchematicTextStyle !== "function") {
       return;
     }
     schematicEditor.setSchematicTextStyle(schematicTextStyle);
   };
+  const applyComponentDefaultsToEditor = () => {
+    if (!schematicEditor || typeof schematicEditor.setComponentDefaults !== "function") {
+      return;
+    }
+    schematicEditor.setComponentDefaults(componentDefaults);
+  };
+  const applyWireDefaultColorToEditor = () => {
+    if (!schematicEditor || typeof schematicEditor.setWireDefaultColor !== "function") {
+      return;
+    }
+    schematicEditor.setWireDefaultColor(wireDefaultColor);
+  };
+  const applyToolDisplayDefaultsToEditor = () => {
+    if (!schematicEditor || typeof schematicEditor.setPlacementDefaults !== "function") {
+      return;
+    }
+    schematicEditor.setPlacementDefaults(toolDisplayDefaults);
+  };
   schematicTextStyle = normalizeSchematicTextStyle(schematicTextStyle);
+  componentDefaults = normalizeComponentDefaults(componentDefaults);
+  wireDefaultColor = normalizeWireDefaultColor(wireDefaultColor);
+  toolDisplayDefaults = normalizeToolDisplayDefaults(toolDisplayDefaults);
 
   const normalizeSpdtThrow = (value) => uiInlineEditorDomain.normalizeSpdtThrow(value);
   const parseSpdtSwitchValueSafe = (value) => uiInlineEditorDomain.parseSpdtSwitchValueSafe(parseSpdtSwitchValue, value);
   const formatSpdtSwitchValue = (stateValue) => uiInlineEditorDomain.formatSpdtSwitchValue(stateValue);
+  const parseSwitchComponentDefaultValue = (value) => {
+    const parsed = parseSpdtSwitchValueSafe(value);
+    return {
+      ron: String(parsed?.ron ?? "0").trim() || "0",
+      roff: String(parsed?.roff ?? "").trim()
+    };
+  };
+  const formatSwitchComponentDefaultValue = (stateValue) => {
+    const ron = String(stateValue?.ron ?? "").trim() || "0";
+    const roff = String(stateValue?.roff ?? "").trim();
+    const tokens = [];
+    if (ron !== "0") {
+      tokens.push(`ron=${ron}`);
+    }
+    if (roff) {
+      tokens.push(`roff=${roff}`);
+    }
+    return tokens.join(" ");
+  };
   const getDefaultBoxAnnotationStyle = (options) => {
     const style = boxAnnotationApi.getDefaultBoxAnnotationStyle(options);
     if (!style || typeof style !== "object") {
@@ -1280,14 +1753,24 @@ function createUI(container, state, actions) {
     }
     return text;
   };
-  const createNetColorPicker = ({ rowAttribute, swatchAttribute, onPick }) => {
+  const createNetColorPicker = (input) => {
+    const options = input && typeof input === "object" ? input : {};
+    const rowAttribute = options.rowAttribute;
+    const swatchAttribute = options.swatchAttribute;
+    const onPick = options.onPick;
+    const labelText = String(options.labelText ?? "Color:");
+    const rowClassName = String(options.rowClassName ?? "inline-edit-row schematic-net-color-row").trim()
+      || "inline-edit-row schematic-net-color-row";
+    const decorateSwatch = typeof options.decorateSwatch === "function"
+      ? options.decorateSwatch
+      : () => { };
     const row = document.createElement("label");
-    row.className = "inline-edit-row schematic-net-color-row";
+    row.className = rowClassName;
     if (rowAttribute) {
       row.setAttribute(rowAttribute, "1");
     }
     const label = document.createElement("span");
-    label.textContent = "Color:";
+    label.textContent = labelText;
     const swatchGrid = document.createElement("div");
     swatchGrid.className = "schematic-net-color-grid";
     const swatches = [];
@@ -1298,9 +1781,11 @@ function createUI(container, state, actions) {
       button.style.setProperty("--swatch-color", color);
       button.setAttribute("aria-label", `NET color ${color}`);
       button.setAttribute("aria-pressed", "false");
+      button.setAttribute("data-net-color-value", color);
       if (swatchAttribute) {
         button.setAttribute(swatchAttribute, color);
       }
+      decorateSwatch(button, color);
       button.addEventListener("click", () => {
         if (typeof onPick === "function") {
           onPick(color);
@@ -1313,7 +1798,11 @@ function createUI(container, state, actions) {
     const setSelected = (value) => {
       const normalized = normalizeNetColorValue(value);
       swatches.forEach((button) => {
-        const swatchColor = normalizeNetColorValue(button.getAttribute(swatchAttribute || ""));
+        const swatchColor = normalizeNetColorValue(
+          swatchAttribute
+            ? button.getAttribute(swatchAttribute)
+            : button.getAttribute("data-net-color-value")
+        );
         const selected = Boolean(normalized && swatchColor === normalized);
         button.classList.toggle("active", selected);
         button.setAttribute("aria-pressed", selected ? "true" : "false");
@@ -4125,6 +4614,9 @@ function createUI(container, state, actions) {
     if (!schematicEditor && typeof api.createEditor === "function") {
       schematicEditor = api.createEditor(schematicCanvasWrap, schematicModel, {
         schematicTextStyle,
+        componentDefaults,
+        wireDefaultColor,
+        placementDefaults: toolDisplayDefaults,
         onSelectionChange: (component) => {
           updateSchematicProps(component);
           if (isApplyingPlotDrivenSchematicSelection) {
@@ -4529,6 +5021,7 @@ function createUI(container, state, actions) {
       });
       schematicPanel._schematicEditor = schematicEditor;
       applySchematicTextStyleToEditor();
+      applyToolDisplayDefaultsToEditor();
       setActiveSchematicTool(schematicTool);
       syncSchematicGrid();
     }
@@ -5001,7 +5494,10 @@ function createUI(container, state, actions) {
           size: schematicTextStyle.size,
           bold: schematicTextStyle.bold === true,
           italic: schematicTextStyle.italic === true
-        }
+        },
+        componentDefaults,
+        wireDefaultColor,
+        toolDisplayDefaults
       }
     };
     const results = includeResults ? buildResultsCache() : null;
@@ -5283,6 +5779,15 @@ function createUI(container, state, actions) {
     if (typeof extracted.ui?.settings?.autoSwitchToSelectOnWire === "boolean") {
       autoSwitchToSelectOnWire = extracted.ui.settings.autoSwitchToSelectOnWire;
     }
+    componentDefaults = normalizeComponentDefaults(extracted.ui?.settings?.componentDefaults, getBuiltInComponentDefaults());
+    applyComponentDefaultsToEditor();
+    wireDefaultColor = normalizeWireDefaultColor(extracted.ui?.settings?.wireDefaultColor, null);
+    applyWireDefaultColorToEditor();
+    toolDisplayDefaults = normalizeToolDisplayDefaults(
+      extracted.ui?.settings?.toolDisplayDefaults,
+      getBuiltInToolDisplayDefaults()
+    );
+    applyToolDisplayDefaultsToEditor();
     const extractedSchematicText = extracted.ui?.settings?.schematicText;
     const hasSchematicTextOverride = extractedSchematicText
       && typeof extractedSchematicText === "object"
@@ -8364,12 +8869,84 @@ function createUI(container, state, actions) {
       applySchematicTextStyleToEditor();
       queueAutosave();
     },
+    getComponentDefaultSpecs: () => COMPONENT_DEFAULT_SPECS.slice(),
+    getComponentDefaults: () => normalizeComponentDefaults(componentDefaults, componentDefaults),
+    getToolDisplayDefaults: () => normalizeToolDisplayDefaults(toolDisplayDefaults, toolDisplayDefaults),
+    getWireDefaultColor: () => normalizeWireDefaultColor(wireDefaultColor, wireDefaultColor),
+    getResistorDisplayTypeOptions,
+    getGroundDisplayTypeOptions,
+    parseSwitchComponentDefaultValue,
+    createNetColorPicker,
+    onComponentDefaultChange: (type, updates) => {
+      const key = String(type ?? "").trim().toUpperCase();
+      const current = componentDefaults && typeof componentDefaults === "object"
+        ? componentDefaults[key]
+        : null;
+      const hasSwitchRon = Object.prototype.hasOwnProperty.call(updates ?? {}, "switchRon");
+      const hasSwitchRoff = Object.prototype.hasOwnProperty.call(updates ?? {}, "switchRoff");
+      let nextValue = Object.prototype.hasOwnProperty.call(updates ?? {}, "value")
+        ? updates.value
+        : current?.value;
+      if (key === "SW" && (hasSwitchRon || hasSwitchRoff)) {
+        const currentSwitchDefaults = parseSwitchComponentDefaultValue(current?.value);
+        nextValue = formatSwitchComponentDefaultValue({
+          ron: hasSwitchRon ? updates.switchRon : currentSwitchDefaults.ron,
+          roff: hasSwitchRoff ? updates.switchRoff : currentSwitchDefaults.roff
+        });
+      }
+      const nextColor = Object.prototype.hasOwnProperty.call(updates ?? {}, "netColor")
+        ? updates.netColor
+        : current?.netColor;
+      componentDefaults = normalizeComponentDefaults({
+        ...componentDefaults,
+        [key]: {
+          value: nextValue,
+          netColor: nextColor
+        }
+      }, componentDefaults);
+      applyComponentDefaultsToEditor();
+      queueAutosave();
+    },
+    onToolDisplayDefaultChange: (key, value) => {
+      const normalizedKey = String(key ?? "").trim();
+      if (normalizedKey !== "resistorStyle"
+        && normalizedKey !== "groundVariant"
+        && normalizedKey !== "groundColor") {
+        return;
+      }
+      toolDisplayDefaults = normalizeToolDisplayDefaults({
+        ...toolDisplayDefaults,
+        [normalizedKey]: value
+      }, toolDisplayDefaults);
+      applyToolDisplayDefaultsToEditor();
+      queueAutosave();
+    },
+    onWireDefaultColorChange: (value) => {
+      wireDefaultColor = normalizeWireDefaultColor(value, wireDefaultColor);
+      applyWireDefaultColorToEditor();
+      queueAutosave();
+    },
+    onApplyComponentDefaultsToExisting: () => {
+      if (!schematicEditor || typeof schematicEditor.applyComponentDefaultsToExisting !== "function") {
+        return;
+      }
+      const result = schematicEditor.applyComponentDefaultsToExisting(componentDefaults);
+      if (result && typeof result === "object" && Number(result.updatedComponents) > 0) {
+        queueAutosave();
+      }
+    },
     onResetSettings: () => {
       autoSwitchToSelectOnPlace = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_PLACE;
       autoSwitchToSelectOnWire = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE;
       schematicTextStyle = { ...DEFAULT_SCHEMATIC_TEXT_STYLE };
       schematicTextStyle = normalizeSchematicTextStyle(schematicTextStyle);
+      componentDefaults = getBuiltInComponentDefaults();
+      wireDefaultColor = normalizeWireDefaultColor(null);
+      toolDisplayDefaults = getBuiltInToolDisplayDefaults();
       applySchematicTextStyleToEditor();
+      applyComponentDefaultsToEditor();
+      applyWireDefaultColorToEditor();
+      applyToolDisplayDefaultsToEditor();
       queueAutosave();
     }
   });
