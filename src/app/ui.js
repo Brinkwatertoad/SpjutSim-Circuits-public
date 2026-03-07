@@ -678,13 +678,14 @@ const buildSettingsDialog = (container, config = {}) => {
       colorClear
     };
   });
-  const displayDefaultsTitle = document.createElement("div");
-  displayDefaultsTitle.className = "modal-subtitle";
-  displayDefaultsTitle.textContent = "Tool display defaults";
-  const groundDisplayTypeRow = document.createElement("label");
-  groundDisplayTypeRow.className = "modal-field";
+  const groundDefaultsRow = document.createElement("div");
+  groundDefaultsRow.className = "modal-field settings-component-default-row";
+  groundDefaultsRow.dataset.settingsComponentDefaultRow = "GND";
+  const groundDefaultsLabel = document.createElement("span");
+  groundDefaultsLabel.dataset.settingsComponentDefaultLabel = "GND";
+  groundDefaultsLabel.textContent = "Ground";
   const groundDisplayTypeLabel = document.createElement("span");
-  groundDisplayTypeLabel.textContent = "Ground display type";
+  groundDisplayTypeLabel.textContent = "Type:";
   const groundDisplayTypeSelect = document.createElement("select");
   groundDisplayTypeSelect.dataset.settingsToolDisplayGroundVariant = "1";
   const groundDisplayTypeOptions = Array.isArray(getGroundDisplayTypeOptions())
@@ -700,13 +701,12 @@ const buildSettingsDialog = (container, config = {}) => {
     option.textContent = String(entry?.label ?? value).trim() || value;
     groundDisplayTypeSelect.appendChild(option);
   });
-  groundDisplayTypeRow.append(groundDisplayTypeLabel, groundDisplayTypeSelect);
   let groundColorPicker = null;
   if (typeof createNetColorPicker === "function") {
     groundColorPicker = createNetColorPicker({
       rowClassName: "schematic-net-color-row settings-component-default-color-picker",
       swatchAttribute: "data-settings-tool-display-ground-color-swatch",
-      labelText: "Ground color:",
+      labelText: "Color:",
       onPick: (color) => {
         const currentColor = String(groundColorClear.dataset.settingsToolDisplayGroundColorCurrentColor ?? "").trim().toLowerCase();
         const normalizedPick = String(color ?? "").trim().toLowerCase();
@@ -717,8 +717,9 @@ const buildSettingsDialog = (container, config = {}) => {
       }
     });
   }
-  const groundColorRow = groundColorPicker?.row ?? document.createElement("label");
-  groundColorRow.dataset.settingsToolDisplayGroundColorRow = "1";
+  if (groundColorPicker?.row) {
+    groundColorPicker.row.dataset.settingsToolDisplayGroundColorRow = "1";
+  }
   const groundColorClear = document.createElement("button");
   groundColorClear.type = "button";
   groundColorClear.className = "secondary settings-component-default-color-clear";
@@ -730,17 +731,12 @@ const buildSettingsDialog = (container, config = {}) => {
     groundColorClear.dataset.settingsToolDisplayGroundColorCurrentColor = "";
     groundColorPicker?.setSelected(null);
   });
-  groundColorRow.append(groundColorClear);
-  const groundDefaultsGroup = document.createElement("div");
-  groundDefaultsGroup.className = "settings-ground-default-group";
-  groundDefaultsGroup.dataset.settingsToolDisplayGroundGroup = "1";
-  groundDefaultsGroup.append(groundDisplayTypeRow, groundColorRow);
   let wireDefaultColorPicker = null;
   if (typeof createNetColorPicker === "function") {
     wireDefaultColorPicker = createNetColorPicker({
       rowClassName: "schematic-net-color-row settings-component-default-color-picker",
       swatchAttribute: "data-settings-wire-default-color-swatch",
-      labelText: "Wire default color:",
+      labelText: "Color:",
       onPick: (color) => {
         const currentColor = String(wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor ?? "").trim().toLowerCase();
         const normalizedPick = String(color ?? "").trim().toLowerCase();
@@ -751,8 +747,6 @@ const buildSettingsDialog = (container, config = {}) => {
       }
     });
   }
-  const wireDefaultColorRow = wireDefaultColorPicker?.row ?? document.createElement("label");
-  wireDefaultColorRow.dataset.settingsWireDefaultColorRow = "1";
   const wireDefaultColorClear = document.createElement("button");
   wireDefaultColorClear.type = "button";
   wireDefaultColorClear.className = "secondary settings-component-default-color-clear";
@@ -764,7 +758,23 @@ const buildSettingsDialog = (container, config = {}) => {
     wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor = "";
     wireDefaultColorPicker?.setSelected(null);
   });
-  wireDefaultColorRow.append(wireDefaultColorClear);
+  const wireDefaultsRow = document.createElement("div");
+  wireDefaultsRow.className = "modal-field settings-component-default-row";
+  wireDefaultsRow.dataset.settingsComponentDefaultRow = "WIRE";
+  wireDefaultsRow.dataset.settingsWireDefaultColorRow = "1";
+  const wireDefaultsLabel = document.createElement("span");
+  wireDefaultsLabel.dataset.settingsComponentDefaultLabel = "WIRE";
+  wireDefaultsLabel.textContent = "Wire";
+  groundDefaultsRow.append(groundDefaultsLabel, groundDisplayTypeLabel, groundDisplayTypeSelect);
+  if (groundColorPicker?.row) {
+    groundDefaultsRow.append(groundColorPicker.row);
+  }
+  groundDefaultsRow.append(groundColorClear);
+  wireDefaultsRow.append(wireDefaultsLabel);
+  if (wireDefaultColorPicker?.row) {
+    wireDefaultsRow.append(wireDefaultColorPicker.row);
+  }
+  wireDefaultsRow.append(wireDefaultColorClear);
   settingsBody.append(
     autoSwitchToolUseRow,
     autoSwitchWireUseRow,
@@ -774,9 +784,8 @@ const buildSettingsDialog = (container, config = {}) => {
     schematicTextItalicRow,
     componentDefaultsTitle,
     ...componentDefaultRows.map((entry) => entry.row),
-    displayDefaultsTitle,
-    groundDefaultsGroup,
-    wireDefaultColorRow
+    groundDefaultsRow,
+    wireDefaultsRow
   );
   const settingsActions = document.createElement("div");
   settingsActions.className = "modal-actions";
@@ -2040,7 +2049,7 @@ function createUI(container, state, actions) {
       isElement: true
     }))
   ];
-  const tooltipNameOnlyTools = new Set(["ARR", "BOX"]);
+  const tooltipNameOnlyTools = new Set(["ARR", "BOX", "VM", "AM"]);
 
   const schematicToolButtons = schematicToolButtonEntries.map((entry) => {
     const button = document.createElement("button");
@@ -7727,6 +7736,11 @@ function createUI(container, state, actions) {
       }
       return;
     }
+    if (modifierKey && !event.shiftKey && (key === "," || key === "comma")) {
+      event.preventDefault();
+      runMenuAction("settings");
+      return;
+    }
     const target = event.target;
     const targetTag = target && target.tagName ? target.tagName.toLowerCase() : "";
     if (targetTag === "input" || targetTag === "textarea") {
@@ -8121,7 +8135,7 @@ function createUI(container, state, actions) {
         { id: "export-diagram", label: "Export Diagram..." },
         { id: "export-results", label: "Export Results..." },
         { divider: true, id: "settings" },
-        { id: "settings", label: "Settings..." }
+        { id: "settings", label: "Settings...", shortcut: "Ctrl+," }
       ],
       actionAttribute: "menuAction",
       showShortcuts: true

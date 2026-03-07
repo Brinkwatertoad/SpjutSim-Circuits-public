@@ -9524,7 +9524,10 @@
             return;
           }
           const points = buildOrthogonalWirePoints(start, end);
-          addWireInternal({ points }, { obstacles: branchObstacles });
+          addWireInternal({ points }, {
+            obstacles: branchObstacles,
+            applyDefaultColor: true
+          });
         });
       }
       if (state.drag.moved && state.drag.sharedPinAnchors?.length) {
@@ -9540,7 +9543,10 @@
             return;
           }
           const points = buildOrthogonalWirePoints(start, end);
-          addWireInternal({ points }, { obstacles: branchObstacles });
+          addWireInternal({ points }, {
+            obstacles: branchObstacles,
+            applyDefaultColor: true
+          });
         });
       }
       if (state.drag.moved) {

@@ -14,7 +14,7 @@
     catalogOrder: 70,
     classification: "electrical",
     help: {
-      title: "Voltmeter (VM)",
+      title: "Voltmeter",
       summary: "Measures voltage across two nodes.",
       definition: "A probe for observing voltage without affecting the circuit."
     },

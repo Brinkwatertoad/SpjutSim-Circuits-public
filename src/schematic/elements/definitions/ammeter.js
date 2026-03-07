@@ -14,7 +14,7 @@
     catalogOrder: 80,
     classification: "electrical",
     help: {
-      title: "Ammeter (AM)",
+      title: "Ammeter",
       summary: "Measures current through a branch.",
       definition: "A probe for observing current without affecting the circuit."
     },
