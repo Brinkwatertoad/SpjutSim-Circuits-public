@@ -268,10 +268,10 @@ ui = uiApi.createUI(root, state, {
     const message = { type: "init" };
     worker.postMessage(message);
   },
-  onRun: (netlist) => {
+  onRun: (netlist, signals) => {
     setStatus("running");
     ui.setError(undefined);
-    const message = { type: "run", kind: "op", netlist };
+    const message = { type: "run", kind: "op", netlist, signals };
     worker.postMessage(message);
   },
   onRunDc: (netlist, signals) => {

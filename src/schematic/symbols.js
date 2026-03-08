@@ -54,6 +54,14 @@
         { id: "B", name: "B", x: 20, y: 10 }
       ]
     },
+    D: {
+      type: "D",
+      label: "Diode",
+      pins: [
+        { id: "A", name: "A", x: -20, y: 0 },
+        { id: "K", name: "K", x: 20, y: 0 }
+      ]
+    },
     VM: {
       type: "VM",
       label: "Voltmeter",

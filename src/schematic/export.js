@@ -15,6 +15,10 @@
   const WIRE_PADDING = 4;
   const FONT_FAMILY = "\"Segoe UI\", Tahoma, sans-serif";
   const schematicApi = typeof self !== "undefined" ? (self.SpjutSimSchematic ?? {}) : {};
+  const wireRender = typeof self !== "undefined" ? (self.SpjutSimWireRender ?? null) : null;
+  if (!wireRender || typeof wireRender.buildWirePath !== "function") {
+    throw new Error("Wire render module unavailable. Check src/schematic/wire-render.js load order.");
+  }
   const renderPlanContractsModule = typeof self !== "undefined"
     ? (self.SpjutSimSchematicRenderPlanContracts ?? null)
     : null;
@@ -454,11 +458,7 @@
     const text = getNamedNodeLabelText(component);
     const baseStyle = resolveNetLabelStyle();
     const resolvedTextStyle = resolveSchematicTextStyle(schematicTextStyle);
-    const fontSize = Number(resolvedTextStyle.size);
-    const style = {
-      ...baseStyle,
-      fontSize: Number.isFinite(fontSize) ? fontSize : Number(baseStyle.fontSize)
-    };
+    const style = { ...baseStyle };
     const textWidth = measureTextWidth(
       text,
       Number(style.fontSize),
@@ -511,7 +511,7 @@
     const textX = getNamedNodeTextAnchorX(rotation, metrics, { textOnly });
     const fontSize = Number(metrics.style?.fontSize);
     const label = appendText(group, textX, textTransform.y, metrics.text, {
-      size: Number.isFinite(fontSize) ? fontSize : 12,
+      size: Number.isFinite(fontSize) ? fontSize : 11,
       fill: labelColor ?? STROKE,
       anchor: "middle",
       baseline: "middle",
@@ -1032,21 +1032,34 @@
     };
   };
 
-  const drawWire = (svg, wire, color) => {
+  const EXPORT_JUMP_RADIUS = 6;
+
+  const drawWire = (svg, wire, color, segments, pointKeys) => {
     const points = Array.isArray(wire.points) ? wire.points : [];
     if (points.length < 2) {
       return;
     }
-    const poly = document.createElementNS(SVG_NS, "polyline");
-    const pointString = points.map((pt) => `${pt.x},${pt.y}`).join(" ");
-    poly.setAttribute("points", pointString);
-    poly.setAttribute("fill", "none");
-    poly.setAttribute("stroke", color ?? STROKE);
-    poly.setAttribute("stroke-width", String(STROKE_WIDTH));
-    if (wire?.id) {
-      poly.setAttribute("data-wire-id", String(wire.id));
+    const pathInfo = wireRender.buildWirePath(points, wire.id, segments, pointKeys, {
+      allowHorizontalJumps: true,
+      allowVerticalJumps: true,
+      priority: wireRender.getWirePriority(wire),
+      jumpRadius: EXPORT_JUMP_RADIUS
+    });
+    if (!pathInfo.d) {
+      return;
     }
-    svg.appendChild(poly);
+    const path = appendPath(svg, pathInfo.d, {
+      stroke: color ?? STROKE,
+      width: STROKE_WIDTH,
+      cap: "round",
+      join: "round"
+    });
+    if (wire?.id) {
+      path.setAttribute("data-wire-id", String(wire.id));
+    }
+    if (pathInfo.hasJump) {
+      path.setAttribute("data-wire-jump", "1");
+    }
   };
 
   const isBackgroundAnnotationComponent = (component) => {
@@ -1087,7 +1100,8 @@
       return 0;
     }
     const value = helper(type, info.length, {
-      resistorStyle: component?.resistorStyle
+      resistorStyle: component?.resistorStyle,
+      diodeDisplayType: component?.diodeDisplayType
     });
     return Number.isFinite(value) && value > 0 ? value : 0;
   };
@@ -1536,7 +1550,8 @@
         length: info.length,
         rotation: info.angle,
         style: { stroke: componentColor ?? STROKE, width: STROKE_WIDTH },
-        resistorStyle: normalizeResistorStyleValue(component?.resistorStyle)
+        resistorStyle: normalizeResistorStyleValue(component?.resistorStyle),
+        diodeDisplayType: component?.diodeDisplayType
       })
       : false;
     if (!handled) {
@@ -1635,10 +1650,48 @@
       componentColor: normalizeNetColorValue(component?.netColor)
     });
     backgroundAnnotations.forEach((component) => drawComponentWithResolvedColors(component));
+    const segments = wireRender.collectWireSegments(wires);
+    const pointKeys = new Set();
+    const pointColorMap = new Map();
     wires.forEach((wire) => {
       const wireColor = normalizeNetColorValue(wireColors[String(wire?.id ?? "")])
         ?? normalizeNetColorValue(wire?.netColor);
-      drawWire(svg, wire, wireColor);
+      (wire.points ?? []).forEach((point) => {
+        const key = wireRender.pointKey(point);
+        pointKeys.add(key);
+        if (wireColor) {
+          if (!pointColorMap.has(key)) {
+            pointColorMap.set(key, wireColor);
+          }
+        }
+      });
+      drawWire(svg, wire, wireColor, segments, pointKeys);
+    });
+    const { pinCounts, combinedDegrees } = wireRender.collectJunctionInfo(
+      wires,
+      components,
+      isElectricalComponentType
+    );
+    combinedDegrees.forEach((degree, key) => {
+      if (degree < 3) {
+        return;
+      }
+      const parts = key.split(",");
+      if (parts.length !== 2) {
+        return;
+      }
+      const x = Number(parts[0]);
+      const y = Number(parts[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return;
+      }
+      const dotColor = pointColorMap.get(key) ?? STROKE;
+      const dot = appendCircle(svg, x, y, 3, { fill: dotColor, width: 0 });
+      if ((pinCounts.get(key) ?? 0) > 0) {
+        dot.setAttribute("data-terminal-junction", "1");
+      } else {
+        dot.setAttribute("data-junction", "1");
+      }
     });
     foregroundComponents.forEach((component) => drawComponentWithResolvedColors(component));
     return svg;

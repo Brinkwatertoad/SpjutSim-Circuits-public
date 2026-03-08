@@ -493,6 +493,63 @@
     return { line, additionalLines };
   };
 
+  // Maps diode element property keys to SPICE .model parameter names.
+  const DIODE_MODEL_PARAM_MAP = Object.freeze([
+    ["diodeIS",   "IS"],
+    ["diodeN",    "N"],
+    ["diodeRS",   "RS"],
+    ["diodeTT",   "TT"],
+    ["diodeCJO",  "CJO"],
+    ["diodeVJ",   "VJ"],
+    ["diodeM",    "M"],
+    ["diodeEG",   "EG"],
+    ["diodeXTI",  "XTI"],
+    ["diodeTNOM", "TNOM"],
+    ["diodeBV",   "BV"],
+    ["diodeIBV",  "IBV"],
+    ["diodeFC",   "FC"]
+  ]);
+
+  const buildDiodeModelLine = (component, modelName) => {
+    const params = [];
+    DIODE_MODEL_PARAM_MAP.forEach(([propKey, spiceName]) => {
+      const val = String(component?.[propKey] ?? "").trim();
+      if (val) {
+        params.push(`${spiceName}=${val}`);
+      }
+    });
+    const extra = String(component?.diodeExtra ?? "").trim();
+    if (extra) {
+      params.push(extra);
+    }
+    const paramStr = params.length ? `(${params.join(" ")})` : "";
+    return `.model ${modelName} D${paramStr}`;
+  };
+
+  const buildDiodeInstanceSuffix = (component) => {
+    const parts = [];
+    const area = String(component?.diodeArea ?? "").trim();
+    if (area) {
+      parts.push(`AREA=${area}`);
+    }
+    const temp = String(component?.diodeTEMP ?? "").trim();
+    if (temp) {
+      parts.push(`TEMP=${temp}`);
+    }
+    const dtemp = String(component?.diodeDTEMP ?? "").trim();
+    if (dtemp) {
+      parts.push(`DTEMP=${dtemp}`);
+    }
+    const ic = String(component?.diodeIC ?? "").trim();
+    if (ic) {
+      parts.push(`IC=${ic}`);
+    }
+    if (component?.diodeOFF === true || String(component?.diodeOFF ?? "").toLowerCase() === "true") {
+      parts.push("OFF");
+    }
+    return parts.length ? ` ${parts.join(" ")}` : "";
+  };
+
   const COMPONENT_NETLIST_LINE_BUILDERS = Object.freeze({
     R: (component, context) => ({
       line: buildLine(component, context?.pinNetMap, getComponentFallbackValue(context, "R", "1k"), "R"),
@@ -526,7 +583,24 @@
         : buildPrefixedLine(component, context?.pinNetMap, "0", "V"),
       additionalLines: []
     }),
-    SW: (component, context) => buildSwitchNetlistLines(component, context)
+    SW: (component, context) => buildSwitchNetlistLines(component, context),
+    D: (component, context) => {
+      const modelName = component.value
+        ? normalizeSpiceValue(String(component.value))
+        : getComponentFallbackValue(context, "D", "1N4148");
+      const baseLine = buildPrefixedLine(component, context?.pinNetMap, modelName, "D");
+      if (!baseLine) {
+        return { line: null, additionalLines: [], modelDefinitions: {} };
+      }
+      const suffix = buildDiodeInstanceSuffix(component);
+      const line = suffix ? `${baseLine}${suffix}` : baseLine;
+      const modelLine = buildDiodeModelLine(component, modelName);
+      return {
+        line,
+        additionalLines: [],
+        modelDefinitions: { [modelName]: modelLine }
+      };
+    }
   });
 
   /**
@@ -554,6 +628,7 @@
     const lineMap = [];
     const warnings = [];
     const componentLines = {};
+    const modelDefinitions = new Map(); // key → ".model ..." line, deduped
     const usedNetlistIdKeys = new Set();
     const nextNetlistIdSuffixByBaseKey = new Map();
     const pushLine = (text, metadata) => {
@@ -609,6 +684,21 @@
         const trimmedExtraLine = withUniqueNetlistId(extraLine, usedNetlistIdKeys, nextNetlistIdSuffixByBaseKey);
         pushLine(trimmedExtraLine, buildComponentLineMetadata(component, type, trimmedExtraLine));
       });
+      const builtModelDefs = built?.modelDefinitions;
+      if (builtModelDefs && typeof builtModelDefs === "object") {
+        Object.entries(builtModelDefs).forEach(([name, modelLine]) => {
+          const key = String(name ?? "").toLowerCase();
+          if (key && !modelDefinitions.has(key)) {
+            modelDefinitions.set(key, String(modelLine));
+          }
+        });
+      }
+    });
+
+    modelDefinitions.forEach((modelLine) => {
+      if (modelLine && modelLine.trim()) {
+        pushLine(modelLine, { kind: "directive" });
+      }
     });
 
     pushLine(".end", { kind: "directive" });

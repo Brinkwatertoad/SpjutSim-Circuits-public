@@ -157,7 +157,12 @@
         input.step = String(step);
       }
     }
-    field.append(input);
+    const unitText = typeof property.input.unit === "string" ? property.input.unit.trim() : "";
+    const unit = document.createElement("span");
+    unit.className = "inline-edit-unit";
+    unit.textContent = unitText;
+    unit.hidden = !unitText;
+    field.append(input, unit);
     row.append(label, field);
     return { row, label, input };
   };

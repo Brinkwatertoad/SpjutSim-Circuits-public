@@ -53,6 +53,25 @@
   const GROUND_VARIANT_SET = new Set(GROUND_VARIANTS);
   const RESISTOR_STYLES = Object.freeze(["zigzag", "box"]);
   const RESISTOR_STYLE_SET = new Set(RESISTOR_STYLES);
+  const DIODE_DISPLAY_TYPES = Object.freeze(["default", "schottky", "varicap"]);
+  const DIODE_DISPLAY_TYPE_SET = new Set(DIODE_DISPLAY_TYPES);
+  // SPICE model parameter keys used for .model line generation, in emit order.
+  const DIODE_MODEL_PARAM_KEYS = Object.freeze(["IS", "N", "RS", "TT", "CJO", "VJ", "M", "EG", "XTI", "TNOM", "BV", "IBV", "FC"]);
+  // Preset model parameter values. Empty string means "not specified" (use simulator default).
+  // Keys match the SPICE model names used in netlist output.
+  const DIODE_MODEL_PRESETS = Object.freeze({
+    "Default":  Object.freeze({ IS: "1E-14", N: "1",     RS: "0",     TT: "0",     CJO: "0",     VJ: "1",    M: "0.5",   EG: "1.11", XTI: "3",  TNOM: "", BV: "",    IBV: "1m",  FC: "" }),
+    "1N5711":   Object.freeze({ IS: "315n",  N: "2.03",  RS: "2.8",   TT: "1.44n", CJO: "2.00p", VJ: "",     M: "0.333", EG: "0.69", XTI: "2",  TNOM: "", BV: "70",  IBV: "10u", FC: "" }),
+    "1N5712":   Object.freeze({ IS: "680p",  N: "1.003", RS: "12",    TT: "50p",   CJO: "1.0p",  VJ: "0.6",  M: "0.5",   EG: "0.69", XTI: "2",  TNOM: "", BV: "20",  IBV: "",    FC: "" }),
+    "1N34":     Object.freeze({ IS: "200p",  N: "2.19",  RS: "84m",   TT: "144n",  CJO: "4.82p", VJ: "0.75", M: "0.333", EG: "0.67", XTI: "",   TNOM: "", BV: "60",  IBV: "15u", FC: "" }),
+    "1N4148":   Object.freeze({ IS: "35p",   N: "1.24",  RS: "64m",   TT: "5.0n",  CJO: "4.0p",  VJ: "0.6",  M: "0.285", EG: "",     XTI: "",   TNOM: "", BV: "75",  IBV: "",    FC: "" }),
+    "1N3891":   Object.freeze({ IS: "63n",   N: "2",     RS: "9.6m",  TT: "110n",  CJO: "114p",  VJ: "0.6",  M: "0.255", EG: "",     XTI: "",   TNOM: "", BV: "250", IBV: "",    FC: "" }),
+    "10A04":    Object.freeze({ IS: "844n",  N: "2.06",  RS: "2.06m", TT: "4.32u", CJO: "277p",  VJ: "",     M: "0.333", EG: "",     XTI: "",   TNOM: "", BV: "400", IBV: "10u", FC: "" }),
+    "1N4004":   Object.freeze({ IS: "76.9n", N: "1.45",  RS: "42.2m", TT: "4.32u", CJO: "39.8p", VJ: "",     M: "0.333", EG: "",     XTI: "",   TNOM: "", BV: "400", IBV: "5u",  FC: "" }),
+    "1N4004ds": Object.freeze({ IS: "18.8n", N: "2",     RS: "",      TT: "",      CJO: "30p",   VJ: "",     M: "0.333", EG: "",     XTI: "",   TNOM: "", BV: "400", IBV: "5u",  FC: "" })
+  });
+  const DIODE_PRESET_KEYS = Object.freeze(Object.keys(DIODE_MODEL_PRESETS));
+  const DIODE_PRESET_KEY_SET = new Set(DIODE_PRESET_KEYS);
   const COMPONENT_VALUE_UNITS = Object.freeze({
     R: "\u03a9",
     C: "F",
@@ -63,7 +82,7 @@
     AM: "\u03a9",
     SW: "\u03a9"
   });
-  const COMPONENT_DEFAULT_TYPES = Object.freeze(["R", "C", "L", "V", "I", "VM", "AM", "SW"]);
+  const COMPONENT_DEFAULT_TYPES = Object.freeze(["R", "C", "L", "V", "I", "VM", "AM", "SW", "D"]);
   const COMPONENT_DEFAULT_TYPE_SET = new Set(COMPONENT_DEFAULT_TYPES);
   const BUILT_IN_COMPONENT_DEFAULTS = Object.freeze({
     R: Object.freeze({ value: "1k", netColor: null }),
@@ -73,7 +92,8 @@
     I: Object.freeze({ value: "1", netColor: null }),
     VM: Object.freeze({ value: "", netColor: null }),
     AM: Object.freeze({ value: "", netColor: null }),
-    SW: Object.freeze({ value: "", netColor: null })
+    SW: Object.freeze({ value: "", netColor: null }),
+    D: Object.freeze({ value: "1N4148", netColor: null })
   });
   const METRIC_PREFIXES = Object.freeze([
     { symbol: "T", exponent: 12 },
@@ -132,6 +152,19 @@
     return "zigzag";
   };
   const listResistorStyles = () => RESISTOR_STYLES.slice();
+  const normalizeDiodeDisplayType = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return DIODE_DISPLAY_TYPE_SET.has(normalized) ? normalized : "default";
+  };
+  const listDiodeDisplayTypes = () => DIODE_DISPLAY_TYPES.slice();
+  const normalizeDiodePreset = (value) => {
+    const key = String(value ?? "").trim();
+    return DIODE_PRESET_KEY_SET.has(key) ? key : "1N4148";
+  };
+  const getDiodeModelPresets = () => DIODE_MODEL_PRESETS;
+  const getDiodePresetKeys = () => DIODE_PRESET_KEYS.slice();
+  const getDiodeModelParamKeys = () => DIODE_MODEL_PARAM_KEYS.slice();
+  const normalizeDiodeParamValue = (value) => String(value ?? "").trim();
   const normalizeTextOnly = (value) => {
     if (value === true) {
       return true;
@@ -193,7 +226,7 @@
       if (rawColor === null || String(rawColor).trim() === "") {
         netColor = null;
       } else {
-        netColor = normalizeNetColor(rawColor) ?? null;
+        netColor = normalizeNetColor(rawColor) ?? fallbackColor;
       }
     }
     return { value, netColor };
@@ -311,6 +344,16 @@
   };
 
   const formatMetricValue = (value) => {
+    const formatMetricNumber = (numeric) => {
+      const normalized = Number.parseFloat(Number(numeric).toPrecision(12));
+      if (!Number.isFinite(normalized)) {
+        return Number(numeric).toString();
+      }
+      if (Object.is(normalized, -0)) {
+        return "0";
+      }
+      return normalized.toString();
+    };
     if (!Number.isFinite(value)) {
       return null;
     }
@@ -328,7 +371,7 @@
     }
     const factor = Math.pow(10, selected.exponent);
     const scaled = value / factor;
-    return { number: scaled.toString(), prefix: selected.symbol };
+    return { number: formatMetricNumber(scaled), prefix: selected.symbol };
   };
 
   const formatWithUnit = (display, unit, prefix) => {
@@ -571,6 +614,59 @@
     wires: []
   });
 
+  const COMPONENT_PROPERTY_NORMALIZERS = Object.freeze({
+    normalizeGroundVariant,
+    normalizeResistorStyle,
+    normalizeDiodeDisplayType,
+    normalizeDiodePreset,
+    normalizeDiodeParamValue,
+    normalizeTextOnly,
+    normalizeTextFont,
+    normalizeTextSize,
+    normalizeTextStyleToggle
+  });
+
+  const getRegisteredElementProperties = (type) => {
+    const catalog = typeof self !== "undefined" ? self.SpjutSimSchematicElementCatalog : null;
+    if (!catalog || typeof catalog.getRegisteredElementDefinition !== "function") {
+      return [];
+    }
+    const definition = catalog.getRegisteredElementDefinition(type);
+    return Array.isArray(definition?.properties) ? definition.properties : [];
+  };
+
+  const applyRegisteredElementProperties = (target, source, type) => {
+    const properties = getRegisteredElementProperties(type);
+    if (!properties.length) {
+      return;
+    }
+    properties.forEach((property) => {
+      const key = String(property?.key ?? "");
+      if (!key || Object.prototype.hasOwnProperty.call(target, key)) {
+        return;
+      }
+      if (!Object.prototype.hasOwnProperty.call(source, key)) {
+        return;
+      }
+      const normalizeMethod = String(property?.normalizeMethod ?? "");
+      const normalizer = COMPONENT_PROPERTY_NORMALIZERS[normalizeMethod];
+      if (typeof normalizer !== "function") {
+        throw new Error(`Unsupported normalize method '${normalizeMethod}' for component property '${key}'.`);
+      }
+      const normalizedValue = normalizer(source[key]);
+      if (String(property?.control ?? "").toLowerCase() === "toggle") {
+        if (normalizedValue === true) {
+          target[key] = true;
+        }
+        return;
+      }
+      if (normalizedValue === undefined || normalizedValue === null) {
+        return;
+      }
+      target[key] = normalizedValue;
+    });
+  };
+
   /**
    * @param {SchematicModel} model
    * @param {Component} component
@@ -593,7 +689,11 @@
     const type = String(component.type ?? "").toUpperCase();
     const isLegacyDashedBox = type === "DBOX";
     const normalizedType = isLegacyDashedBox ? "BOX" : String(component.type ?? "");
-    const rawValue = component.value ? String(component.value) : "";
+    const rawValue = Object.prototype.hasOwnProperty.call(component, "value")
+      ? String(component.value ?? "")
+      : (COMPONENT_DEFAULT_TYPE_SET.has(type)
+        ? String(BUILT_IN_COMPONENT_DEFAULTS[type]?.value ?? "")
+        : "");
     const normalizedValue = isLegacyDashedBox && !/\bline\s*=/.test(rawValue)
       ? (rawValue ? `${rawValue} line=dashed` : "line=dashed")
       : rawValue;
@@ -643,6 +743,7 @@
         normalized.textUnderline = true;
       }
     }
+    applyRegisteredElementProperties(normalized, component, type);
     model.components.push(normalized);
     return normalized;
   };
@@ -932,6 +1033,13 @@
     listGroundVariants,
     normalizeResistorStyle,
     listResistorStyles,
+    normalizeDiodeDisplayType,
+    listDiodeDisplayTypes,
+    normalizeDiodePreset,
+    getDiodeModelPresets,
+    getDiodePresetKeys,
+    getDiodeModelParamKeys,
+    normalizeDiodeParamValue,
     normalizeTextOnly,
     resolveNetColors,
     getTextFontOptions: () => TEXT_FONT_OPTIONS.slice(),

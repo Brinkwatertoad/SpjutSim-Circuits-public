@@ -628,6 +628,13 @@
         const coilCount = 4;
         return Math.max(0, Math.min(6, coilSpan / (coilCount * 2)));
       }
+      if (normalized === "D") {
+        const lead = Math.max(6, Math.min(10, safeLength * 0.2));
+        const bodyLength = Math.max(8, safeLength - (lead * 2));
+        // Keep in sync with drawDiodeSymbol() in src/schematic/symbol-render.js.
+        const triBase = Math.min(20, bodyLength * 0.6);
+        return Math.max(0, triBase / 2);
+      }
       if (normalized === "V" || normalized === "I" || normalized === "VM" || normalized === "AM") {
         return Math.max(0, Math.min(12, safeLength * 0.25));
       }

@@ -1529,7 +1529,7 @@
 
   const drawCapacitorSymbol = (ctx, group, length, style) => {
     const stroke = resolveStroke(style, ctx);
-    const gap = Math.min(8, length * 0.2);
+    const gap = Math.min(5, length * 0.2);
     const plateHalf = 8;
     const center = length / 2;
     const plate1 = center - gap / 2;
@@ -1648,6 +1648,49 @@
     return true;
   };
 
+  const drawDiodeSymbol = (ctx, group, length, style, options) => {
+    const stroke = resolveStroke(style, ctx);
+    const displayType = String(options?.diodeDisplayType ?? "default").trim().toLowerCase();
+    if (group && typeof group.setAttribute === "function") {
+      group.setAttribute("data-diode-display-type", displayType);
+    }
+    const lead = Math.max(6, Math.min(10, length * 0.2));
+    const bodyLength = Math.max(8, length - lead * 2);
+    const mid = length / 1.5;
+    const triBase = Math.min(20, bodyLength * 0.6);
+    const halfH = triBase / 2;
+    const triTip = mid;
+    const triLeft = triTip - triBase;
+    // Left lead
+    ctx.line(group, 0, 0, triLeft, 0, stroke);
+    // Triangle (anode → cathode): base at left, tip at right
+    ctx.line(group, triLeft, -halfH, triLeft, halfH, stroke);
+    ctx.line(group, triLeft, -halfH, triTip, 0, stroke);
+    ctx.line(group, triLeft, halfH, triTip, 0, stroke);
+    // Cathode bar (vertical line at tip)
+    ctx.line(group, triTip, -halfH, triTip, halfH, stroke);
+    // Schottky: add stepped hooks at top-right and bottom-left of cathode bar.
+    if (displayType === "schottky") {
+      const barLength = halfH * 2;
+      const hookDx = barLength * 0.25;
+      const hookDy = barLength * 0.15;
+      const yTop = -halfH;
+      const yBottom = halfH;
+      ctx.line(group, triTip, yTop, triTip + hookDx, yTop, stroke);
+      ctx.line(group, triTip + hookDx, yTop, triTip + hookDx, yTop + hookDy, stroke);
+      ctx.line(group, triTip, yBottom, triTip - hookDx, yBottom, stroke);
+      ctx.line(group, triTip - hookDx, yBottom, triTip - hookDx, yBottom - hookDy, stroke);
+    }
+    // Varicap: replace cathode bar with a capacitor-style double bar
+    const gap = Math.min(4, bodyLength * 0.2);
+    if (displayType === "varicap") {
+      ctx.line(group, triTip + gap, -halfH, triTip + gap, halfH, stroke);
+    }
+    // Right lead (starts at triTip for varicap gap, otherwise at triTip)
+    const rightLeadStart = displayType === "varicap" ? triTip + gap : triTip;
+    ctx.line(group, rightLeadStart, 0, length, 0, stroke);
+  };
+
   const SYMBOL_DRAW_HANDLERS = Object.freeze({
     R: (ctx, group, length, style, options) => {
       drawResistorSymbol(ctx, group, length, style, options);
@@ -1667,6 +1710,10 @@
     },
     I: (ctx, group, length, style) => {
       drawCurrentSourceSymbol(ctx, group, length, style);
+      return true;
+    },
+    D: (ctx, group, length, style, options) => {
+      drawDiodeSymbol(ctx, group, length, style, options);
       return true;
     },
     VM: (ctx, group, length, style, options) => {

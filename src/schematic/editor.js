@@ -204,11 +204,82 @@
     getComponentLabelLayout: requireSchematicMethod("getComponentLabelLayout")
   });
   const parseSpdtSwitchValue = requireSchematicMethod("parseSpdtSwitchValue");
+  const getElementPropertyDefinitions = requireSchematicMethod("getElementPropertyDefinitions");
+  const elementPropertyNormalizeMethodCache = new Map();
+  const elementPropertySpecsCache = new Map();
+  const SPECIAL_COMPONENT_FIELD_KEYS = new Set([
+    "id",
+    "name",
+    "type",
+    "value",
+    "netColor",
+    "textOnly",
+    "textFont",
+    "textSize",
+    "textBold",
+    "textItalic",
+    "textUnderline",
+    "groundVariant",
+    "resistorStyle",
+    "probeDiffRotations",
+    "rotation",
+    "labelRotation",
+    "pins"
+  ]);
+
+  const resolveElementPropertyNormalizeMethod = (methodName) => {
+    const normalizedName = String(methodName ?? "").trim();
+    if (!normalizedName) {
+      throw new Error("Element property contract missing normalizeMethod.");
+    }
+    const cached = elementPropertyNormalizeMethodCache.get(normalizedName);
+    if (typeof cached === "function") {
+      return cached;
+    }
+    const normalizeValue = requireSchematicMethod(normalizedName);
+    elementPropertyNormalizeMethodCache.set(normalizedName, normalizeValue);
+    return normalizeValue;
+  };
+
+  const getElementPropertySpecs = (type) => {
+    const normalizedType = String(type ?? "").trim().toUpperCase();
+    if (!normalizedType) {
+      return [];
+    }
+    const cached = elementPropertySpecsCache.get(normalizedType);
+    if (Array.isArray(cached)) {
+      return cached;
+    }
+    const rawDefinitions = getElementPropertyDefinitions(normalizedType);
+    const seenKeys = new Set();
+    const specs = [];
+    if (Array.isArray(rawDefinitions)) {
+      rawDefinitions.forEach((property, index) => {
+        const key = String(property?.key ?? "").trim();
+        if (!key || seenKeys.has(key)) {
+          return;
+        }
+        seenKeys.add(key);
+        const normalizeMethodName = String(property?.normalizeMethod ?? "").trim();
+        if (!normalizeMethodName) {
+          throw new Error(`Element property contract '${normalizedType}.${key}' missing normalizeMethod at index ${index}.`);
+        }
+        specs.push(Object.freeze({
+          key,
+          normalizeValue: resolveElementPropertyNormalizeMethod(normalizeMethodName)
+        }));
+      });
+    }
+    const frozen = Object.freeze(specs.slice());
+    elementPropertySpecsCache.set(normalizedType, frozen);
+    return frozen;
+  };
 
   const normalizeTextFontValue = (value) => textStyleApi.normalizeTextFont(value);
   const normalizeTextSizeValue = (value) => textStyleApi.normalizeTextSize(value);
   const normalizeGroundVariantValue = (value) => textStyleApi.normalizeGroundVariant(value);
   const normalizeResistorStyleValue = (value) => textStyleApi.normalizeResistorStyle(value);
+  const isProbeComponentType = (value) => textStyleApi.isProbeComponentType(value) === true;
   const listGroundVariants = () => {
     const raw = textStyleApi.listGroundVariants();
     if (!Array.isArray(raw) || !raw.length) {
@@ -240,7 +311,6 @@
     return normalizeComponentDefaultsValue(defaults);
   };
   const isElectricalComponentType = (type) => textStyleApi.isElectricalComponentType(type);
-  const isProbeComponentType = (type) => textStyleApi.isProbeComponentType(type);
 
   const DEFAULT_TEXT_STYLE = (() => {
     const style = textStyleApi.getDefaultTextStyle();
@@ -491,11 +561,7 @@
     const text = getNamedNodeLabelText(component);
     const baseStyle = resolveNetLabelStyle();
     const resolvedTextStyle = resolveSchematicTextStyle(schematicTextStyle);
-    const fontSize = Number(resolvedTextStyle.size);
-    const style = {
-      ...baseStyle,
-      fontSize: Number.isFinite(fontSize) ? fontSize : Number(baseStyle.fontSize)
-    };
+    const style = { ...baseStyle };
     const textWidth = measureTextWidth(
       text,
       Number(style.fontSize),
@@ -758,7 +824,8 @@
       return 0;
     }
     const value = helper(type, info.length, {
-      resistorStyle: component?.resistorStyle
+      resistorStyle: component?.resistorStyle,
+      diodeDisplayType: component?.diodeDisplayType
     });
     return Number.isFinite(value) && value > 0 ? value : 0;
   };
@@ -1496,7 +1563,8 @@
         length: info.length,
         rotation: info.angle,
         style,
-        resistorStyle: component?.resistorStyle
+        resistorStyle: component?.resistorStyle,
+        diodeDisplayType: component?.diodeDisplayType
       })
       : false;
     if (!handled) {
@@ -1976,6 +2044,7 @@
       tool: { mode: "select" },
       groundPlacementVariant: normalizeGroundVariantValue("earth"),
       groundPlacementColor: null,
+      probePlacementColor: null,
       resistorPlacementStyle: normalizeResistorStyleValue("zigzag"),
       view: { ...DEFAULT_VIEW },
       grid: { ...DEFAULT_GRID },
@@ -2057,25 +2126,12 @@
       }
     };
     const pointKey = (point) => `${point.x},${point.y}`;
-    const getWirePriority = (wire) => {
-      const id = String(wire?.id ?? "");
-      if (id.startsWith("__")) {
-        return { order: Number.MAX_SAFE_INTEGER, id };
-      }
-      const match = /^W(\d+)$/i.exec(id);
-      const parsed = match ? Number(match[1]) : 0;
-      const order = Number.isFinite(parsed) ? parsed : 0;
-      return { order, id };
-    };
-    const isHigherPriority = (current, other) => {
-      if (!other) {
-        return true;
-      }
-      if (current.order !== other.order) {
-        return current.order > other.order;
-      }
-      return current.id > other.id;
-    };
+    const wireRenderModule = typeof self !== "undefined" ? (self.SpjutSimWireRender ?? null) : null;
+    if (!wireRenderModule) {
+      throw new Error("Wire render module unavailable. Check src/schematic/wire-render.js load order.");
+    }
+    const getWirePriority = wireRenderModule.getWirePriority;
+    const isHigherPriority = wireRenderModule.isHigherPriority;
 
     const getRefDesPrefixesForType = (type) => {
       const key = String(type ?? "").toUpperCase();
@@ -2231,6 +2287,12 @@
           : undefined,
         state.groundPlacementColor
       );
+      state.probePlacementColor = normalizeWireDefaultColorValue(
+        Object.prototype.hasOwnProperty.call(options.placementDefaults, "probeColor")
+          ? options.placementDefaults.probeColor
+          : undefined,
+        state.probePlacementColor
+      );
     }
 
     const getComponentDefaults = () => {
@@ -2249,7 +2311,8 @@
     const getPlacementDefaults = () => ({
       resistorStyle: normalizeResistorStyleValue(state.resistorPlacementStyle),
       groundVariant: normalizeGroundVariantValue(state.groundPlacementVariant),
-      groundColor: normalizeWireDefaultColorValue(state.groundPlacementColor, null)
+      groundColor: normalizeWireDefaultColorValue(state.groundPlacementColor, null),
+      probeColor: normalizeWireDefaultColorValue(state.probePlacementColor, null)
     });
     const setPlacementDefaults = (value) => {
       const source = value && typeof value === "object" ? value : {};
@@ -2268,6 +2331,12 @@
           ? source.groundColor
           : undefined,
         state.groundPlacementColor
+      );
+      state.probePlacementColor = normalizeWireDefaultColorValue(
+        Object.prototype.hasOwnProperty.call(source, "probeColor")
+          ? source.probeColor
+          : undefined,
+        state.probePlacementColor
       );
       if (state.preview) {
         const previewType = String(state.preview.type ?? "").toUpperCase();
@@ -2483,171 +2552,8 @@
       first.length === second.length
       && first.every((point, index) => point.x === second[index]?.x && point.y === second[index]?.y);
 
-    const buildRenderableNodeAxisIndex = (nodes) => {
-      const rows = new Map();
-      const cols = new Map();
-      nodes.forEach((node) => {
-        let row = rows.get(node.y);
-        if (!row) {
-          row = [];
-          rows.set(node.y, row);
-        }
-        row.push(node);
-        let col = cols.get(node.x);
-        if (!col) {
-          col = [];
-          cols.set(node.x, col);
-        }
-        col.push(node);
-      });
-      rows.forEach((row) => {
-        row.sort((a, b) => a.x - b.x);
-      });
-      cols.forEach((col) => {
-        col.sort((a, b) => a.y - b.y);
-      });
-      return { rows, cols };
-    };
-
-    const collectRenderableJunctionInfo = (wires, components) => {
-      const pinCounts = new Map();
-      const nodeByKey = new Map();
-      const safeWires = Array.isArray(wires) ? wires : [];
-      const safeComponents = Array.isArray(components) ? components : [];
-
-      safeWires.forEach((wire) => {
-        const points = Array.isArray(wire?.points) ? wire.points : [];
-        points.forEach((point) => {
-          if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-            return;
-          }
-          const key = pointKey(point);
-          if (!nodeByKey.has(key)) {
-            nodeByKey.set(key, { key, x: point.x, y: point.y });
-          }
-        });
-      });
-
-      safeComponents.forEach((component) => {
-        if (!isElectricalComponentType(component?.type)) {
-          return;
-        }
-        const pins = Array.isArray(component?.pins) ? component.pins : [];
-        pins.forEach((pin) => {
-          if (!pin || !Number.isFinite(pin.x) || !Number.isFinite(pin.y)) {
-            return;
-          }
-          const key = pointKey(pin);
-          pinCounts.set(key, (pinCounts.get(key) ?? 0) + 1);
-          if (!nodeByKey.has(key)) {
-            nodeByKey.set(key, { key, x: pin.x, y: pin.y });
-          }
-        });
-      });
-
-      const { rows, cols } = buildRenderableNodeAxisIndex(Array.from(nodeByKey.values()));
-      const degrees = new Map();
-      const addDegree = (key) => {
-        degrees.set(key, (degrees.get(key) ?? 0) + 1);
-      };
-      const addSegmentDegrees = (candidates) => {
-        if (!Array.isArray(candidates) || candidates.length < 2) {
-          return;
-        }
-        for (let index = 0; index < candidates.length - 1; index += 1) {
-          const start = candidates[index];
-          const end = candidates[index + 1];
-          if (!start || !end) {
-            continue;
-          }
-          if (start.x === end.x && start.y === end.y) {
-            continue;
-          }
-          addDegree(start.key);
-          addDegree(end.key);
-        }
-      };
-      const collectHorizontalCandidates = (y, minX, maxX) => {
-        const row = rows.get(y);
-        if (!row?.length) {
-          return [];
-        }
-        const candidates = [];
-        row.forEach((node) => {
-          if (node.x < minX) {
-            return;
-          }
-          if (node.x > maxX) {
-            return;
-          }
-          candidates.push(node);
-        });
-        return candidates;
-      };
-      const collectVerticalCandidates = (x, minY, maxY) => {
-        const col = cols.get(x);
-        if (!col?.length) {
-          return [];
-        }
-        const candidates = [];
-        col.forEach((node) => {
-          if (node.y < minY) {
-            return;
-          }
-          if (node.y > maxY) {
-            return;
-          }
-          candidates.push(node);
-        });
-        return candidates;
-      };
-
-      safeWires.forEach((wire) => {
-        const points = Array.isArray(wire?.points) ? wire.points : [];
-        for (let index = 0; index < points.length - 1; index += 1) {
-          const start = points[index];
-          const end = points[index + 1];
-          if (!start || !end) {
-            continue;
-          }
-          if (start.x === end.x && start.y === end.y) {
-            continue;
-          }
-          if (start.y === end.y) {
-            const minX = Math.min(start.x, end.x);
-            const maxX = Math.max(start.x, end.x);
-            const candidates = collectHorizontalCandidates(start.y, minX, maxX);
-            if (candidates.length >= 2) {
-              addSegmentDegrees(candidates);
-            } else {
-              addDegree(pointKey(start));
-              addDegree(pointKey(end));
-            }
-            continue;
-          }
-          if (start.x === end.x) {
-            const minY = Math.min(start.y, end.y);
-            const maxY = Math.max(start.y, end.y);
-            const candidates = collectVerticalCandidates(start.x, minY, maxY);
-            if (candidates.length >= 2) {
-              addSegmentDegrees(candidates);
-            } else {
-              addDegree(pointKey(start));
-              addDegree(pointKey(end));
-            }
-            continue;
-          }
-          addDegree(pointKey(start));
-          addDegree(pointKey(end));
-        }
-      });
-
-      const combinedDegrees = new Map(degrees);
-      pinCounts.forEach((count, key) => {
-        combinedDegrees.set(key, (combinedDegrees.get(key) ?? 0) + count);
-      });
-      return { pinCounts, combinedDegrees };
-    };
+    const collectRenderableJunctionInfo = (wires, components) =>
+      wireRenderModule.collectJunctionInfo(wires, components, isElectricalComponentType);
 
     const getWirePointDegrees = () => {
       const degrees = new Map();
@@ -5393,218 +5299,13 @@
       }
     };
 
-    const collectWireSegments = (wires) => {
-      const segments = [];
-      wires.forEach((wire) => {
-        const points = Array.isArray(wire.points) ? wire.points : [];
-        const priority = getWirePriority(wire);
-        for (let index = 0; index < points.length - 1; index += 1) {
-          const start = points[index];
-          const end = points[index + 1];
-          if (!start || !end) {
-            continue;
-          }
-          if (start.x === end.x && start.y === end.y) {
-            continue;
-          }
-          if (start.x === end.x) {
-            segments.push({
-              wireId: String(wire.id ?? ""),
-              priority,
-              orientation: "v",
-              start,
-              end,
-              coord: start.x,
-              min: Math.min(start.y, end.y),
-              max: Math.max(start.y, end.y)
-            });
-          } else if (start.y === end.y) {
-            segments.push({
-              wireId: String(wire.id ?? ""),
-              priority,
-              orientation: "h",
-              start,
-              end,
-              coord: start.y,
-              min: Math.min(start.x, end.x),
-              max: Math.max(start.x, end.x)
-            });
-          }
-        }
-      });
-      return segments;
-    };
-
-    const getWireCrossings = (segment, verticalSegments, pointKeys, currentPriority) => {
-      const crossings = [];
-      const y = segment.coord;
-      verticalSegments.forEach((vert) => {
-        if (vert.wireId === segment.wireId) {
-          return;
-        }
-        if (!isHigherPriority(currentPriority, vert.priority)) {
-          return;
-        }
-        const x = vert.coord;
-        if (x <= segment.min || x >= segment.max) {
-          return;
-        }
-        if (y <= vert.min || y >= vert.max) {
-          return;
-        }
-        const key = `${x},${y}`;
-        if (pointKeys.has(key)) {
-          return;
-        }
-        crossings.push(x);
-      });
-      return crossings;
-    };
-
-    const getWireCrossingsForVertical = (segment, horizontalSegments, pointKeys, currentPriority) => {
-      const crossings = [];
-      const x = segment.coord;
-      horizontalSegments.forEach((horiz) => {
-        if (horiz.wireId === segment.wireId) {
-          return;
-        }
-        if (!isHigherPriority(currentPriority, horiz.priority)) {
-          return;
-        }
-        const y = horiz.coord;
-        if (y <= segment.min || y >= segment.max) {
-          return;
-        }
-        if (x <= horiz.min || x >= horiz.max) {
-          return;
-        }
-        const key = `${x},${y}`;
-        if (pointKeys.has(key)) {
-          return;
-        }
-        crossings.push(y);
-      });
-      return crossings;
-    };
+    const collectWireSegments = wireRenderModule.collectWireSegments;
 
     const buildWirePath = (points, wireId, segments, pointKeys, options) => {
-      if (!Array.isArray(points) || points.length < 2) {
-        return { d: "", hasJump: false };
-      }
-      const verticalSegments = segments.filter((segment) => segment.orientation === "v");
-      const horizontalSegments = segments.filter((segment) => segment.orientation === "h");
-      const allowHorizontalJumps = options?.allowHorizontalJumps !== false;
-      const allowVerticalJumps = options?.allowVerticalJumps === true;
-      const currentPriority = options?.priority ?? getWirePriority({ id: wireId });
-      const radius = options?.jumpRadius ?? getWireJumpRadius();
-      const minSpacing = radius * 2 + 2;
-      let hasJump = false;
-      let d = `M ${points[0].x} ${points[0].y}`;
-      for (let index = 0; index < points.length - 1; index += 1) {
-        const start = points[index];
-        const end = points[index + 1];
-        if (!start || !end) {
-          continue;
-        }
-        if (start.y === end.y) {
-          if (allowHorizontalJumps) {
-            const segment = {
-              wireId,
-              coord: start.y,
-              min: Math.min(start.x, end.x),
-              max: Math.max(start.x, end.x)
-            };
-            const rawCrossings = getWireCrossings(segment, verticalSegments, pointKeys, currentPriority);
-            const dir = end.x >= start.x ? 1 : -1;
-            const ordered = rawCrossings.sort((a, b) => (dir > 0 ? a - b : b - a));
-            const filtered = [];
-            ordered.forEach((x) => {
-              if (Math.abs(x - start.x) <= radius || Math.abs(x - end.x) <= radius) {
-                return;
-              }
-              if (filtered.length && Math.abs(x - filtered[filtered.length - 1]) < minSpacing) {
-                return;
-              }
-              filtered.push(x);
-            });
-            if (filtered.length) {
-              hasJump = true;
-              let cursorX = start.x;
-              filtered.forEach((x) => {
-                const beforeX = x - dir * radius;
-                const afterX = x + dir * radius;
-                if (dir > 0 && beforeX <= cursorX) {
-                  return;
-                }
-                if (dir < 0 && beforeX >= cursorX) {
-                  return;
-                }
-                if (dir > 0 && afterX >= end.x) {
-                  return;
-                }
-                if (dir < 0 && afterX <= end.x) {
-                  return;
-                }
-                d += ` L ${beforeX} ${start.y}`;
-                const sweep = dir > 0 ? 1 : 0;
-                d += ` A ${radius} ${radius} 0 0 ${sweep} ${afterX} ${start.y}`;
-                cursorX = afterX;
-              });
-            }
-          }
-          d += ` L ${end.x} ${end.y}`;
-          continue;
-        }
-        if (start.x === end.x) {
-          if (allowVerticalJumps) {
-            const segment = {
-              wireId,
-              coord: start.x,
-              min: Math.min(start.y, end.y),
-              max: Math.max(start.y, end.y)
-            };
-            const rawCrossings = getWireCrossingsForVertical(segment, horizontalSegments, pointKeys, currentPriority);
-            const dir = end.y >= start.y ? 1 : -1;
-            const ordered = rawCrossings.sort((a, b) => (dir > 0 ? a - b : b - a));
-            const filtered = [];
-            ordered.forEach((y) => {
-              if (Math.abs(y - start.y) <= radius || Math.abs(y - end.y) <= radius) {
-                return;
-              }
-              if (filtered.length && Math.abs(y - filtered[filtered.length - 1]) < minSpacing) {
-                return;
-              }
-              filtered.push(y);
-            });
-            if (filtered.length) {
-              hasJump = true;
-              let cursorY = start.y;
-              filtered.forEach((y) => {
-                const beforeY = y - dir * radius;
-                const afterY = y + dir * radius;
-                if (dir > 0 && beforeY <= cursorY) {
-                  return;
-                }
-                if (dir < 0 && beforeY >= cursorY) {
-                  return;
-                }
-                if (dir > 0 && afterY >= end.y) {
-                  return;
-                }
-                if (dir < 0 && afterY <= end.y) {
-                  return;
-                }
-                d += ` L ${start.x} ${beforeY}`;
-                const sweep = dir > 0 ? 1 : 0;
-                d += ` A ${radius} ${radius} 0 0 ${sweep} ${start.x} ${afterY}`;
-                cursorY = afterY;
-              });
-            }
-          }
-          d += ` L ${end.x} ${end.y}`;
-        }
-      }
-      return { d, hasJump };
+      const mergedOptions = options?.jumpRadius != null
+        ? options
+        : { ...options, jumpRadius: getWireJumpRadius() };
+      return wireRenderModule.buildWirePath(points, wireId, segments, pointKeys, mergedOptions);
     };
 
     const renderWirePath = (group, points, wireId, segments, pointKeys, options) => {
@@ -5958,6 +5659,13 @@
           } else if (String(previewComponent.type ?? "").toUpperCase() === "R"
             && Object.prototype.hasOwnProperty.call(preview, "resistorStyle")) {
             previewComponent.resistorStyle = normalizeResistorStyleValue(preview.resistorStyle);
+          } else if (isProbeComponentType(previewComponent.type)) {
+            const probePlacementColor = normalizeWireDefaultColorValue(state.probePlacementColor, null);
+            if (probePlacementColor) {
+              previewComponent.netColor = probePlacementColor;
+            } else if (!previewDefaults.netColor && Object.prototype.hasOwnProperty.call(previewComponent, "netColor")) {
+              delete previewComponent.netColor;
+            }
           }
           applyTransformToComponent(previewComponent, state.placeTransform, false);
           drawComponentSymbol(overlayGroup, previewComponent, {
@@ -6152,13 +5860,14 @@
             return;
           }
           const type = String(component?.type ?? "").toUpperCase();
+          const selectionSymbolWidth = type === "NET" ? STROKE_WIDTH : 3;
           const selectedDiffSides = type === "PD" ? getProbeDiffSelectedSides(component.id) : new Set();
           if (!(type === "PD" && selectedDiffSides.size)) {
             drawComponentSymbol(overlayGroup, component, {
               showLabel: false,
               showEndpoints: false,
               stroke: "#0f62fe",
-              width: 3,
+              width: selectionSymbolWidth,
               fill: "none",
               className: "schematic-component-highlight",
               dataHighlight: id
@@ -6998,6 +6707,29 @@
       const hasGroundVariantUpdate = Object.prototype.hasOwnProperty.call(updates, "groundVariant");
       const hasResistorStyleUpdate = Object.prototype.hasOwnProperty.call(updates, "resistorStyle");
       const componentType = String(component.type ?? "").toUpperCase();
+      const genericPropertyUpdates = [];
+      const genericPropertySpecs = getElementPropertySpecs(componentType);
+      genericPropertySpecs.forEach((spec) => {
+        if (!spec || SPECIAL_COMPONENT_FIELD_KEYS.has(spec.key)) {
+          return;
+        }
+        if (!Object.prototype.hasOwnProperty.call(updates, spec.key)) {
+          return;
+        }
+        const normalizedValue = spec.normalizeValue(updates[spec.key]);
+        const currentValue = spec.normalizeValue(
+          Object.prototype.hasOwnProperty.call(component, spec.key)
+            ? component[spec.key]
+            : undefined
+        );
+        if (Object.is(normalizedValue, currentValue)) {
+          return;
+        }
+        genericPropertyUpdates.push({
+          key: spec.key,
+          value: normalizedValue
+        });
+      });
       const typeChanged = nextType !== null
         && nextType.length > 0
         && nextType !== componentType
@@ -7167,6 +6899,7 @@
         && !textUnderlineChanged
         && !groundVariantChanged
         && !resistorStyleChanged
+        && !genericPropertyUpdates.length
       ) {
         return;
       }
@@ -7242,6 +6975,15 @@
         if (resistorStyleChanged) {
           component.resistorStyle = nextResistorStyle;
         }
+        genericPropertyUpdates.forEach((entry) => {
+          if (entry.value === undefined) {
+            if (Object.prototype.hasOwnProperty.call(component, entry.key)) {
+              delete component[entry.key];
+            }
+            return;
+          }
+          component[entry.key] = entry.value;
+        });
       }, { notifySelection: true });
     };
 
@@ -7256,16 +6998,108 @@
           .map((entry) => String(entry ?? "").trim().toUpperCase())
           .filter((entry) => defaultScope.includes(entry))
       );
-      if (!scopedTypeSet.size) {
-        return {
-          updatedComponents: 0,
-          valueUpdates: 0,
-          colorUpdates: 0
-        };
-      }
+      const applyGroundDefaults = Object.prototype.hasOwnProperty.call(options ?? {}, "applyGroundDefaults")
+        ? options.applyGroundDefaults === true
+        : true;
+      const applyProbeDefaults = Object.prototype.hasOwnProperty.call(options ?? {}, "applyProbeDefaults")
+        ? options.applyProbeDefaults === true
+        : true;
+      const applyWireDefaults = Object.prototype.hasOwnProperty.call(options ?? {}, "applyWireDefaults")
+        ? options.applyWireDefaults === true
+        : true;
+      const sourceDisplayDefaults = options?.displayDefaults && typeof options.displayDefaults === "object"
+        ? options.displayDefaults
+        : {};
+      const nextResistorStyle = normalizeResistorStyleValue(
+        Object.prototype.hasOwnProperty.call(sourceDisplayDefaults, "resistorStyle")
+          ? sourceDisplayDefaults.resistorStyle
+          : state.resistorPlacementStyle
+      );
+      const nextGroundVariant = normalizeGroundVariantValue(
+        Object.prototype.hasOwnProperty.call(sourceDisplayDefaults, "groundVariant")
+          ? sourceDisplayDefaults.groundVariant
+          : state.groundPlacementVariant
+      );
+      const nextGroundColor = normalizeWireDefaultColorValue(
+        Object.prototype.hasOwnProperty.call(sourceDisplayDefaults, "groundColor")
+          ? sourceDisplayDefaults.groundColor
+          : undefined,
+        state.groundPlacementColor
+      );
+      const nextProbeColor = normalizeWireDefaultColorValue(
+        Object.prototype.hasOwnProperty.call(sourceDisplayDefaults, "probeColor")
+          ? sourceDisplayDefaults.probeColor
+          : undefined,
+        state.probePlacementColor
+      );
+      const nextWireColor = normalizeWireDefaultColorValue(
+        Object.prototype.hasOwnProperty.call(options ?? {}, "wireDefaultColor")
+          ? options.wireDefaultColor
+          : undefined,
+        state.wireDefaultColor
+      );
       const plannedUpdates = [];
       (state.model?.components ?? []).forEach((component) => {
         const type = String(component?.type ?? "").trim().toUpperCase();
+        const currentColor = Object.prototype.hasOwnProperty.call(component, "netColor")
+          ? (normalizeNetColorValue(component.netColor) ?? null)
+          : null;
+        if (isProbeComponentType(type)) {
+          if (!applyProbeDefaults) {
+            return;
+          }
+          const colorChanged = currentColor !== nextProbeColor;
+          if (!colorChanged) {
+            return;
+          }
+          plannedUpdates.push({
+            component,
+            nextColor: nextProbeColor,
+            colorChanged,
+            displayChanged: false
+          });
+          return;
+        }
+        if (type === "R" && scopedTypeSet.has(type)) {
+          const defaultsForType = nextDefaults[type];
+          if (!defaultsForType || typeof defaultsForType !== "object") {
+            return;
+          }
+          const nextColor = normalizeNetColorValue(defaultsForType.netColor) ?? null;
+          const currentResistorStyle = normalizeResistorStyleValue(component?.resistorStyle);
+          const styleChanged = currentResistorStyle !== nextResistorStyle;
+          const colorChanged = currentColor !== nextColor;
+          if (!styleChanged && !colorChanged) {
+            return;
+          }
+          plannedUpdates.push({
+            component,
+            nextColor,
+            colorChanged,
+            nextResistorStyle,
+            displayChanged: styleChanged
+          });
+          return;
+        }
+        if (type === "GND") {
+          if (!applyGroundDefaults) {
+            return;
+          }
+          const currentGroundVariant = normalizeGroundVariantValue(component?.groundVariant);
+          const variantChanged = currentGroundVariant !== nextGroundVariant;
+          const colorChanged = currentColor !== nextGroundColor;
+          if (!variantChanged && !colorChanged) {
+            return;
+          }
+          plannedUpdates.push({
+            component,
+            nextColor: nextGroundColor,
+            colorChanged,
+            nextGroundVariant,
+            displayChanged: variantChanged
+          });
+          return;
+        }
         if (!scopedTypeSet.has(type)) {
           return;
         }
@@ -7273,39 +7107,66 @@
         if (!defaultsForType || typeof defaultsForType !== "object") {
           return;
         }
-        const nextValue = String(defaultsForType.value ?? "");
         const nextColor = normalizeNetColorValue(defaultsForType.netColor) ?? null;
-        const currentValue = String(component?.value ?? "");
-        const currentColor = Object.prototype.hasOwnProperty.call(component, "netColor")
-          ? (normalizeNetColorValue(component.netColor) ?? null)
-          : null;
-        if (currentValue === nextValue && currentColor === nextColor) {
+        const colorChanged = currentColor !== nextColor;
+        if (!colorChanged) {
           return;
         }
         plannedUpdates.push({
           component,
-          nextValue,
           nextColor,
-          valueChanged: currentValue !== nextValue,
-          colorChanged: currentColor !== nextColor
+          colorChanged,
+          displayChanged: false
         });
       });
-      if (!plannedUpdates.length) {
+      const plannedWireUpdates = [];
+      if (applyWireDefaults) {
+        (state.model?.wires ?? []).forEach((wire) => {
+          const currentColor = Object.prototype.hasOwnProperty.call(wire, "netColor")
+            ? (normalizeNetColorValue(wire.netColor) ?? null)
+            : null;
+          if (currentColor === nextWireColor) {
+            return;
+          }
+          plannedWireUpdates.push({
+            wire,
+            nextColor: nextWireColor
+          });
+        });
+      }
+      if (!plannedUpdates.length && !plannedWireUpdates.length) {
         return {
           updatedComponents: 0,
+          updatedWires: 0,
           valueUpdates: 0,
-          colorUpdates: 0
+          colorUpdates: 0,
+          displayUpdates: 0
         };
       }
       const summary = {
         updatedComponents: plannedUpdates.length,
-        valueUpdates: plannedUpdates.filter((entry) => entry.valueChanged).length,
-        colorUpdates: plannedUpdates.filter((entry) => entry.colorChanged).length
+        updatedWires: plannedWireUpdates.length,
+        valueUpdates: 0,
+        colorUpdates: plannedUpdates.filter((entry) => entry.colorChanged).length + plannedWireUpdates.length,
+        displayUpdates: plannedUpdates.filter((entry) => entry.displayChanged).length
       };
       return commitModelMutation(() => {
         plannedUpdates.forEach((entry) => {
           const target = entry.component;
-          target.value = entry.nextValue;
+          if (Object.prototype.hasOwnProperty.call(entry, "nextResistorStyle")) {
+            target.resistorStyle = entry.nextResistorStyle;
+          }
+          if (Object.prototype.hasOwnProperty.call(entry, "nextGroundVariant")) {
+            target.groundVariant = entry.nextGroundVariant;
+          }
+          if (entry.nextColor) {
+            target.netColor = entry.nextColor;
+          } else if (Object.prototype.hasOwnProperty.call(target, "netColor")) {
+            delete target.netColor;
+          }
+        });
+        plannedWireUpdates.forEach((entry) => {
+          const target = entry.wire;
           if (entry.nextColor) {
             target.netColor = entry.nextColor;
           } else if (Object.prototype.hasOwnProperty.call(target, "netColor")) {
@@ -8121,6 +7982,17 @@
         const groundPlacementColor = normalizeWireDefaultColorValue(state.groundPlacementColor, null);
         if (groundPlacementColor) {
           component.netColor = groundPlacementColor;
+        } else if (Object.prototype.hasOwnProperty.call(component, "netColor")) {
+          delete component.netColor;
+        }
+      }
+      if (!hasExplicitNetColor
+        && component
+        && useSymbolFactory
+        && isProbeComponentType(component?.type)) {
+        const probePlacementColor = normalizeWireDefaultColorValue(state.probePlacementColor, null);
+        if (probePlacementColor) {
+          component.netColor = probePlacementColor;
         } else if (Object.prototype.hasOwnProperty.call(component, "netColor")) {
           delete component.netColor;
         }

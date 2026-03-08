@@ -253,6 +253,11 @@ button.menu-button:hover,
   max-height: calc(100dvh - (var(--space-6) * 2));
 }
 
+.hotkeys-modal-dialog {
+  width: min(700px, 94vw);
+  max-height: calc(100dvh - (var(--space-6) * 2));
+}
+
 .about-modal-body {
   min-height: 0;
   overflow-y: auto;
@@ -263,14 +268,71 @@ button.menu-button:hover,
   overflow-y: auto;
 }
 
+.hotkeys-modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  gap: var(--space-3);
+}
+
 .about-modal-body,
 .settings-modal-body,
+.hotkeys-modal-body,
 .workspace-tools,
 .tab-panel.active,
 .context-menu,
 .plot-settings-popover {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+.hotkeys-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hotkeys-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.hotkeys-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.hotkeys-entry {
+  display: grid;
+  grid-template-columns: minmax(110px, max-content) 1fr;
+  gap: var(--space-3);
+  align-items: center;
+  font-size: 13px;
+}
+
+.hotkeys-entry-shortcut {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 600;
+}
+
+.hotkeys-entry-description {
+  color: var(--color-text);
+}
+
+.hotkeys-empty {
+  margin: 0;
+  color: var(--color-text-subtle);
 }
 
 .modal-field {
@@ -329,11 +391,13 @@ button.menu-button:hover,
   position: absolute;
   z-index: var(--z-inline-edit);
   min-width: 196px;
+  max-height: calc(100dvh - (var(--space-6) * 2));
   padding: var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
   box-shadow: var(--shadow-inline);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);

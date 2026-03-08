@@ -129,6 +129,10 @@
     if (text.endsWith("#branch")) {
       text = text.replace(/#branch$/, "");
     }
+    const behaviorMatch = text.match(/^@(.+)\[(?:i|id)\]$/i);
+    if (behaviorMatch) {
+      text = String(behaviorMatch[1] ?? "").trim().toLowerCase();
+    }
     return text;
   };
 
@@ -178,8 +182,9 @@
     if (token.endsWith("#branch")) {
       return `i:${token.replace(/#branch$/, "")}`;
     }
-    if (token.startsWith("@") && token.endsWith("[i]")) {
-      return `i:${token.slice(1, -3)}`;
+    const behaviorMatch = token.match(/^@(.+)\[(?:i|id)\]$/i);
+    if (behaviorMatch) {
+      return `i:${String(behaviorMatch[1] ?? "").trim().toLowerCase()}`;
     }
     return `v:${token}`;
   };
@@ -203,7 +208,7 @@
       const target = formatTarget(match[1]);
       return target ? `I(${target})` : "";
     }
-    match = raw.match(/^@(.+)\[i\]$/i);
+    match = raw.match(/^@(.+)\[(?:i|id)\]$/i);
     if (match) {
       const target = formatTarget(match[1]);
       return target ? `I(${target})` : "";

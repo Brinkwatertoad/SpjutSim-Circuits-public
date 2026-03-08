@@ -65,6 +65,9 @@
     if (Object.prototype.hasOwnProperty.call(input, "placeholder")) {
       normalized.placeholder = String(input.placeholder ?? "");
     }
+    if (Object.prototype.hasOwnProperty.call(input, "unit")) {
+      normalized.unit = String(input.unit ?? "").trim();
+    }
     if (control === "number") {
       ["min", "max", "step"].forEach((key) => {
         if (!Object.prototype.hasOwnProperty.call(input, key)) {

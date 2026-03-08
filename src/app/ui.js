@@ -1,7 +1,7 @@
 ﻿/** @typedef {Record<string, number[]>} TraceMap */
 /** @typedef {{ status: "idle" | "loading" | "ready" | "running" | "error", log: string[], netlist: string, error?: string, opResults?: { plot?: string, nodes: { name: string, value: string, raw?: number | null }[], currents: { name: string, value: string, raw?: number | null }[] }, dcResults?: { x: number[], traces: TraceMap, signals?: string[], selected?: string[] }, tranResults?: { x: number[], traces: TraceMap, signals?: string[], selected?: string[] }, acResults?: { freq: number[], magnitude: TraceMap, phase: TraceMap, signals?: string[], selected?: string[] } }} AppState */
 /** @typedef {() => void} VoidHandler */
-/** @typedef {(netlist: string) => void} RunOpHandler */
+/** @typedef {(netlist: string, signals?: string[]) => void} RunOpHandler */
 /** @typedef {(netlist: string, signals?: string[]) => void} RunHandler */
 /** @typedef {{ onInit: VoidHandler, onRun: RunOpHandler, onRunDc: RunHandler, onRunTran: RunHandler, onRunAc: RunHandler, onReset: VoidHandler }} UIActions */
 /** @typedef {{ setStatus: (status: AppState["status"]) => void, setError: (message?: string) => void, setLog: (lines: string[]) => void, appendLog: (line: string) => void, getNetlist: () => string, setNetlist: (netlist: string) => void, setOpResults: (results?: AppState["opResults"]) => void, setDcResults: (results?: AppState["dcResults"]) => void, setTranResults: (results?: AppState["tranResults"]) => void, setAcResults: (results?: AppState["acResults"]) => void }} UIHandle */
@@ -328,6 +328,29 @@ const ABOUT_DIALOG_CONTENT = Object.freeze([
   }
 ]);
 
+const HOTKEY_SHORTCUTS = Object.freeze({
+  open: "Ctrl+O",
+  save: "Ctrl+S",
+  saveAs: "Ctrl+Shift+S",
+  settings: "Ctrl+,",
+  toggleHelp: "H",
+  runSimulation: "F5",
+  edit: "Ctrl+E",
+  selectAll: "Ctrl+A",
+  delete: "Del",
+  copy: "Ctrl+C",
+  cut: "Ctrl+X",
+  paste: "Ctrl+V",
+  rotateCw: "Space",
+  rotateCcw: "Shift+Space",
+  flipH: "X",
+  flipV: "Y",
+  undo: "Ctrl+Z",
+  redo: "Ctrl+Y",
+  redoAlt: "Ctrl+Shift+Z",
+  escape: "Escape"
+});
+
 const setDialogOpen = (dialog, isOpen) => {
   if (!(dialog instanceof HTMLElement)) {
     return;
@@ -398,6 +421,108 @@ const buildAboutDialog = (container) => {
   return { aboutDialog, openAboutDialog, closeAboutDialog };
 };
 
+const buildHotkeysDialog = (container, config = {}) => {
+  const listHotkeys = typeof config.listHotkeys === "function" ? config.listHotkeys : () => [];
+  const hotkeysDialog = document.createElement("div");
+  hotkeysDialog.className = "modal-backdrop hidden";
+  hotkeysDialog.dataset.hotkeysDialog = "1";
+  hotkeysDialog.setAttribute("role", "dialog");
+  hotkeysDialog.setAttribute("aria-modal", "true");
+  hotkeysDialog.hidden = true;
+
+  const hotkeysPanel = document.createElement("div");
+  hotkeysPanel.className = "modal-dialog hotkeys-modal-dialog";
+  hotkeysPanel.dataset.hotkeysPanel = "1";
+  const hotkeysTitle = document.createElement("div");
+  hotkeysTitle.className = "modal-title";
+  hotkeysTitle.textContent = "Hotkeys";
+  hotkeysTitle.dataset.hotkeysTitle = "1";
+  const hotkeysBody = document.createElement("div");
+  hotkeysBody.className = "modal-body hotkeys-modal-body";
+  hotkeysBody.dataset.hotkeysBody = "1";
+  const hotkeysActions = document.createElement("div");
+  hotkeysActions.className = "modal-actions";
+  const hotkeysClose = document.createElement("button");
+  hotkeysClose.type = "button";
+  hotkeysClose.textContent = "Close";
+  hotkeysClose.dataset.hotkeysClose = "1";
+  hotkeysActions.append(hotkeysClose);
+  hotkeysPanel.append(hotkeysTitle, hotkeysBody, hotkeysActions);
+  hotkeysDialog.append(hotkeysPanel);
+  container.appendChild(hotkeysDialog);
+
+  const renderHotkeys = () => {
+    hotkeysBody.innerHTML = "";
+    const sectionsRaw = listHotkeys();
+    const sections = Array.isArray(sectionsRaw) ? sectionsRaw : [];
+    let entryCount = 0;
+    sections.forEach((section, index) => {
+      const label = String(section?.label ?? "").trim();
+      const entriesRaw = Array.isArray(section?.entries) ? section.entries : [];
+      const entries = entriesRaw.filter((entry) => {
+        const shortcut = String(entry?.shortcut ?? "").trim();
+        const description = String(entry?.description ?? "").trim();
+        return shortcut.length > 0 && description.length > 0;
+      });
+      if (!entries.length) {
+        return;
+      }
+      const sectionEl = document.createElement("section");
+      sectionEl.className = "hotkeys-section";
+      sectionEl.dataset.hotkeysSection = String(section?.id ?? label ?? index);
+      if (label) {
+        const heading = document.createElement("h3");
+        heading.className = "hotkeys-section-title";
+        heading.textContent = label;
+        sectionEl.appendChild(heading);
+      }
+      const listEl = document.createElement("div");
+      listEl.className = "hotkeys-list";
+      entries.forEach((entry) => {
+        const shortcut = String(entry.shortcut).trim();
+        const description = String(entry.description).trim();
+        const row = document.createElement("div");
+        row.className = "hotkeys-entry";
+        row.dataset.hotkeysEntry = "1";
+        row.dataset.hotkeysEntryShortcut = shortcut;
+        row.dataset.hotkeysEntryDescription = description;
+        const shortcutEl = document.createElement("kbd");
+        shortcutEl.className = "hotkeys-entry-shortcut";
+        shortcutEl.textContent = shortcut;
+        const descriptionEl = document.createElement("span");
+        descriptionEl.className = "hotkeys-entry-description";
+        descriptionEl.textContent = description;
+        row.append(shortcutEl, descriptionEl);
+        listEl.appendChild(row);
+        entryCount += 1;
+      });
+      sectionEl.appendChild(listEl);
+      hotkeysBody.appendChild(sectionEl);
+    });
+    if (!entryCount) {
+      const empty = document.createElement("p");
+      empty.className = "hotkeys-empty";
+      empty.textContent = "No hotkeys available.";
+      hotkeysBody.appendChild(empty);
+    }
+  };
+
+  const openHotkeysDialog = () => {
+    renderHotkeys();
+    setDialogOpen(hotkeysDialog, true);
+  };
+  const closeHotkeysDialog = () => setDialogOpen(hotkeysDialog, false);
+
+  hotkeysDialog.addEventListener("click", (event) => {
+    if (event.target === hotkeysDialog) {
+      closeHotkeysDialog();
+    }
+  });
+  hotkeysClose.addEventListener("click", closeHotkeysDialog);
+
+  return { hotkeysDialog, openHotkeysDialog, closeHotkeysDialog };
+};
+
 const buildSettingsDialog = (container, config = {}) => {
   const getAutoSwitchToSelectAfterToolUse = typeof config.getAutoSwitchToSelectAfterToolUse === "function"
     ? config.getAutoSwitchToSelectAfterToolUse
@@ -437,7 +562,7 @@ const buildSettingsDialog = (container, config = {}) => {
     : () => { };
   const getToolDisplayDefaults = typeof config.getToolDisplayDefaults === "function"
     ? config.getToolDisplayDefaults
-    : () => ({ resistorStyle: "zigzag", groundVariant: "earth", groundColor: null });
+    : () => ({ resistorStyle: "zigzag", groundVariant: "earth", groundColor: null, probeColor: null });
   const getResistorDisplayTypeOptions = typeof config.getResistorDisplayTypeOptions === "function"
     ? config.getResistorDisplayTypeOptions
     : () => [];
@@ -456,12 +581,19 @@ const buildSettingsDialog = (container, config = {}) => {
   const parseSwitchComponentDefaultValue = typeof config.parseSwitchComponentDefaultValue === "function"
     ? config.parseSwitchComponentDefaultValue
     : () => ({ ron: "0", roff: "" });
+  const isProbeComponentType = typeof config.isProbeComponentType === "function"
+    ? config.isProbeComponentType
+    : () => false;
+  const onResetComponentTypeDefaults = typeof config.onResetComponentTypeDefaults === "function"
+    ? config.onResetComponentTypeDefaults
+    : () => { };
   const createNetColorPicker = typeof config.createNetColorPicker === "function"
     ? config.createNetColorPicker
     : null;
   const settingsDialog = document.createElement("div");
   settingsDialog.className = "modal-backdrop hidden";
   settingsDialog.dataset.settingsDialog = "1";
+  settingsDialog.dataset.settingsScopeType = "";
   settingsDialog.setAttribute("role", "dialog");
   settingsDialog.setAttribute("aria-modal", "true");
   settingsDialog.hidden = true;
@@ -552,7 +684,16 @@ const buildSettingsDialog = (container, config = {}) => {
         type: String(entry?.type ?? "").trim().toUpperCase(),
         label: String(entry?.label ?? "").trim(),
         valueLabel: String(entry?.valueLabel ?? "").trim(),
-        unit: String(entry?.unit ?? "").trim()
+        unit: String(entry?.unit ?? "").trim(),
+        valueControl: String(entry?.valueControl ?? "").trim().toLowerCase() === "select" ? "select" : "text",
+        valueOptions: Array.isArray(entry?.valueOptions)
+          ? entry.valueOptions
+            .map((option) => ({
+              value: String(option?.value ?? "").trim(),
+              label: String(option?.label ?? "").trim()
+            }))
+            .filter((option) => option.value)
+          : []
       }))
       .filter((entry) => entry.type)
     : [];
@@ -581,11 +722,22 @@ const buildSettingsDialog = (container, config = {}) => {
     const typeLabel = document.createElement("span");
     typeLabel.dataset.settingsComponentDefaultLabel = spec.type;
     typeLabel.textContent = spec.label || spec.type;
-    const valueInput = document.createElement("input");
-    valueInput.type = "text";
+    const valueInput = spec.valueControl === "select"
+      ? document.createElement("select")
+      : document.createElement("input");
     valueInput.className = "settings-short-value-input";
     valueInput.dataset.settingsComponentDefaultValue = spec.type;
-    valueInput.placeholder = spec.valueLabel || "Value";
+    if (valueInput instanceof HTMLInputElement) {
+      valueInput.type = "text";
+      valueInput.placeholder = spec.valueLabel || "Value";
+    } else if (valueInput instanceof HTMLSelectElement) {
+      spec.valueOptions.forEach((optionEntry) => {
+        const option = document.createElement("option");
+        option.value = optionEntry.value;
+        option.textContent = optionEntry.label || optionEntry.value;
+        valueInput.appendChild(option);
+      });
+    }
     const valueLabel = document.createElement("span");
     valueLabel.textContent = `${spec.valueLabel || "Value"}:`;
     const valueUnit = document.createElement("span");
@@ -758,6 +910,36 @@ const buildSettingsDialog = (container, config = {}) => {
     wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor = "";
     wireDefaultColorPicker?.setSelected(null);
   });
+  let probeDefaultColorPicker = null;
+  if (typeof createNetColorPicker === "function") {
+    probeDefaultColorPicker = createNetColorPicker({
+      rowClassName: "schematic-net-color-row settings-component-default-color-picker",
+      swatchAttribute: "data-settings-tool-display-probe-color-swatch",
+      labelText: "Color:",
+      onPick: (color) => {
+        const currentColor = String(probeDefaultColorClear.dataset.settingsToolDisplayProbeColorCurrentColor ?? "").trim().toLowerCase();
+        const normalizedPick = String(color ?? "").trim().toLowerCase();
+        const nextColor = currentColor === normalizedPick ? null : normalizedPick;
+        onToolDisplayDefaultChange("probeColor", nextColor);
+        probeDefaultColorClear.dataset.settingsToolDisplayProbeColorCurrentColor = nextColor ?? "";
+        probeDefaultColorPicker?.setSelected(nextColor);
+      }
+    });
+  }
+  if (probeDefaultColorPicker?.row) {
+    probeDefaultColorPicker.row.dataset.settingsToolDisplayProbeColorRow = "1";
+  }
+  const probeDefaultColorClear = document.createElement("button");
+  probeDefaultColorClear.type = "button";
+  probeDefaultColorClear.className = "secondary settings-component-default-color-clear";
+  probeDefaultColorClear.textContent = "Default";
+  probeDefaultColorClear.dataset.settingsToolDisplayProbeColorClear = "1";
+  probeDefaultColorClear.dataset.settingsToolDisplayProbeColorCurrentColor = "";
+  probeDefaultColorClear.addEventListener("click", () => {
+    onToolDisplayDefaultChange("probeColor", null);
+    probeDefaultColorClear.dataset.settingsToolDisplayProbeColorCurrentColor = "";
+    probeDefaultColorPicker?.setSelected(null);
+  });
   const wireDefaultsRow = document.createElement("div");
   wireDefaultsRow.className = "modal-field settings-component-default-row";
   wireDefaultsRow.dataset.settingsComponentDefaultRow = "WIRE";
@@ -765,6 +947,13 @@ const buildSettingsDialog = (container, config = {}) => {
   const wireDefaultsLabel = document.createElement("span");
   wireDefaultsLabel.dataset.settingsComponentDefaultLabel = "WIRE";
   wireDefaultsLabel.textContent = "Wire";
+  const probeDefaultsRow = document.createElement("div");
+  probeDefaultsRow.className = "modal-field settings-component-default-row";
+  probeDefaultsRow.dataset.settingsComponentDefaultRow = "PROBE";
+  probeDefaultsRow.dataset.settingsToolDisplayProbeColorRow = "1";
+  const probeDefaultsLabel = document.createElement("span");
+  probeDefaultsLabel.dataset.settingsComponentDefaultLabel = "PROBE";
+  probeDefaultsLabel.textContent = "Probe";
   groundDefaultsRow.append(groundDefaultsLabel, groundDisplayTypeLabel, groundDisplayTypeSelect);
   if (groundColorPicker?.row) {
     groundDefaultsRow.append(groundColorPicker.row);
@@ -775,6 +964,11 @@ const buildSettingsDialog = (container, config = {}) => {
     wireDefaultsRow.append(wireDefaultColorPicker.row);
   }
   wireDefaultsRow.append(wireDefaultColorClear);
+  probeDefaultsRow.append(probeDefaultsLabel);
+  if (probeDefaultColorPicker?.row) {
+    probeDefaultsRow.append(probeDefaultColorPicker.row);
+  }
+  probeDefaultsRow.append(probeDefaultColorClear);
   settingsBody.append(
     autoSwitchToolUseRow,
     autoSwitchWireUseRow,
@@ -785,16 +979,23 @@ const buildSettingsDialog = (container, config = {}) => {
     componentDefaultsTitle,
     ...componentDefaultRows.map((entry) => entry.row),
     groundDefaultsRow,
-    wireDefaultsRow
+    wireDefaultsRow,
+    probeDefaultsRow
   );
   const settingsActions = document.createElement("div");
   settingsActions.className = "modal-actions";
   const settingsApplyComponentDefaults = document.createElement("button");
   settingsApplyComponentDefaults.type = "button";
   settingsApplyComponentDefaults.className = "secondary";
-  settingsApplyComponentDefaults.textContent = "Apply defaults to existing";
+  settingsApplyComponentDefaults.textContent = "Apply display settings to existing";
   settingsApplyComponentDefaults.dataset.settingsApplyComponentDefaults = "1";
   settingsApplyComponentDefaults.hidden = componentDefaultRows.length < 1;
+  const settingsDefaultComponentType = document.createElement("button");
+  settingsDefaultComponentType.type = "button";
+  settingsDefaultComponentType.className = "secondary";
+  settingsDefaultComponentType.textContent = "Default";
+  settingsDefaultComponentType.dataset.settingsDefaultComponentType = "1";
+  settingsDefaultComponentType.hidden = true;
   const settingsReset = document.createElement("button");
   settingsReset.type = "button";
   settingsReset.className = "secondary";
@@ -804,11 +1005,98 @@ const buildSettingsDialog = (container, config = {}) => {
   settingsClose.type = "button";
   settingsClose.textContent = "Close";
   settingsClose.dataset.settingsClose = "1";
-  settingsActions.append(settingsApplyComponentDefaults, settingsReset, settingsClose);
+  settingsActions.append(settingsApplyComponentDefaults, settingsDefaultComponentType, settingsReset, settingsClose);
   settingsPanel.append(settingsTitle, settingsBody, settingsActions);
   settingsDialog.append(settingsPanel);
   container.appendChild(settingsDialog);
 
+  const componentDefaultRowByType = new Map(
+    componentDefaultRows.map((entry) => [entry.type, entry])
+  );
+  const normalizeScopedSettingsType = (value) => {
+    const type = String(value ?? "").trim().toUpperCase();
+    if (!type) {
+      return "";
+    }
+    if (componentDefaultRowByType.has(type)) {
+      return type;
+    }
+    if (type === "GND" || type === "WIRE") {
+      return type;
+    }
+    if (isProbeComponentType(type)) {
+      return "PROBE";
+    }
+    return "";
+  };
+  const getScopedSettingsLabel = (type) => {
+    if (!type) {
+      return "Settings";
+    }
+    const defaultsRow = componentDefaultRowByType.get(type);
+    if (defaultsRow) {
+      return defaultsRow.label || defaultsRow.type;
+    }
+    if (type === "GND") {
+      return "Ground";
+    }
+    if (type === "WIRE") {
+      return "Wire";
+    }
+    if (type === "PROBE") {
+      return "Probe";
+    }
+    return type;
+  };
+  let activeScopedSettingsType = "";
+  let activeScopedSourceType = "";
+  const syncDialogScopeState = () => {
+    const scopedType = activeScopedSettingsType;
+    const scoped = Boolean(scopedType);
+    settingsDialog.dataset.settingsScopeType = scopedType;
+    settingsTitle.textContent = scoped
+      ? `${getScopedSettingsLabel(scopedType)} Defaults`
+      : "Settings";
+    autoSwitchToolUseRow.hidden = scoped;
+    autoSwitchWireUseRow.hidden = scoped;
+    schematicTextFontRow.hidden = scoped;
+    schematicTextSizeRow.hidden = scoped;
+    schematicTextBoldRow.hidden = scoped;
+    schematicTextItalicRow.hidden = scoped;
+    componentDefaultsTitle.hidden = scoped;
+    componentDefaultRows.forEach((entry) => {
+      entry.row.hidden = scoped && entry.type !== scopedType;
+    });
+    groundDefaultsRow.hidden = scoped && scopedType !== "GND";
+    wireDefaultsRow.hidden = scoped && scopedType !== "WIRE";
+    probeDefaultsRow.hidden = scoped && scopedType !== "PROBE";
+    settingsDefaultComponentType.hidden = !scoped;
+    settingsReset.hidden = scoped;
+    settingsApplyComponentDefaults.hidden = scoped
+      ? !scopedType
+      : componentDefaultRows.length < 1;
+  };
+  const buildScopedApplyOptions = () => {
+    if (!activeScopedSettingsType) {
+      return null;
+    }
+    const options = {
+      types: [],
+      applyGroundDefaults: false,
+      applyProbeDefaults: false,
+      applyWireDefaults: false
+    };
+    if (activeScopedSettingsType === "GND") {
+      options.applyGroundDefaults = true;
+    } else if (activeScopedSettingsType === "PROBE") {
+      options.applyProbeDefaults = true;
+    } else if (activeScopedSettingsType === "WIRE") {
+      options.applyWireDefaults = true;
+    } else {
+      options.types = [activeScopedSettingsType];
+    }
+    return options;
+  };
   const syncSettingsState = () => {
     autoSwitchToolUseToggle.checked = Boolean(getAutoSwitchToSelectAfterToolUse());
     autoSwitchWireUseToggle.checked = Boolean(getAutoSwitchToSelectAfterWireUse());
@@ -835,6 +1123,20 @@ const buildSettingsDialog = (container, config = {}) => {
         entry.switchRonInput.value = String(parsedSwitchDefaults?.ron ?? "0");
         entry.switchRoffInput.value = String(parsedSwitchDefaults?.roff ?? "");
       } else {
+        if (entry.valueInput instanceof HTMLSelectElement) {
+          const customOption = entry.valueInput.querySelector("option[data-settings-component-default-custom='1']");
+          if (customOption) {
+            customOption.remove();
+          }
+          const hasOption = Array.from(entry.valueInput.options).some((option) => option.value === normalizedValue);
+          if (!hasOption && normalizedValue) {
+            const option = document.createElement("option");
+            option.value = normalizedValue;
+            option.textContent = normalizedValue;
+            option.dataset.settingsComponentDefaultCustom = "1";
+            entry.valueInput.appendChild(option);
+          }
+        }
         entry.valueInput.value = normalizedValue;
       }
       const normalizedColor = String(typeDefaults?.netColor ?? "").trim().toLowerCase();
@@ -860,10 +1162,28 @@ const buildSettingsDialog = (container, config = {}) => {
     const normalizedWireDefaultColor = String(getWireDefaultColor() ?? "").trim().toLowerCase();
     wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor = normalizedWireDefaultColor;
     wireDefaultColorPicker?.setSelected(normalizedWireDefaultColor);
+    const normalizedProbeDefaultColor = String(displayDefaults?.probeColor ?? "").trim().toLowerCase();
+    probeDefaultColorClear.dataset.settingsToolDisplayProbeColorCurrentColor = normalizedProbeDefaultColor;
+    probeDefaultColorPicker?.setSelected(normalizedProbeDefaultColor);
   };
   const openSettingsDialog = () => {
+    activeScopedSettingsType = "";
+    activeScopedSourceType = "";
+    syncDialogScopeState();
     syncSettingsState();
     setDialogOpen(settingsDialog, true);
+  };
+  const openSettingsDialogForType = (type) => {
+    const normalizedScopeType = normalizeScopedSettingsType(type);
+    if (!normalizedScopeType) {
+      return false;
+    }
+    activeScopedSettingsType = normalizedScopeType;
+    activeScopedSourceType = String(type ?? "").trim().toUpperCase();
+    syncDialogScopeState();
+    syncSettingsState();
+    setDialogOpen(settingsDialog, true);
+    return true;
   };
   const closeSettingsDialog = () => setDialogOpen(settingsDialog, false);
 
@@ -911,16 +1231,29 @@ const buildSettingsDialog = (container, config = {}) => {
     });
   });
   settingsApplyComponentDefaults.addEventListener("click", () => {
-    onApplyComponentDefaultsToExisting();
+    if (activeScopedSettingsType) {
+      const scopedOptions = buildScopedApplyOptions();
+      onApplyComponentDefaultsToExisting(scopedOptions ?? undefined);
+      return;
+    }
+    onApplyComponentDefaultsToExisting(undefined);
+  });
+  settingsDefaultComponentType.addEventListener("click", () => {
+    if (!activeScopedSettingsType) {
+      return;
+    }
+    onResetComponentTypeDefaults(activeScopedSourceType || activeScopedSettingsType);
+    syncSettingsState();
   });
   settingsReset.addEventListener("click", () => {
     onResetSettings();
     syncSettingsState();
   });
   settingsClose.addEventListener("click", closeSettingsDialog);
+  syncDialogScopeState();
   syncSettingsState();
 
-  return { settingsDialog, openSettingsDialog, closeSettingsDialog };
+  return { settingsDialog, openSettingsDialog, openSettingsDialogForType, closeSettingsDialog };
 };
 
 /**
@@ -940,6 +1273,8 @@ function createUI(container, state, actions) {
   let refreshSchematicNetlist = () => { };
   let updateConfigSectionVisibility = () => { };
   let queuePlotResize = () => { };
+  let openSettingsDialog = () => { };
+  let openSettingsDialogForType = () => false;
   let schematicMode = true;
   let workspace = null;
   let resultsPaneLayout = null;
@@ -963,7 +1298,7 @@ function createUI(container, state, actions) {
   let schematicTextStyle = { ...DEFAULT_SCHEMATIC_TEXT_STYLE };
   let componentDefaults = {};
   let wireDefaultColor = null;
-  let toolDisplayDefaults = { resistorStyle: "zigzag", groundVariant: "earth", groundColor: null };
+  let toolDisplayDefaults = { resistorStyle: "zigzag", groundVariant: "earth", groundColor: null, probeColor: null };
   let activeTraceHighlightTokens = new Set();
   let activeTraceSelectionTokens = new Set();
   let activeTraceHoverTokens = new Set();
@@ -1007,23 +1342,23 @@ function createUI(container, state, actions) {
   let schematicProbeLabels = new Map();
   const schematicGrid = { size: DEFAULT_GRID_SIZE, snap: true, visible: true };
   const selectionMenuActions = [
-    { id: "edit", label: "Edit", shortcut: "Ctrl+E" },
-    { id: "select-all", label: "Select All", shortcut: "Ctrl+A" },
-    { id: "delete", label: "Delete", shortcut: "Del" },
-    { id: "copy", label: "Copy", shortcut: "Ctrl+C" },
-    { id: "cut", label: "Cut", shortcut: "Ctrl+X" },
-    { id: "paste", label: "Paste", shortcut: "Ctrl+V" },
+    { id: "edit", label: "Edit Properties", shortcut: HOTKEY_SHORTCUTS.edit },
+    { id: "select-all", label: "Select All", shortcut: HOTKEY_SHORTCUTS.selectAll },
+    { id: "delete", label: "Delete", shortcut: HOTKEY_SHORTCUTS.delete },
+    { id: "copy", label: "Copy", shortcut: HOTKEY_SHORTCUTS.copy },
+    { id: "cut", label: "Cut", shortcut: HOTKEY_SHORTCUTS.cut },
+    { id: "paste", label: "Paste", shortcut: HOTKEY_SHORTCUTS.paste },
     { divider: true, id: "edit-after-paste" },
-    { id: "rotate-cw", label: "Rotate CW", shortcut: "Space" },
-    { id: "rotate-ccw", label: "Rotate CCW", shortcut: "Shift+Space" },
-    { id: "flip-h", label: "Flip Horizontal", shortcut: "X" },
-    { id: "flip-v", label: "Flip Vertical", shortcut: "Y" },
+    { id: "rotate-cw", label: "Rotate CW", shortcut: HOTKEY_SHORTCUTS.rotateCw },
+    { id: "rotate-ccw", label: "Rotate CCW", shortcut: HOTKEY_SHORTCUTS.rotateCcw },
+    { id: "flip-h", label: "Flip Horizontal", shortcut: HOTKEY_SHORTCUTS.flipH },
+    { id: "flip-v", label: "Flip Vertical", shortcut: HOTKEY_SHORTCUTS.flipV },
     { divider: true, id: "edit-after-flip-v" },
     { id: "simplify-wires", label: "Simplify Wires" },
     { id: "regrid-current-grid", label: "Regrid to Current Grid" },
     { divider: true, id: "edit-after-simplify" },
-    { id: "undo", label: "Undo", shortcut: "Ctrl+Z" },
-    { id: "redo", label: "Redo", shortcut: "Ctrl+Y" }
+    { id: "undo", label: "Undo", shortcut: HOTKEY_SHORTCUTS.undo },
+    { id: "redo", label: "Redo", shortcut: HOTKEY_SHORTCUTS.redo }
   ];
   const clipboard = { componentIds: [], wireIds: [] };
 
@@ -1443,6 +1778,9 @@ function createUI(container, state, actions) {
     if (typeof input?.placeholder === "string") {
       normalizedInput.placeholder = input.placeholder;
     }
+    if (Object.prototype.hasOwnProperty.call(input, "unit")) {
+      normalizedInput.unit = String(input.unit ?? "").trim();
+    }
     if (control === "number") {
       ["min", "max", "step"].forEach((name) => {
         if (!Object.prototype.hasOwnProperty.call(input, name)) return;
@@ -1587,7 +1925,8 @@ function createUI(container, state, actions) {
   const getBuiltInToolDisplayDefaults = () => ({
     resistorStyle: componentDisplayApi.normalizeResistorStyle("zigzag"),
     groundVariant: componentDisplayApi.normalizeGroundVariant("earth"),
-    groundColor: null
+    groundColor: null,
+    probeColor: null
   });
   const normalizeToolDisplayDefaults = (value, fallback = getBuiltInToolDisplayDefaults()) => {
     const source = value && typeof value === "object" ? value : {};
@@ -1608,6 +1947,12 @@ function createUI(container, state, actions) {
           ? source.groundColor
           : undefined,
         base.groundColor
+      ),
+      probeColor: normalizeWireDefaultColor(
+        Object.prototype.hasOwnProperty.call(source, "probeColor")
+          ? source.probeColor
+          : undefined,
+        base.probeColor
       )
     };
   };
@@ -1653,10 +1998,29 @@ function createUI(container, state, actions) {
     return listComponentDefaultTypes().map((type) => {
       const definition = definitionMap.get(type) ?? null;
       const valueField = uiInlineEditorDomain.normalizeValueFieldMeta(elementCatalogApi.getValueFieldMeta(type));
+      const defaultValueLabel = String(valueField?.label ?? "Value").trim() || "Value";
+      const diodePresetProperty = Array.isArray(definition?.properties)
+        ? definition.properties.find((property) => {
+          const key = String(property?.key ?? "").trim();
+          const control = String(property?.control ?? "").trim().toLowerCase();
+          return key === "diodePreset" && control === "select";
+        })
+        : null;
+      const diodeModelOptions = Array.isArray(diodePresetProperty?.options)
+        ? diodePresetProperty.options
+          .map((option) => ({
+            value: String(option?.value ?? "").trim(),
+            label: String(option?.label ?? "").trim()
+          }))
+          .filter((option) => option.value)
+        : [];
+      const isDiodeModelSelect = type === "D" && diodeModelOptions.length > 0;
       return Object.freeze({
         type,
         label: String(definition?.label ?? type).trim() || type,
-        valueLabel: String(valueField?.label ?? "Value").trim() || "Value",
+        valueLabel: type === "D" ? "Model" : defaultValueLabel,
+        valueControl: isDiodeModelSelect ? "select" : "text",
+        valueOptions: isDiodeModelSelect ? Object.freeze(diodeModelOptions) : Object.freeze([]),
         unit: String(valueField?.unit ?? "").trim()
       });
     });
@@ -2050,6 +2414,69 @@ function createUI(container, state, actions) {
     }))
   ];
   const tooltipNameOnlyTools = new Set(["ARR", "BOX", "VM", "AM"]);
+  const normalizeToolHotkeyKey = (value) => String(value ?? "").trim().toLowerCase();
+  const normalizeShortcutToken = (value) => String(value ?? "").trim().toUpperCase();
+  const parseShortcutMarker = (value) => {
+    const title = String(value ?? "").trim();
+    if (!title) {
+      return "";
+    }
+    const match = title.match(/\(([^)]+)\)\s*$/);
+    return match ? normalizeShortcutToken(match[1]) : "";
+  };
+  const buildSchematicToolHotkeyState = () => {
+    const keyToTool = {};
+    const shortcutByTool = {};
+    const entries = [];
+    const reservedKeys = new Set(["x", "y", "h"]);
+    schematicToolButtonEntries.forEach((entry) => {
+      const toolKey = normalizeToolHotkeyKey(entry.tool);
+      const shortcutText = String(entry?.shortcut ?? "").trim();
+      const key = shortcutText.toLowerCase();
+      const normalizedTool = String(entry.tool ?? "").trim().toUpperCase();
+      if (!/^[a-z0-9]$/.test(key)) {
+        return;
+      }
+      if (reservedKeys.has(key)) {
+        return;
+      }
+      if (tooltipNameOnlyTools.has(normalizedTool)) {
+        return;
+      }
+      if (Object.prototype.hasOwnProperty.call(keyToTool, key)) {
+        return;
+      }
+      keyToTool[key] = String(entry.tool ?? "");
+      shortcutByTool[toolKey] = normalizeShortcutToken(shortcutText);
+      entries.push({
+        tool: String(entry.tool ?? ""),
+        shortcut: normalizeShortcutToken(shortcutText),
+        name: String(entry.name ?? entry.label ?? entry.tool ?? "").trim() || String(entry.tool ?? "")
+      });
+    });
+    return Object.freeze({
+      keyToTool: Object.freeze(keyToTool),
+      shortcutByTool: Object.freeze(shortcutByTool),
+      entries: Object.freeze(entries.map((entry) => Object.freeze(entry)))
+    });
+  };
+  const schematicToolHotkeyState = buildSchematicToolHotkeyState();
+  const getImplementedToolShortcut = (tool) => {
+    return schematicToolHotkeyState.shortcutByTool[normalizeToolHotkeyKey(tool)] ?? "";
+  };
+  Object.entries(toolHelp).forEach(([toolKey, help]) => {
+    const helpTitle = String(help?.title ?? "").trim();
+    const marker = parseShortcutMarker(helpTitle);
+    if (!marker) {
+      return;
+    }
+    const implementedShortcut = getImplementedToolShortcut(toolKey);
+    if (!implementedShortcut || marker !== implementedShortcut) {
+      throw new Error(
+        `Help title shortcut marker mismatch for tool '${toolKey}'. marker='${marker}' implemented='${implementedShortcut || "none"}'.`
+      );
+    }
+  });
 
   const schematicToolButtons = schematicToolButtonEntries.map((entry) => {
     const button = document.createElement("button");
@@ -2064,7 +2491,7 @@ function createUI(container, state, actions) {
       button.textContent = entry.label;
     }
     button.dataset.schematicTool = entry.tool;
-    const shortcut = String(entry.shortcut ?? entry.label ?? entry.tool ?? "").trim();
+    const shortcut = getImplementedToolShortcut(entry.tool);
     const toolName = entry.name ?? entry.label;
     button.setAttribute("aria-label", toolName);
     const normalizedTool = String(entry.tool ?? "").toUpperCase();
@@ -2086,6 +2513,72 @@ function createUI(container, state, actions) {
     return button;
   });
   const elementToolButtons = schematicToolButtons.filter((button) => button.dataset.schematicElementTool === "1");
+  const listImplementedHotkeys = () => {
+    const mapEntries = (entries) => {
+      return entries
+        .map((entry) => ({
+          shortcut: String(entry?.shortcut ?? "").trim(),
+          description: String(entry?.description ?? "").trim()
+        }))
+        .filter((entry) => entry.shortcut && entry.description);
+    };
+    return [
+      {
+        id: "file",
+        label: "File",
+        entries: mapEntries([
+          { shortcut: HOTKEY_SHORTCUTS.open, description: "Open schematic" },
+          { shortcut: HOTKEY_SHORTCUTS.save, description: "Save schematic" },
+          { shortcut: HOTKEY_SHORTCUTS.saveAs, description: "Save schematic as..." },
+          { shortcut: HOTKEY_SHORTCUTS.settings, description: "Open settings" }
+        ])
+      },
+      {
+        id: "edit",
+        label: "Edit",
+        entries: mapEntries([
+          { shortcut: HOTKEY_SHORTCUTS.edit, description: "Edit selected component" },
+          { shortcut: HOTKEY_SHORTCUTS.selectAll, description: "Select all components and wires" },
+          { shortcut: HOTKEY_SHORTCUTS.delete, description: "Delete selection" },
+          { shortcut: HOTKEY_SHORTCUTS.copy, description: "Copy selection" },
+          { shortcut: HOTKEY_SHORTCUTS.cut, description: "Cut selection" },
+          { shortcut: HOTKEY_SHORTCUTS.paste, description: "Paste selection" },
+          { shortcut: HOTKEY_SHORTCUTS.rotateCw, description: "Rotate selection clockwise" },
+          { shortcut: HOTKEY_SHORTCUTS.rotateCcw, description: "Rotate selection counter-clockwise" },
+          { shortcut: HOTKEY_SHORTCUTS.flipH, description: "Flip selection horizontally" },
+          { shortcut: HOTKEY_SHORTCUTS.flipV, description: "Flip selection vertically" },
+          { shortcut: HOTKEY_SHORTCUTS.undo, description: "Undo" },
+          { shortcut: HOTKEY_SHORTCUTS.redo, description: "Redo" },
+          { shortcut: HOTKEY_SHORTCUTS.redoAlt, description: "Redo (alternate)" }
+        ])
+      },
+      {
+        id: "schematic",
+        label: "Schematic",
+        entries: mapEntries([
+          { shortcut: HOTKEY_SHORTCUTS.runSimulation, description: "Run simulation" },
+          { shortcut: HOTKEY_SHORTCUTS.escape, description: "Cancel wire step or return to Select tool" }
+        ])
+      },
+      {
+        id: "tools",
+        label: "Tools",
+        entries: mapEntries(
+          schematicToolHotkeyState.entries.map((entry) => ({
+            shortcut: entry.shortcut,
+            description: `Select ${entry.name} tool`
+          }))
+        )
+      },
+      {
+        id: "help",
+        label: "Help",
+        entries: mapEntries([
+          { shortcut: HOTKEY_SHORTCUTS.toggleHelp, description: "Toggle hover info" }
+        ])
+      }
+    ];
+  };
 
 
   const normalizeGridSize = (value) => {
@@ -2218,14 +2711,14 @@ function createUI(container, state, actions) {
     }
     applyCustomTooltip(button, tooltipText);
   };
-  applyActionButtonIcon(undoActionButton, "undo", "Undo (Ctrl+Z)");
-  applyActionButtonIcon(redoActionButton, "redo", "Redo (Ctrl+Y)");
-  applyActionButtonIcon(runActionButton, "run", "Run Simulation (F5)");
+  applyActionButtonIcon(undoActionButton, "undo", `Undo (${HOTKEY_SHORTCUTS.undo})`);
+  applyActionButtonIcon(redoActionButton, "redo", `Redo (${HOTKEY_SHORTCUTS.redo})`);
+  applyActionButtonIcon(runActionButton, "run", `Run Simulation (${HOTKEY_SHORTCUTS.runSimulation})`);
   applyActionButtonIcon(exportActionButton, "export", "Export Diagram");
-  applyActionButtonIcon(rotateCwButton, "rotate-cw", "Rotate CW (Space)");
-  applyActionButtonIcon(rotateCcwButton, "rotate-ccw", "Rotate CCW (Shift+Space)");
-  applyActionButtonIcon(flipHButton, "flip-h", "Flip H (X)");
-  applyActionButtonIcon(flipVButton, "flip-v", "Flip V (Y)");
+  applyActionButtonIcon(rotateCwButton, "rotate-cw", `Rotate CW (${HOTKEY_SHORTCUTS.rotateCw})`);
+  applyActionButtonIcon(rotateCcwButton, "rotate-ccw", `Rotate CCW (${HOTKEY_SHORTCUTS.rotateCcw})`);
+  applyActionButtonIcon(flipHButton, "flip-h", `Flip H (${HOTKEY_SHORTCUTS.flipH})`);
+  applyActionButtonIcon(flipVButton, "flip-v", `Flip V (${HOTKEY_SHORTCUTS.flipV})`);
   applyActionButtonIcon(duplicateActionButton, "duplicate", "Duplicate");
   applyActionButtonIcon(deleteActionButton, "delete", "Delete (Del)");
   applyActionButtonIcon(clearProbesActionButton, "clear-probes", "Clear Probes");
@@ -3062,7 +3555,7 @@ function createUI(container, state, actions) {
   workspaceHelpToggleButton.type = "button";
   workspaceHelpToggleButton.className = "secondary icon-button workspace-help-toggle";
   workspaceHelpToggleButton.dataset.workspaceHelpToggle = "1";
-  applyActionButtonIcon(workspaceHelpToggleButton, "info-view", "Hover Info (H)");
+  applyActionButtonIcon(workspaceHelpToggleButton, "info-view", `Hover Info (${HOTKEY_SHORTCUTS.toggleHelp})`);
   workspaceHelpToggleButton.addEventListener("click", () => {
     toggleHelpEnabled();
   });
@@ -3669,12 +4162,6 @@ function createUI(container, state, actions) {
       addVoltageSignal(descriptor?.signal);
       addVoltageSignal(descriptor?.voltageSignal);
       addVoltageSignals(descriptor?.saveSignals);
-      if (descriptor?.netA) {
-        addVoltageSignal(`v(${descriptor.netA})`);
-      }
-      if (descriptor?.netB) {
-        addVoltageSignal(`v(${descriptor.netB})`);
-      }
       if (descriptor?.netA && descriptor?.netB) {
         addVoltageSignal(`v(${descriptor.netA},${descriptor.netB})`);
       }
@@ -3783,6 +4270,12 @@ function createUI(container, state, actions) {
       addToSetMap(index.currentTokenToComponentIds, token, componentId);
       addToSetMap(index.componentToCurrentTokens, componentId, token);
     };
+    const probeComponentIds = new Set(
+      (Array.isArray(model?.components) ? model.components : [])
+        .filter((component) => isProbeType(String(component?.type ?? "").toUpperCase()))
+        .map((component) => normalizeComponentId(component?.id))
+        .filter(Boolean)
+    );
     const pinNetMap = compileInfo && typeof compileInfo.pinNetMap === "object"
       ? compileInfo.pinNetMap
       : {};
@@ -3794,7 +4287,9 @@ function createUI(container, state, actions) {
       }
       addToSetMap(index.netToComponentIds, net, componentId);
       addToSetMap(index.componentToNets, componentId, net);
-      addComponentTraceToken(componentId, `v(${net})`);
+      if (!probeComponentIds.has(componentId)) {
+        addComponentTraceToken(componentId, `v(${net})`);
+      }
     });
 
     const componentLines = compileInfo && typeof compileInfo.componentLines === "object"
@@ -4423,7 +4918,8 @@ function createUI(container, state, actions) {
       }
       const selectedComponent = componentsById.get(componentId);
       const selectedType = String(selectedComponent?.type ?? "").toUpperCase();
-      if (isProbeType(selectedType)) {
+      const selectedIsProbe = isProbeType(selectedType);
+      if (selectedIsProbe) {
         const probeLabel = String(schematicProbeLabels?.get?.(componentId) ?? selectedComponent?.name ?? "").trim();
         const probeToken = normalizeSignalToken(probeLabel);
         if (probeToken) {
@@ -4436,13 +4932,15 @@ function createUI(container, state, actions) {
           tokens.add(token);
         }
       });
-      const nets = index.componentToNets.get(componentId);
-      nets?.forEach((net) => {
-        const token = normalizeSignalToken(`v(${net})`);
-        if (token) {
-          tokens.add(token);
-        }
-      });
+      if (!selectedIsProbe) {
+        const nets = index.componentToNets.get(componentId);
+        nets?.forEach((net) => {
+          const token = normalizeSignalToken(`v(${net})`);
+          if (token) {
+            tokens.add(token);
+          }
+        });
+      }
       const currents = index.componentToCurrentTokens.get(componentId);
       currents?.forEach((token) => {
         if (token) {
@@ -4905,9 +5403,6 @@ function createUI(container, state, actions) {
             applyLiveSignalRefresh();
           }
           const buildAutoRunSignals = (kind, compiled) => {
-            if (kind === "op") {
-              return [];
-            }
             const requestedSignals = Array.isArray(simulationConfig.save.signals)
               ? simulationConfig.save.signals.map((entry) => String(entry ?? "").trim()).filter(Boolean)
               : [];
@@ -4922,6 +5417,10 @@ function createUI(container, state, actions) {
               ? compiled.probeSignals.map((entry) => String(entry ?? "").trim()).filter(Boolean)
               : [];
             const wildcardOnly = requestedSignals.length > 0 && requestedSignals.every((token) => isAllSignalToken(token));
+            if (kind === "op") {
+              const opSignals = dedupeSignals(["all"].concat(requestedSignals, probeSignals));
+              return opSignals.length ? opSignals : ["all"];
+            }
             const preferredSignals = dedupeSignals(namedSignals.concat(probeSignals));
             const fallbackSignals = preferredSignals.length
               ? preferredSignals
@@ -4988,7 +5487,7 @@ function createUI(container, state, actions) {
                 switch (kind) {
                   case "op":
                     lastRunKind = "op";
-                    actions.onRun(task.compiled.netlist ?? "");
+                    actions.onRun(task.compiled.netlist ?? "", task.signals.length ? task.signals : undefined);
                     break;
                   case "dc":
                     actions.onRunDc(task.compiled.netlist ?? "", task.signals.length ? task.signals : undefined);
@@ -5308,6 +5807,9 @@ function createUI(container, state, actions) {
         if (netlistId && (targetType === "V" || targetType === "I" || targetType === "SW")) {
           currentSignals.push(`i(${netlistId})`);
         }
+        if (targetId && targetType === "D") {
+          currentSignals.push(`@${targetId.toLowerCase()}[id]`);
+        }
         if (targetId && targetType && targetType !== "V" && targetType !== "I") {
           currentSignals.push(`@${targetId.toLowerCase()}[i]`);
         }
@@ -5545,6 +6047,24 @@ function createUI(container, state, actions) {
     }
   };
 
+  const persistAutosaveLocal = () => {
+    if (!persistenceApi || typeof persistenceApi.saveAutosaveLocal !== "function") {
+      return false;
+    }
+    const doc = buildDocumentPayload(false);
+    if (!doc) {
+      return false;
+    }
+    const ok = persistenceApi.saveAutosaveLocal(doc);
+    if (ok && typeof persistenceApi.setRecentInfo === "function") {
+      persistenceApi.setRecentInfo({
+        lastAutosaveKey: persistenceApi.AUTOSAVE_KEY,
+        lastOpenedName: documentMeta.fileName || suggestedFileName
+      });
+    }
+    return ok;
+  };
+
   function queueAutosave(markDirty = true) {
     if (isRestoringDocument) {
       return;
@@ -5563,6 +6083,19 @@ function createUI(container, state, actions) {
       persistAutosave();
     }, 350);
   }
+
+  const flushAutosaveOnPageHide = () => {
+    if (isRestoringDocument) {
+      return;
+    }
+    if (autosaveTimer) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+    }
+    persistAutosaveLocal();
+  };
+  window.addEventListener("pagehide", flushAutosaveOnPageHide);
+  window.addEventListener("beforeunload", flushAutosaveOnPageHide);
 
   updateConfigSectionVisibility = () => {
     Object.entries(configSections).forEach(([kind, section]) => {
@@ -6062,18 +6595,24 @@ function createUI(container, state, actions) {
       ? compiled.probeSignals.map((entry) => String(entry ?? "").trim()).filter(Boolean)
       : [];
     const wildcardOnly = requestedSignals.length > 0 && requestedSignals.every((token) => isAllSignalToken(token));
-    const preferredSignals = dedupeSignals(namedSignals.concat(probeSignals));
-    const fallbackSignals = preferredSignals.length
-      ? preferredSignals
-      : ((kind === "dc" || kind === "tran" || kind === "ac") ? ["all"] : []);
-    const runSignals = (!requestedSignals.length || wildcardOnly)
-      ? fallbackSignals
-      : dedupeSignals(requestedSignals.concat(probeSignals));
+    let runSignals = [];
+    if (kind === "op") {
+      runSignals = dedupeSignals(["all"].concat(requestedSignals, probeSignals));
+      if (!runSignals.length) {
+        runSignals = ["all"];
+      }
+    } else {
+      const preferredSignals = dedupeSignals(namedSignals.concat(probeSignals));
+      const fallbackSignals = preferredSignals.length ? preferredSignals : ["all"];
+      runSignals = (!requestedSignals.length || wildcardOnly)
+        ? fallbackSignals
+        : dedupeSignals(requestedSignals.concat(probeSignals));
+    }
     setActiveTab(kind);
     rememberRunRequestSignature(kind, compiled, runSignals);
     switch (kind) {
       case "op":
-        actions.onRun(compiled.netlist);
+        actions.onRun(compiled.netlist, runSignals.length ? runSignals : undefined);
         break;
       case "dc":
         actions.onRunDc(compiled.netlist, runSignals.length ? runSignals : undefined);
@@ -6085,7 +6624,7 @@ function createUI(container, state, actions) {
         actions.onRunAc(compiled.netlist, runSignals.length ? runSignals : undefined);
         break;
       default:
-        actions.onRun(compiled.netlist);
+        actions.onRun(compiled.netlist, runSignals.length ? runSignals : undefined);
         break;
     }
   };
@@ -7379,6 +7918,23 @@ function createUI(container, state, actions) {
         setSelectedHelpTarget(button);
       }
     });
+    button.addEventListener("contextmenu", (event) => {
+      if (button.dataset.schematicElementTool !== "1") {
+        return;
+      }
+      const tool = String(button.dataset.schematicTool ?? "").trim().toUpperCase();
+      if (!tool) {
+        return;
+      }
+      const opened = typeof openSettingsDialogForType === "function"
+        ? openSettingsDialogForType(tool)
+        : false;
+      if (!opened) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    });
   });
 
   gridSizeInput.addEventListener("change", () => {
@@ -7618,6 +8174,10 @@ function createUI(container, state, actions) {
       openAboutDialog();
       return;
     }
+    if (action === "hotkeys") {
+      openHotkeysDialog();
+      return;
+    }
     if (action === "settings") {
       openSettingsDialog();
       return;
@@ -7741,14 +8301,14 @@ function createUI(container, state, actions) {
       runMenuAction("settings");
       return;
     }
-    const target = event.target;
-    const targetTag = target && target.tagName ? target.tagName.toLowerCase() : "";
-    if (targetTag === "input" || targetTag === "textarea") {
-      return;
-    }
     if (key === "f5") {
       event.preventDefault();
       runSchematicAnalysis();
+      return;
+    }
+    const target = event.target;
+    const targetTag = target && target.tagName ? target.tagName.toLowerCase() : "";
+    if (targetTag === "input" || targetTag === "textarea") {
       return;
     }
     const schematicActive = schematicMode || schematicPanel.classList.contains("active");
@@ -7798,11 +8358,6 @@ function createUI(container, state, actions) {
     if (modifierKey) {
       return;
     }
-    if (key === "p") {
-      event.preventDefault();
-      setActiveSchematicTool("PV");
-      return;
-    }
     if (key === "space") {
       event.preventDefault();
       runSchematicAction(event.shiftKey ? "rotate-ccw" : "rotate-cw");
@@ -7816,16 +8371,6 @@ function createUI(container, state, actions) {
     if (key === "y") {
       event.preventDefault();
       runSchematicAction("flip-v");
-      return;
-    }
-    if (key === "w") {
-      event.preventDefault();
-      setActiveSchematicTool("wire");
-      return;
-    }
-    if (key === "s") {
-      event.preventDefault();
-      setActiveSchematicTool("select");
       return;
     }
     if (key === "escape") {
@@ -7864,18 +8409,7 @@ function createUI(container, state, actions) {
       toggleHelpEnabled();
       return;
     }
-    const toolMap = {
-      r: "R",
-      c: "C",
-      l: "L",
-      v: "V",
-      i: "I",
-      3: "SW",
-      g: "GND",
-      n: "NET",
-      t: "TEXT"
-    };
-    const tool = toolMap[key];
+    const tool = schematicToolHotkeyState.keyToTool[key];
     if (tool) {
       event.preventDefault();
       setActiveSchematicTool(tool);
@@ -7911,6 +8445,7 @@ function createUI(container, state, actions) {
         || action === "save-as"
         || action === "new"
         || action === "about"
+        || action === "hotkeys"
         || action === "settings"
       ) {
         return false;
@@ -8128,14 +8663,14 @@ function createUI(container, state, actions) {
       label: "File",
       items: [
         { id: "new", label: "New" },
-        { id: "open", label: "Open...", shortcut: "Ctrl+O" },
-        { id: "save", label: "Save", shortcut: "Ctrl+S" },
-        { id: "save-as", label: "Save As...", shortcut: "Ctrl+Shift+S" },
+        { id: "open", label: "Open...", shortcut: HOTKEY_SHORTCUTS.open },
+        { id: "save", label: "Save", shortcut: HOTKEY_SHORTCUTS.save },
+        { id: "save-as", label: "Save As...", shortcut: HOTKEY_SHORTCUTS.saveAs },
         { divider: true, id: "exports" },
         { id: "export-diagram", label: "Export Diagram..." },
         { id: "export-results", label: "Export Results..." },
         { divider: true, id: "settings" },
-        { id: "settings", label: "Settings...", shortcut: "Ctrl+," }
+        { id: "settings", label: "Settings...", shortcut: HOTKEY_SHORTCUTS.settings }
       ],
       actionAttribute: "menuAction",
       showShortcuts: true
@@ -8158,7 +8693,8 @@ function createUI(container, state, actions) {
       id: "help",
       label: "Help",
       items: [
-        { id: "toggle-help", label: "Hover Info: On", shortcut: "H" },
+        { id: "toggle-help", label: "Hover Info: On", shortcut: HOTKEY_SHORTCUTS.toggleHelp },
+        { id: "hotkeys", label: "Hotkeys..." },
         { id: "about", label: "About" }
       ],
       actionAttribute: "menuAction",
@@ -8275,21 +8811,56 @@ function createUI(container, state, actions) {
     }
     const svg = schematicCanvasWrap.querySelector(".schematic-editor");
     const client = uiInlineEditorPositioningModule.toClientPoint(svg, anchor.x, anchor.y);
-    if (!client || !workspace) {
+    if (!workspace) {
       return;
     }
+    const workspaceRect = workspace.getBoundingClientRect();
+    const inlineBoundsRect = schematicCanvasWrap instanceof HTMLElement
+      ? schematicCanvasWrap.getBoundingClientRect()
+      : workspaceRect;
+    const fallbackLeft = (inlineBoundsRect.left - workspaceRect.left) + 8;
+    const fallbackTop = (inlineBoundsRect.top - workspaceRect.top) + 8;
+    const maxPanelHeight = Math.floor(Number(inlineBoundsRect.height) - 16);
+    if (Number.isFinite(maxPanelHeight) && maxPanelHeight > 0) {
+      inlineEditor.style.maxHeight = `${maxPanelHeight}px`;
+      inlineEditor.style.overflowY = "auto";
+    }
+    if (!client) {
+      inlineEditor.style.left = `${fallbackLeft}px`;
+      inlineEditor.style.top = `${fallbackTop}px`;
+      return;
+    }
+    const panelRect = inlineEditor.getBoundingClientRect();
     const nextPosition = uiInlineEditorPositioningModule.resolveInlineEditorPosition({
       anchorClient: client,
-      workspaceRect: workspace.getBoundingClientRect(),
-      panelRect: inlineEditor.getBoundingClientRect(),
+      workspaceRect,
+      panelRect,
       margin: 8,
       offset: 16
     });
     if (!nextPosition) {
+      inlineEditor.style.left = `${fallbackLeft}px`;
+      inlineEditor.style.top = `${fallbackTop}px`;
       return;
     }
-    inlineEditor.style.left = `${nextPosition.left}px`;
-    inlineEditor.style.top = `${nextPosition.top}px`;
+    const clamp = (value, min, max) => {
+      if (!Number.isFinite(value)) {
+        return min;
+      }
+      if (!Number.isFinite(min)) {
+        return value;
+      }
+      if (!Number.isFinite(max) || max < min) {
+        return min;
+      }
+      return Math.min(Math.max(value, min), max);
+    };
+    const minLeft = fallbackLeft;
+    const minTop = fallbackTop;
+    const maxLeft = (inlineBoundsRect.right - workspaceRect.left) - panelRect.width - 8;
+    const maxTop = (inlineBoundsRect.bottom - workspaceRect.top) - panelRect.height - 8;
+    inlineEditor.style.left = `${clamp(nextPosition.left, minLeft, maxLeft)}px`;
+    inlineEditor.style.top = `${clamp(nextPosition.top, minTop, maxTop)}px`;
   };
   const inlineEditorPanelRefs = {
     inlineEditor,
@@ -8537,7 +9108,40 @@ function createUI(container, state, actions) {
   closeInlineComponentEditor = inlineEditorHandlers.closeInlineComponentEditor;
   openInlineComponentEditor = inlineEditorHandlers.openInlineComponentEditor;
   const canEditInlineInputs = () => inlineEditorHandlers.canEditInlineInputs();
-  const applyInlinePatch = (patch) => inlineEditorHandlers.applyInlinePatch(patch);
+
+  // Diode preset map: element property key → SPICE model param key, in order.
+  const DIODE_PROP_TO_PARAM = Object.freeze([
+    ["diodeIS", "IS"], ["diodeN", "N"], ["diodeRS", "RS"], ["diodeTT", "TT"],
+    ["diodeCJO", "CJO"], ["diodeVJ", "VJ"], ["diodeM", "M"], ["diodeEG", "EG"],
+    ["diodeXTI", "XTI"], ["diodeTNOM", "TNOM"], ["diodeBV", "BV"], ["diodeIBV", "IBV"],
+    ["diodeFC", "FC"]
+  ]);
+  const expandDiodePresetPatch = (patch) => {
+    const presetKey = patch?.diodePreset;
+    if (!presetKey || typeof presetKey !== "string") {
+      return patch;
+    }
+    const schematicApi = typeof self !== "undefined" ? self.SpjutSimSchematic : null;
+    if (!schematicApi || typeof schematicApi.getDiodeModelPresets !== "function") {
+      return patch;
+    }
+    const presets = schematicApi.getDiodeModelPresets();
+    const preset = presets[presetKey];
+    if (!preset) {
+      return patch;
+    }
+    const expanded = { ...patch, value: presetKey };
+    DIODE_PROP_TO_PARAM.forEach(([propKey, paramKey]) => {
+      expanded[propKey] = String(preset[paramKey] ?? "");
+    });
+    return expanded;
+  };
+
+  const applyInlinePatch = (patch) => {
+    const componentType = String(getModelComponent(inlineEditingComponentId)?.type ?? "").toUpperCase();
+    const resolved = componentType === "D" ? expandDiodePresetPatch(patch) : patch;
+    inlineEditorHandlers.applyInlinePatch(resolved);
+  };
   const getInlineEditingComponentType = () =>
     String(getModelComponent(inlineEditingComponentId)?.type ?? "").toUpperCase();
   const commitInlineBoxStyle = (stylePatch) => {
@@ -8865,7 +9469,13 @@ function createUI(container, state, actions) {
   container.appendChild(exportDialog);
 
   const { openAboutDialog } = buildAboutDialog(container);
-  const { openSettingsDialog } = buildSettingsDialog(container, {
+  const { openHotkeysDialog } = buildHotkeysDialog(container, {
+    listHotkeys: () => listImplementedHotkeys()
+  });
+  ({
+    openSettingsDialog,
+    openSettingsDialogForType
+  } = buildSettingsDialog(container, {
     getAutoSwitchToSelectAfterToolUse: () => autoSwitchToSelectOnPlace,
     onAutoSwitchToSelectAfterToolUseChange: (value) => {
       autoSwitchToSelectOnPlace = Boolean(value);
@@ -8890,6 +9500,7 @@ function createUI(container, state, actions) {
     getResistorDisplayTypeOptions,
     getGroundDisplayTypeOptions,
     parseSwitchComponentDefaultValue,
+    isProbeComponentType: (type) => isProbeType(type),
     createNetColorPicker,
     onComponentDefaultChange: (type, updates) => {
       const key = String(type ?? "").trim().toUpperCase();
@@ -8925,7 +9536,8 @@ function createUI(container, state, actions) {
       const normalizedKey = String(key ?? "").trim();
       if (normalizedKey !== "resistorStyle"
         && normalizedKey !== "groundVariant"
-        && normalizedKey !== "groundColor") {
+        && normalizedKey !== "groundColor"
+        && normalizedKey !== "probeColor") {
         return;
       }
       toolDisplayDefaults = normalizeToolDisplayDefaults({
@@ -8940,14 +9552,105 @@ function createUI(container, state, actions) {
       applyWireDefaultColorToEditor();
       queueAutosave();
     },
-    onApplyComponentDefaultsToExisting: () => {
+    onApplyComponentDefaultsToExisting: (options) => {
       if (!schematicEditor || typeof schematicEditor.applyComponentDefaultsToExisting !== "function") {
         return;
       }
-      const result = schematicEditor.applyComponentDefaultsToExisting(componentDefaults);
-      if (result && typeof result === "object" && Number(result.updatedComponents) > 0) {
+      const scopedOptions = options && typeof options === "object" ? options : {};
+      const applyOptions = {
+        displayDefaults: toolDisplayDefaults,
+        wireDefaultColor,
+        ...(Array.isArray(scopedOptions.types) ? { types: scopedOptions.types } : {})
+      };
+      if (Object.prototype.hasOwnProperty.call(scopedOptions, "applyGroundDefaults")) {
+        applyOptions.applyGroundDefaults = scopedOptions.applyGroundDefaults;
+      }
+      if (Object.prototype.hasOwnProperty.call(scopedOptions, "applyProbeDefaults")) {
+        applyOptions.applyProbeDefaults = scopedOptions.applyProbeDefaults;
+      }
+      if (Object.prototype.hasOwnProperty.call(scopedOptions, "applyWireDefaults")) {
+        applyOptions.applyWireDefaults = scopedOptions.applyWireDefaults;
+      }
+      const result = schematicEditor.applyComponentDefaultsToExisting(componentDefaults, applyOptions);
+      if (result && typeof result === "object"
+        && (Number(result.updatedComponents) > 0 || Number(result.updatedWires) > 0)) {
         queueAutosave();
       }
+    },
+    onResetComponentTypeDefaults: (type) => {
+      const key = String(type ?? "").trim().toUpperCase();
+      if (!key) {
+        return;
+      }
+      let changed = false;
+      const builtInDefaults = getBuiltInComponentDefaults();
+      const currentDefaults = componentDefaults && typeof componentDefaults === "object"
+        ? componentDefaults
+        : {};
+      if (Object.prototype.hasOwnProperty.call(builtInDefaults, key)) {
+        const nextDefaultsEntry = builtInDefaults[key];
+        const currentDefaultsEntry = currentDefaults[key];
+        const currentValue = String(currentDefaultsEntry?.value ?? "");
+        const currentColor = String(currentDefaultsEntry?.netColor ?? "").trim().toLowerCase();
+        const nextValue = String(nextDefaultsEntry?.value ?? "");
+        const nextColor = String(nextDefaultsEntry?.netColor ?? "").trim().toLowerCase();
+        if (currentValue !== nextValue || currentColor !== nextColor) {
+          componentDefaults = normalizeComponentDefaults({
+            ...currentDefaults,
+            [key]: nextDefaultsEntry
+          }, currentDefaults);
+          changed = true;
+        }
+      }
+      if (key === "R") {
+        const builtInDisplayDefaults = getBuiltInToolDisplayDefaults();
+        const nextStyle = String(builtInDisplayDefaults?.resistorStyle ?? "").trim().toLowerCase();
+        const currentStyle = String(toolDisplayDefaults?.resistorStyle ?? "").trim().toLowerCase();
+        if (nextStyle && nextStyle !== currentStyle) {
+          toolDisplayDefaults = normalizeToolDisplayDefaults({
+            ...toolDisplayDefaults,
+            resistorStyle: nextStyle
+          }, toolDisplayDefaults);
+          changed = true;
+        }
+      } else if (key === "GND") {
+        const builtInDisplayDefaults = getBuiltInToolDisplayDefaults();
+        const nextVariant = String(builtInDisplayDefaults?.groundVariant ?? "").trim().toLowerCase();
+        const nextGroundColor = normalizeWireDefaultColor(builtInDisplayDefaults?.groundColor, null);
+        const currentVariant = String(toolDisplayDefaults?.groundVariant ?? "").trim().toLowerCase();
+        const currentGroundColor = normalizeWireDefaultColor(toolDisplayDefaults?.groundColor, null);
+        if ((nextVariant && nextVariant !== currentVariant) || nextGroundColor !== currentGroundColor) {
+          toolDisplayDefaults = normalizeToolDisplayDefaults({
+            ...toolDisplayDefaults,
+            groundVariant: nextVariant || currentVariant,
+            groundColor: nextGroundColor
+          }, toolDisplayDefaults);
+          changed = true;
+        }
+      } else if (key === "WIRE") {
+        const currentWireColor = normalizeWireDefaultColor(wireDefaultColor, null);
+        if (currentWireColor !== null) {
+          wireDefaultColor = normalizeWireDefaultColor(null, null);
+          changed = true;
+        }
+      } else if (isProbeType(key)) {
+        const nextProbeColor = normalizeWireDefaultColor(getBuiltInToolDisplayDefaults()?.probeColor, null);
+        const currentProbeColor = normalizeWireDefaultColor(toolDisplayDefaults?.probeColor, null);
+        if (nextProbeColor !== currentProbeColor) {
+          toolDisplayDefaults = normalizeToolDisplayDefaults({
+            ...toolDisplayDefaults,
+            probeColor: nextProbeColor
+          }, toolDisplayDefaults);
+          changed = true;
+        }
+      }
+      if (!changed) {
+        return;
+      }
+      applyComponentDefaultsToEditor();
+      applyWireDefaultColorToEditor();
+      applyToolDisplayDefaultsToEditor();
+      queueAutosave();
     },
     onResetSettings: () => {
       autoSwitchToSelectOnPlace = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_PLACE;
@@ -8963,7 +9666,7 @@ function createUI(container, state, actions) {
       applyToolDisplayDefaultsToEditor();
       queueAutosave();
     }
-  });
+  }));
 
   const toFilenameLeaf = (value) => getPlotExportApi().toFilenameLeaf(value);
   const withFilenameExtension = (value, extension, fallbackBase) =>
@@ -10150,7 +10853,9 @@ function createUI(container, state, actions) {
       : buildProbeDescriptors(compileInfo);
     const probeDescriptors = Array.isArray(probeData?.descriptors) ? probeData.descriptors : [];
     const probeById = new Map(probeDescriptors.map((entry) => [String(entry.id ?? ""), entry]));
-    const kind = getActiveResultsKind();
+    // Schematic-side measurement rows are OP-only by design; DC/TRAN/AC runs
+    // must not overwrite these displayed values with sweep/timepoint samples.
+    const kind = "op";
     const voltageMap = getVoltageMap(kind);
     const directSources = Object.values(componentLines)
       .filter((line) => line && line.type === "V" && line.netA && line.netB && line.value);

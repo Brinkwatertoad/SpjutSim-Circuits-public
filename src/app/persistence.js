@@ -63,7 +63,12 @@
     const source = value && typeof value === "object" ? value : {};
     const base = fallback && typeof fallback === "object"
       ? fallback
-      : { resistorStyle: "zigzag", groundVariant: "earth", groundColor: null };
+      : {
+        resistorStyle: "zigzag",
+        groundVariant: "earth",
+        groundColor: null,
+        probeColor: null
+      };
     return {
       resistorStyle: normalizeResistorStyle(
         Object.prototype.hasOwnProperty.call(source, "resistorStyle")
@@ -80,6 +85,12 @@
           ? source.groundColor
           : undefined,
         base.groundColor
+      ),
+      probeColor: normalizeWireDefaultColor(
+        Object.prototype.hasOwnProperty.call(source, "probeColor")
+          ? source.probeColor
+          : undefined,
+        base.probeColor
       )
     };
   };
@@ -406,6 +417,13 @@
     }
   };
 
+  const saveAutosaveLocal = (doc) => {
+    if (!doc) {
+      return false;
+    }
+    return saveAutosaveFallback(doc);
+  };
+
   const loadAutosaveFallback = () => {
     try {
       const raw = localStorage.getItem(LOCAL_AUTOSAVE_KEY);
@@ -511,6 +529,7 @@
     createDocument,
     extractDocument,
     saveAutosave,
+    saveAutosaveLocal,
     loadAutosave,
     readNumberPreference,
     readStringPreference,

@@ -693,7 +693,10 @@ function pickDefaultSignals(availableSignals) {
     const last = trimmed.includes(".") ? trimmed.split(".").pop() : trimmed;
     return last.toLowerCase();
   };
-  const isCurrent = (short) => short.includes("#branch") || short.startsWith("i(");
+  const isCurrent = (short) =>
+    short.includes("#branch")
+    || short.startsWith("i(")
+    || /^@.+\[(?:i|id)\]$/i.test(short);
   const isVoltage = (short) =>
     short.startsWith("v(")
     || (!isCurrent(short) && !short.startsWith("@") && !short.includes("[") && !short.includes("#"));
@@ -1408,7 +1411,9 @@ function extractOpResults(payload) {
         value = first;
       }
     }
-    const isCurrent = label.includes("#branch") || label.startsWith("i(");
+    const isCurrent = label.includes("#branch")
+      || label.startsWith("i(")
+      || /^@.+\[(?:i|id)\]$/i.test(label);
     const isVoltage = label.startsWith("v(")
       || (!isCurrent && !label.startsWith("@") && !label.includes("[") && !label.includes("#"));
     if (isCurrent) {
@@ -1635,7 +1640,7 @@ function resetSimulator() {
  * @param {string} netlist
  * @returns {{ ok: boolean, log: string, vectors: { plot: string, vectors: Record<string, { name: string, type: number, flags: number, length: number, isComplex: boolean, data: number[] | number[][] }> } }}
  */
-function runOpNetlist(netlist, plotHint) {
+function runOpNetlist(netlist, plotHint, targetSignals) {
   if (!moduleInstance || !commandFn) {
     throw new Error("ngspice is not initialized.");
   }
@@ -1643,7 +1648,8 @@ function runOpNetlist(netlist, plotHint) {
   resetLogs();
 
   const path = "/tmp/op.cir";
-  const loadResult = loadNetlist(netlist, path);
+  const preparedNetlist = ensureSaveSignals(netlist, targetSignals, ["all"]);
+  const loadResult = loadNetlist(preparedNetlist, path);
   const exitCode = loadResult.exitCode;
   const runCode = exitCode === 0 ? commandFn("run") : exitCode;
   const vectors = collectVectorsWithFallback(plotHint);
