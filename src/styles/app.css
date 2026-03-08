@@ -20,6 +20,10 @@
   --color-table-head: #e8e3d9;
   --color-table-row-active: #dce8ff;
   --color-table-row-hover: #eef4ff;
+  --color-field-readonly-bg: #f2efe8;
+  --color-field-readonly-border: #b9b2a8;
+  --color-field-readonly-chip-bg: #ece7dd;
+  --color-field-readonly-chip-text: #5f584f;
   --color-netlist-selection-highlight: #e6efff;
   --color-netlist-node-highlight: #cfe2ff;
   --color-link-hover-outline: #2f6feb;
@@ -442,6 +446,18 @@ button.menu-button:hover,
   min-width: 0;
 }
 
+.inline-edit-row-readonly .schematic-prop-input[readonly] {
+  background: var(--color-field-readonly-bg);
+  border-color: var(--color-field-readonly-border);
+  color: var(--color-muted-strong);
+  cursor: default;
+}
+
+.inline-edit-row-readonly .schematic-prop-input[readonly]:focus {
+  outline: none;
+  box-shadow: none;
+}
+
 .inline-edit .inline-edit-field input[type="range"].schematic-prop-input {
   padding-left: 0;
   padding-right: 0;
@@ -489,6 +505,62 @@ button.menu-button:hover,
   max-width: 14px;
   flex: 0 0 14px;
   color: var(--color-muted);
+}
+
+.inline-edit-readonly-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--space-1);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-field-readonly-border);
+  background: var(--color-field-readonly-chip-bg);
+  color: var(--color-field-readonly-chip-text);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.inline-edit-readonly-chip[hidden],
+.inline-edit-readonly-lock[hidden] {
+  display: none;
+}
+
+.inline-edit-readonly-chip::before {
+  content: "Computed";
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+}
+
+.inline-edit-readonly-lock {
+  position: relative;
+  width: 12px;
+  min-width: 12px;
+  max-width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+}
+
+.inline-edit-readonly-lock::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 1px;
+  width: 8px;
+  height: 5px;
+  border: 1.5px solid var(--color-field-readonly-border);
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+}
+
+.inline-edit-readonly-lock::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 5px;
+  width: 10px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--color-field-readonly-border);
 }
 
 .inline-edit-unit[data-inline-box-opacity-value="1"] {

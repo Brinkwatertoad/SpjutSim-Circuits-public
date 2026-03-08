@@ -8,6 +8,30 @@
     }
     return value;
   };
+  const normalizePropertyHelpContract = (property, name) => {
+    const help = property?.help;
+    if (help === null || help === undefined) {
+      return null;
+    }
+    if (!help || typeof help !== "object" || Array.isArray(help)) {
+      throw new Error(`Inline editor panel module property contract '${name}.help' requires an object when provided.`);
+    }
+    const title = String(help.title ?? "").trim();
+    const summary = String(help.summary ?? "").trim();
+    const definition = String(help.definition ?? "").trim();
+    if (!title || !summary || !definition) {
+      throw new Error(`Inline editor panel module property contract '${name}.help' requires non-empty title/summary/definition.`);
+    }
+    return { title, summary, definition };
+  };
+  const applyHelpDataset = (target, help) => {
+    if (!(target instanceof HTMLElement) || !help) {
+      return;
+    }
+    target.dataset.schematicHelpTitle = help.title;
+    target.dataset.schematicHelpSummary = help.summary;
+    target.dataset.schematicHelpDefinition = help.definition;
+  };
 
   const requireSelectPropertyContract = (readProperty, key, name) => {
     const property = readProperty(key);
@@ -42,6 +66,7 @@
     return {
       key: String(property.key ?? "").trim(),
       label,
+      help: normalizePropertyHelpContract(property, name),
       options
     };
   };
@@ -52,6 +77,7 @@
     row.dataset[rowDatasetKey] = "1";
     const label = document.createElement("span");
     label.textContent = `${property.label}:`;
+    applyHelpDataset(label, property.help);
     const field = document.createElement("div");
     field.className = "inline-edit-field";
     const select = document.createElement("select");
@@ -79,7 +105,8 @@
     }
     return {
       key: String(property.key ?? "").trim(),
-      label
+      label,
+      help: normalizePropertyHelpContract(property, name)
     };
   };
 
@@ -89,6 +116,7 @@
     row.dataset[rowDatasetKey] = "1";
     const label = document.createElement("span");
     label.textContent = `${property.label}:`;
+    applyHelpDataset(label, property.help);
     const field = document.createElement("div");
     field.className = "inline-edit-field inline-edit-checkbox-field";
     const input = document.createElement("input");
@@ -98,6 +126,20 @@
     field.append(input);
     row.append(label, field);
     return { row, label, input };
+  };
+  const createInlineReadOnlyIndicators = (label, field) => {
+    const readOnlyChip = document.createElement("span");
+    readOnlyChip.className = "inline-edit-readonly-chip";
+    readOnlyChip.dataset.inlineReadonlyChip = "1";
+    readOnlyChip.hidden = true;
+    label.append(readOnlyChip);
+    const readOnlyLock = document.createElement("span");
+    readOnlyLock.className = "inline-edit-readonly-lock";
+    readOnlyLock.dataset.inlineReadonlyLock = "1";
+    readOnlyLock.setAttribute("aria-hidden", "true");
+    readOnlyLock.hidden = true;
+    field.append(readOnlyLock);
+    return { readOnlyChip, readOnlyLock };
   };
   const INPUT_PROPERTY_CONTROL_TYPES = Object.freeze({
     text: "text",
@@ -124,6 +166,7 @@
     return {
       key: String(property.key ?? "").trim(),
       label,
+      help: normalizePropertyHelpContract(property, name),
       control,
       input
     };
@@ -134,6 +177,7 @@
     row.dataset[rowDatasetKey] = "1";
     const label = document.createElement("span");
     label.textContent = `${property.label}:`;
+    applyHelpDataset(label, property.help);
     const field = document.createElement("div");
     field.className = "inline-edit-field";
     const input = document.createElement("input");
@@ -157,14 +201,18 @@
         input.step = String(step);
       }
     }
+    if (property.input.readOnly === true) {
+      input.readOnly = true;
+    }
     const unitText = typeof property.input.unit === "string" ? property.input.unit.trim() : "";
     const unit = document.createElement("span");
     unit.className = "inline-edit-unit";
     unit.textContent = unitText;
     unit.hidden = !unitText;
     field.append(input, unit);
+    const { readOnlyChip, readOnlyLock } = createInlineReadOnlyIndicators(label, field);
     row.append(label, field);
-    return { row, label, input };
+    return { row, label, input, readOnlyChip, readOnlyLock };
   };
 
   const normalizeInlineSelectPropertyKeys = (rawKeys) => {
@@ -325,7 +373,9 @@
           property,
           row: controls.row,
           label: controls.label,
-          input: controls.input
+          input: controls.input,
+          readOnlyChip: controls.readOnlyChip,
+          readOnlyLock: controls.readOnlyLock
         });
         return accumulator;
       }, {})
@@ -391,6 +441,8 @@
     inlineValueField.className = "inline-edit-field";
     inlineValueField.dataset.inlineField = "value";
     inlineValueField.append(inlineValueInput, inlineValueUnit);
+    const { readOnlyChip: inlineValueReadOnlyChip, readOnlyLock: inlineValueReadOnlyLock } =
+      createInlineReadOnlyIndicators(inlineValueLabel, inlineValueField);
     inlineValueRow.append(inlineValueLabel, inlineValueField);
 
     const inlineSwitchPositionRow = document.createElement("label");
@@ -607,6 +659,9 @@
         onPickNetColor(color);
       }
     });
+    const inlineNetColorDefaultAnchor = document.createElement("div");
+    inlineNetColorDefaultAnchor.hidden = true;
+    inlineNetColorDefaultAnchor.dataset.inlineNetColorDefaultAnchor = "1";
 
     const inlineTextFontControls = inlineSelectControlsByKey.textFont;
     if (!inlineTextFontControls
@@ -756,6 +811,7 @@
       inlineSwitchShowRonRow,
       inlineSwitchShowRoffRow,
       inlineNetColorPicker.row,
+      inlineNetColorDefaultAnchor,
       ...inlineToggleRows,
       ...inlineInputRows
     );
@@ -769,6 +825,8 @@
       inlineValueLabel,
       inlineValueInput,
       inlineValueUnit,
+      inlineValueReadOnlyChip,
+      inlineValueReadOnlyLock,
       inlineSwitchPositionRow,
       inlineSwitchPositionLabel,
       inlineSwitchPositionA,
@@ -811,6 +869,7 @@
       inlineBoxOpacityInput,
       inlineBoxOpacityValue,
       inlineNetColorPicker,
+      inlineNetColorDefaultAnchor,
       inlineTextFontRow,
       inlineTextFontLabel,
       inlineTextFontSelect,

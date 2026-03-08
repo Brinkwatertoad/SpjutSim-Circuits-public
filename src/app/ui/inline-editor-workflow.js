@@ -121,11 +121,15 @@
         throw new Error(`Inline editor workflow ${fieldPath} requires input element.`);
       }
       const normalizeValue = requireFunction(entry?.normalizeValue, `${fieldPath}.normalizeValue`);
+      const defaultReadOnly = entry?.defaultReadOnly === true;
       return {
         componentType,
         propertyKey,
         row: entry.row,
         input: entry.input,
+        readOnlyChip: entry?.readOnlyChip && typeof entry.readOnlyChip === "object" ? entry.readOnlyChip : null,
+        readOnlyLock: entry?.readOnlyLock && typeof entry.readOnlyLock === "object" ? entry.readOnlyLock : null,
+        defaultReadOnly,
         normalizeValue
       };
     });
@@ -162,8 +166,35 @@
     const args = input && typeof input === "object" ? input : {};
     const getValueFieldMeta = requireFunction(args.getValueFieldMeta, "getValueFieldMeta");
     const meta = getValueFieldMeta(args.type);
+    const setLabelTextPreservingReadOnlyChip = (labelEl, text) => {
+      if (!labelEl || typeof labelEl !== "object") {
+        return;
+      }
+      const readOnlyChip = typeof labelEl.querySelector === "function"
+        ? labelEl.querySelector(":scope > [data-inline-readonly-chip=\"1\"]")
+        : null;
+      if (!(readOnlyChip && typeof readOnlyChip === "object")) {
+        labelEl.textContent = text;
+        return;
+      }
+      const textNode = labelEl.ownerDocument?.createTextNode
+        ? labelEl.ownerDocument.createTextNode(text)
+        : null;
+      if (!textNode) {
+        labelEl.textContent = text;
+        return;
+      }
+      const toRemove = [];
+      labelEl.childNodes.forEach((node) => {
+        if (node !== readOnlyChip) {
+          toRemove.push(node);
+        }
+      });
+      toRemove.forEach((node) => node.parentNode?.removeChild(node));
+      labelEl.insertBefore(textNode, readOnlyChip);
+    };
     if (args.labelEl) {
-      args.labelEl.textContent = `${String(meta?.label ?? "Value")}:`;
+      setLabelTextPreservingReadOnlyChip(args.labelEl, `${String(meta?.label ?? "Value")}:`);
     }
     if (args.unitEl) {
       args.unitEl.textContent = String(meta?.unit ?? "");
@@ -293,6 +324,71 @@
     const parseBoxAnnotationStyle = requireFunction(args.parseBoxAnnotationStyle, "parseBoxAnnotationStyle");
     const parseArrowAnnotationStyle = requireFunction(args.parseArrowAnnotationStyle, "parseArrowAnnotationStyle");
     const parseTextAnnotationStyle = requireFunction(args.parseTextAnnotationStyle, "parseTextAnnotationStyle");
+    const setInputReadOnlyState = (entry) => {
+      const options = entry && typeof entry === "object" ? entry : {};
+      const row = options.row && typeof options.row === "object" ? options.row : null;
+      const inputEl = options.input && typeof options.input === "object" ? options.input : null;
+      const readOnlyChip = options.readOnlyChip && typeof options.readOnlyChip === "object"
+        ? options.readOnlyChip
+        : null;
+      const readOnlyLock = options.readOnlyLock && typeof options.readOnlyLock === "object"
+        ? options.readOnlyLock
+        : null;
+      const isReadOnly = options.readOnly === true;
+      const reason = String(options.reason ?? "").trim();
+      if (row && typeof row.classList?.toggle === "function") {
+        row.classList.toggle("inline-edit-row-readonly", isReadOnly);
+      }
+      if (readOnlyChip && typeof readOnlyChip.hidden === "boolean") {
+        readOnlyChip.hidden = !isReadOnly;
+      }
+      if (readOnlyLock && typeof readOnlyLock.hidden === "boolean") {
+        readOnlyLock.hidden = !isReadOnly;
+      }
+      if (isReadOnly) {
+        if (inputEl) {
+          inputEl.readOnly = true;
+          if (typeof inputEl.setAttribute === "function") {
+            inputEl.setAttribute("tabindex", "-1");
+            inputEl.setAttribute("aria-readonly", "true");
+            if (reason) {
+              inputEl.setAttribute("data-inline-readonly-reason", reason);
+            } else {
+              inputEl.removeAttribute("data-inline-readonly-reason");
+            }
+          }
+        }
+        if (readOnlyChip && typeof readOnlyChip.setAttribute === "function") {
+          if (reason) {
+            readOnlyChip.setAttribute("title", reason);
+          } else {
+            readOnlyChip.removeAttribute("title");
+          }
+        }
+        if (readOnlyLock && typeof readOnlyLock.setAttribute === "function") {
+          if (reason) {
+            readOnlyLock.setAttribute("title", reason);
+          } else {
+            readOnlyLock.removeAttribute("title");
+          }
+        }
+        return;
+      }
+      if (inputEl) {
+        inputEl.readOnly = false;
+        if (typeof inputEl.removeAttribute === "function") {
+          inputEl.removeAttribute("tabindex");
+          inputEl.removeAttribute("aria-readonly");
+          inputEl.removeAttribute("data-inline-readonly-reason");
+        }
+      }
+      if (readOnlyChip && typeof readOnlyChip.removeAttribute === "function") {
+        readOnlyChip.removeAttribute("title");
+      }
+      if (readOnlyLock && typeof readOnlyLock.removeAttribute === "function") {
+        readOnlyLock.removeAttribute("title");
+      }
+    };
     const setRowHidden = (row, hidden) => {
       if (row && typeof row === "object") {
         row.hidden = hidden;
@@ -311,9 +407,23 @@
       : String(component.id ?? "");
     panel.inlineProbeTypeRow.hidden = !inlineModeFlags.isProbeComponent;
     panel.inlineProbeTypeSelect.value = inlineModeFlags.isProbeComponent && ["PV", "PI", "PP"].includes(type) ? type : "PV";
+    const transformerSolveBy = type === "XFMR"
+      ? String(component?.xfmrSolveBy ?? "").trim().toLowerCase()
+      : "";
+    const transformerSolveBySecondary = transformerSolveBy === "secondary";
     panel.inlineValueInput.value = inlineModeFlags.supportsValueField ? String(component.value ?? "") : "";
     panel.inlineValueRow.hidden = !inlineModeFlags.showValueRow;
     panel.inlineValueInput.disabled = !inlineModeFlags.showValueRow;
+    setInputReadOnlyState({
+      row: panel.inlineValueRow,
+      input: panel.inlineValueInput,
+      readOnlyChip: panel.inlineValueReadOnlyChip,
+      readOnlyLock: panel.inlineValueReadOnlyLock,
+      readOnly: type === "XFMR" && transformerSolveBySecondary,
+      reason: type === "XFMR" && transformerSolveBySecondary
+        ? "Computed from Lp and Ls in Secondary inductance mode."
+        : ""
+    });
     const inlineSelectSyncEntries = requireInlineSelectSyncEntries(args);
     inlineSelectSyncEntries.forEach((entry) => {
       const isMatch = type === entry.componentType;
@@ -335,7 +445,23 @@
       const isMatch = type === entry.componentType;
       setRowHidden(entry.row, !isMatch);
       if (isMatch) {
-        entry.input.value = String(entry.normalizeValue(component?.[entry.propertyKey]));
+        const hasValue = component && Object.prototype.hasOwnProperty.call(component, entry.propertyKey);
+        const rawValue = hasValue ? component[entry.propertyKey] : "";
+        entry.input.value = rawValue === undefined || rawValue === null ? "" : String(rawValue);
+        let readOnly = entry.defaultReadOnly === true;
+        let reason = readOnly ? "Read-only property." : "";
+        if (type === "XFMR" && entry.propertyKey === "xfmrLs") {
+          readOnly = !transformerSolveBySecondary;
+          reason = readOnly ? "Computed from Lp and N in Turns ratio mode." : "";
+        }
+        setInputReadOnlyState({
+          row: entry.row,
+          input: entry.input,
+          readOnlyChip: entry.readOnlyChip,
+          readOnlyLock: entry.readOnlyLock,
+          readOnly,
+          reason
+        });
       }
     });
     const isBoxComponent = inlineModeFlags.isBoxAnnotation === true;
@@ -421,6 +547,32 @@
     panel.inlineNetColorPicker.row.hidden = false;
     if (typeof panel.inlineNetColorPicker.setSelected === "function") {
       panel.inlineNetColorPicker.setSelected(component.netColor ?? "");
+    }
+    const inlineEditorRoot = panel.inlineEditor && typeof panel.inlineEditor === "object"
+      ? panel.inlineEditor
+      : null;
+    if (inlineEditorRoot && typeof inlineEditorRoot.appendChild === "function") {
+      const transformerPolarityRow = panel.inlineSelectControlsByKey?.xfmrPolarity?.row;
+      const transformerSolveByRow = panel.inlineSelectControlsByKey?.xfmrSolveBy?.row;
+      if (type === "XFMR"
+        && transformerPolarityRow
+        && transformerSolveByRow
+        && transformerPolarityRow.parentNode === inlineEditorRoot
+        && transformerSolveByRow.parentNode === inlineEditorRoot
+        && typeof inlineEditorRoot.insertBefore === "function") {
+        inlineEditorRoot.insertBefore(transformerPolarityRow, transformerSolveByRow);
+      }
+      const netColorRow = panel.inlineNetColorPicker?.row;
+      const netColorDefaultAnchor = panel.inlineNetColorDefaultAnchor;
+      if (netColorRow && netColorRow.parentNode === inlineEditorRoot) {
+        if (type === "D" || type === "XFMR") {
+          inlineEditorRoot.appendChild(netColorRow);
+        } else if (netColorDefaultAnchor
+          && netColorDefaultAnchor.parentNode === inlineEditorRoot
+          && typeof inlineEditorRoot.insertBefore === "function") {
+          inlineEditorRoot.insertBefore(netColorRow, netColorDefaultAnchor);
+        }
+      }
     }
 
     if (typeof args.applyValueFieldMeta === "function") {

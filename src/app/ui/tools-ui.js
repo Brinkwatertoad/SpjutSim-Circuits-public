@@ -430,6 +430,7 @@
     const toolLabel = String(entry?.toolLabel ?? "").trim();
     const toolName = String(entry?.toolName ?? "").trim();
     const shortcut = String(entry?.shortcut ?? "").trim();
+    const classification = String(entry?.classification ?? "electrical").trim().toLowerCase();
     if (!type || !toolLabel || !toolName || !shortcut) {
       throw new Error(`Schematic element catalog entry is missing required fields. type='${type || "?"}'`);
     }
@@ -445,6 +446,7 @@
       toolLabel,
       toolName,
       shortcut,
+      classification,
       help: {
         title: helpTitle,
         summary: helpSummary,

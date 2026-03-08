@@ -1126,6 +1126,224 @@
     };
   };
 
+  const normalizeTransformerPinToken = (pin) => String(pin?.id ?? pin?.name ?? "").trim().toUpperCase();
+
+  const pickTransformerPinByToken = (pins, token, used) => {
+    for (const pin of pins) {
+      if (used.has(pin)) {
+        continue;
+      }
+      if (normalizeTransformerPinToken(pin) !== token) {
+        continue;
+      }
+      used.add(pin);
+      return pin;
+    }
+    return null;
+  };
+
+  const pickNextTransformerPin = (pins, used) => {
+    for (const pin of pins) {
+      if (used.has(pin)) {
+        continue;
+      }
+      used.add(pin);
+      return pin;
+    }
+    return null;
+  };
+
+  const toPoint = (pin) => {
+    if (!pin) {
+      return null;
+    }
+    const x = Number(pin.x);
+    const y = Number(pin.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return null;
+    }
+    return { x, y };
+  };
+
+  const resolveTransformerPins = (pins) => {
+    const entries = Array.isArray(pins) ? pins : [];
+    if (entries.length < 4) {
+      return null;
+    }
+    const used = new Set();
+    const p1 = toPoint(pickTransformerPinByToken(entries, "P1", used) ?? pickNextTransformerPin(entries, used));
+    const p2 = toPoint(pickTransformerPinByToken(entries, "P2", used) ?? pickNextTransformerPin(entries, used));
+    const s1 = toPoint(pickTransformerPinByToken(entries, "S1", used) ?? pickNextTransformerPin(entries, used));
+    const s2 = toPoint(pickTransformerPinByToken(entries, "S2", used) ?? pickNextTransformerPin(entries, used));
+    if (!p1 || !p2 || !s1 || !s2) {
+      return null;
+    }
+    return { P1: p1, P2: p2, S1: s1, S2: s2 };
+  };
+  const normalizeTransformerPolarity = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return normalized === "additive" ? "additive" : "subtractive";
+  };
+
+  const buildTransformerBasis = (pins) => {
+    const resolvedPins = resolveTransformerPins(pins);
+    if (!resolvedPins) {
+      return null;
+    }
+    const midpoint = (a, b) => ({
+      x: (Number(a?.x) + Number(b?.x)) / 2,
+      y: (Number(a?.y) + Number(b?.y)) / 2
+    });
+    const leftMid = midpoint(resolvedPins.P1, resolvedPins.P2);
+    const rightMid = midpoint(resolvedPins.S1, resolvedPins.S2);
+    const topMid = midpoint(resolvedPins.P1, resolvedPins.S1);
+    const bottomMid = midpoint(resolvedPins.P2, resolvedPins.S2);
+    const xDx = rightMid.x - leftMid.x;
+    const xDy = rightMid.y - leftMid.y;
+    const xLen = Math.hypot(xDx, xDy);
+    if (!Number.isFinite(xLen) || xLen <= 0) {
+      return null;
+    }
+    const yDx = bottomMid.x - topMid.x;
+    const yDy = bottomMid.y - topMid.y;
+    const yLen = Math.hypot(yDx, yDy);
+    if (!Number.isFinite(yLen) || yLen <= 0) {
+      return null;
+    }
+    const center = midpoint(leftMid, rightMid);
+    return {
+      pins: resolvedPins,
+      center,
+      xAxis: { x: xDx / xLen, y: xDy / xLen },
+      yAxis: { x: yDx / yLen, y: yDy / yLen }
+    };
+  };
+
+  const toTransformerWorldPoint = (basis, localX, localY) => ({
+    x: basis.center.x + basis.xAxis.x * localX + basis.yAxis.x * localY,
+    y: basis.center.y + basis.xAxis.y * localX + basis.yAxis.y * localY
+  });
+
+  const formatTransformerCoord = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return "0";
+    }
+    const rounded = Math.round(parsed * 1000) / 1000;
+    return String(rounded);
+  };
+
+  const buildTransformerCoilPath = (basis, startX, yTop, yBottom, turns, sweepFlag) => {
+    const count = Number.isFinite(Number(turns)) && Number(turns) > 0 ? Math.round(Number(turns)) : 4;
+    const step = (yBottom - yTop) / count;
+    const radius = Math.abs(step) / 2;
+    const start = toTransformerWorldPoint(basis, startX, yTop);
+    let d = `M ${formatTransformerCoord(start.x)} ${formatTransformerCoord(start.y)}`;
+    if (!Number.isFinite(radius) || radius < 1) {
+      const end = toTransformerWorldPoint(basis, startX, yBottom);
+      return `${d} L ${formatTransformerCoord(end.x)} ${formatTransformerCoord(end.y)}`;
+    }
+    const normalizedSweep = sweepFlag === 0 ? 0 : 1;
+    for (let index = 0; index < count; index += 1) {
+      const yEnd = yTop + step * (index + 1);
+      const end = toTransformerWorldPoint(basis, startX, yEnd);
+      d += ` A ${formatTransformerCoord(radius)} ${formatTransformerCoord(radius)} 0 0 ${normalizedSweep} ${formatTransformerCoord(end.x)} ${formatTransformerCoord(end.y)}`;
+    }
+    return d;
+  };
+
+  const getTransformerRenderPlan = (pins, polarity) => {
+    const basis = buildTransformerBasis(pins);
+    if (!basis) {
+      return null;
+    }
+    const normalizedPolarity = normalizeTransformerPolarity(polarity);
+    const point = (x, y) => toTransformerWorldPoint(basis, x, y);
+    const leftTopLeadOuter = { from: point(-20, -20), to: point(-10, -20) };
+    const leftTopLeadInner = { from: point(-10, -20), to: point(-10, -12) };
+    const leftBottomLeadOuter = { from: point(-20, 20), to: point(-10, 20) };
+    const leftBottomLeadInner = { from: point(-10, 20), to: point(-10, 12) };
+    const rightTopLeadOuter = { from: point(20, -20), to: point(10, -20) };
+    const rightTopLeadInner = { from: point(10, -20), to: point(10, -12) };
+    const rightBottomLeadOuter = { from: point(20, 20), to: point(10, 20) };
+    const rightBottomLeadInner = { from: point(10, 20), to: point(10, 12) };
+    const coreOffset = 7 / 3;
+    const coreA = { from: point(-coreOffset, -14), to: point(-coreOffset, 14) };
+    const coreB = { from: point(coreOffset, -14), to: point(coreOffset, 14) };
+    const primaryDot = { center: point(-15, -15), radius: 1.8 };
+    const secondaryDot = {
+      center: point(15, normalizedPolarity === "additive" ? 15 : -15),
+      radius: 1.8
+    };
+    const angle = Math.atan2(basis.xAxis.y, basis.xAxis.x) * (180 / Math.PI);
+    const localExtentPoints = [
+      [-20, -20], [-20, 20], [20, -20], [20, 20],
+      [-10, -20], [-10, -12], [-10, 12], [-10, 20],
+      [10, -20], [10, -12], [10, 12], [10, 20],
+      [-7, -9], [-7, -3], [-7, 3], [-7, 9],
+      [7, -9], [7, -3], [7, 3], [7, 9],
+      [-coreOffset, -14], [-coreOffset, 14], [coreOffset, -14], [coreOffset, 14],
+      [-15, -15], [15, -15], [15, 15]
+    ];
+    const extentPoints = localExtentPoints.map((entry) => point(entry[0], entry[1]));
+    const xs = extentPoints.map((entry) => Number(entry?.x));
+    const ys = extentPoints.map((entry) => Number(entry?.y));
+    const radiusPad = 2.5;
+    return {
+      pins: basis.pins,
+      center: basis.center,
+      angle,
+      leads: [
+        leftTopLeadOuter,
+        leftTopLeadInner,
+        leftBottomLeadOuter,
+        leftBottomLeadInner,
+        rightTopLeadOuter,
+        rightTopLeadInner,
+        rightBottomLeadOuter,
+        rightBottomLeadInner
+      ],
+      coils: {
+        primaryPath: buildTransformerCoilPath(basis, -10, -12, 12, 4, 1),
+        secondaryPath: buildTransformerCoilPath(basis, 10, -12, 12, 4, 0)
+      },
+      core: [coreA, coreB],
+      dots: [primaryDot, secondaryDot],
+      polarity: normalizedPolarity,
+      extents: {
+        minX: Math.min(...xs) - radiusPad,
+        maxX: Math.max(...xs) + radiusPad,
+        minY: Math.min(...ys) - radiusPad,
+        maxY: Math.max(...ys) + radiusPad
+      }
+    };
+  };
+
+  const getTransformerExtents = (pins, polarity) => {
+    const plan = getTransformerRenderPlan(pins, polarity);
+    if (!plan || !plan.extents) {
+      return null;
+    }
+    return {
+      minX: Number(plan.extents.minX),
+      maxX: Number(plan.extents.maxX),
+      minY: Number(plan.extents.minY),
+      maxY: Number(plan.extents.maxY)
+    };
+  };
+
+  const getTransformerLabelGeometry = (pins, polarity, plan) => {
+    const resolvedPlan = plan ?? getTransformerRenderPlan(pins, polarity);
+    if (!resolvedPlan) {
+      return null;
+    }
+    return {
+      midX: Number(resolvedPlan.center?.x),
+      midY: Number(resolvedPlan.center?.y),
+      angle: Number(resolvedPlan.angle)
+    };
+  };
+
   const getNamedNodeTextExtents = (rotation, geometry, style, options) => {
     const resolvedStyle = resolveNamedNodeLabelStyle(style ?? geometry?.style);
     const slopeX = Number(geometry?.slopeX);
@@ -1324,6 +1542,43 @@
     ctx.circle(group, plan.pivot.x, plan.pivot.y, 2.1, {
       ...stroke,
       fill: closedFill
+    });
+    return true;
+  };
+
+  const drawTransformerShape = (ctx, group, plan, style) => {
+    if (!ctx || !group || !plan || typeof ctx.line !== "function" || typeof ctx.path !== "function" || typeof ctx.circle !== "function") {
+      return false;
+    }
+    const stroke = resolveStroke(style, ctx);
+    if (group && typeof group.setAttribute === "function") {
+      group.setAttribute("data-transformer", "1");
+    }
+    (Array.isArray(plan.leads) ? plan.leads : []).forEach((lead) => {
+      ctx.line(group, lead.from.x, lead.from.y, lead.to.x, lead.to.y, stroke);
+    });
+    const primaryCoil = ctx.path(group, String(plan?.coils?.primaryPath ?? ""), stroke);
+    if (primaryCoil && typeof primaryCoil.setAttribute === "function") {
+      primaryCoil.setAttribute("data-transformer-part", "coil-primary");
+    }
+    const secondaryCoil = ctx.path(group, String(plan?.coils?.secondaryPath ?? ""), stroke);
+    if (secondaryCoil && typeof secondaryCoil.setAttribute === "function") {
+      secondaryCoil.setAttribute("data-transformer-part", "coil-secondary");
+    }
+    (Array.isArray(plan.core) ? plan.core : []).forEach((entry) => {
+      const line = ctx.line(group, entry.from.x, entry.from.y, entry.to.x, entry.to.y, stroke);
+      if (line && typeof line.setAttribute === "function") {
+        line.setAttribute("data-transformer-part", "core");
+      }
+    });
+    (Array.isArray(plan.dots) ? plan.dots : []).forEach((dot) => {
+      const circle = ctx.circle(group, dot.center.x, dot.center.y, dot.radius, {
+        ...stroke,
+        fill: resolveTextFill(style, ctx)
+      });
+      if (circle && typeof circle.setAttribute === "function") {
+        circle.setAttribute("data-transformer-part", "polarity-dot");
+      }
     });
     return true;
   };
@@ -1758,6 +2013,10 @@
     SW: (ctx, group, options) => {
       const plan = options?.plan ?? getSpdtSwitchRenderPlan(options?.pins, options?.value);
       return drawSpdtSwitchShape(ctx, group, plan, options?.style);
+    },
+    XFMR: (ctx, group, options) => {
+      const plan = options?.plan ?? getTransformerRenderPlan(options?.pins, options?.polarity);
+      return drawTransformerShape(ctx, group, plan, options?.style);
     }
   });
 
@@ -1823,6 +2082,9 @@
   api.getDifferentialProbeLinkDash = () => DIFFERENTIAL_PROBE_LINK_DASH;
   api.getSpdtSwitchRenderPlan = getSpdtSwitchRenderPlan;
   api.getSpdtSwitchExtents = getSpdtSwitchExtents;
+  api.getTransformerRenderPlan = getTransformerRenderPlan;
+  api.getTransformerExtents = getTransformerExtents;
+  api.getTransformerLabelGeometry = getTransformerLabelGeometry;
   api.getContrastPolarityColor = getContrastPolarityColor;
   if (typeof self !== "undefined") {
     self.SpjutSimSchematic = api;

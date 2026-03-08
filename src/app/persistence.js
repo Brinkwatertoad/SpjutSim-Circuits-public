@@ -28,6 +28,7 @@
   const MAX_RESULTS_PANE_SPLIT_RATIO = 0.75;
   const DEFAULT_AUTO_SWITCH_TO_SELECT_ON_PLACE = true;
   const DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE = false;
+  const DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE = true;
   const DEFAULT_SCHEMATIC_TEXT_STYLE = Object.freeze({
     font: "Segoe UI",
     size: 12,
@@ -204,6 +205,12 @@
       italic: source.italic === true
     };
   };
+  const normalizeSchematicValueUnitSpacing = (value, fallback = DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE) => {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    return fallback !== false;
+  };
 
   const createDocument = (options) => {
     const meta = options?.meta ?? {};
@@ -227,6 +234,10 @@
     const autoSwitchToSelectOnWire = typeof uiSettings.autoSwitchToSelectOnWire === "boolean"
       ? uiSettings.autoSwitchToSelectOnWire
       : DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE;
+    const includeSchematicValueUnitSpace = normalizeSchematicValueUnitSpacing(
+      uiSettings.includeSchematicValueUnitSpace,
+      DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE
+    );
     const schematicText = normalizeSchematicTextStyle(uiSettings.schematicText);
     const componentDefaults = normalizeComponentDefaults(uiSettings.componentDefaults);
     const toolDisplayDefaults = normalizeToolDisplayDefaults(uiSettings.toolDisplayDefaults);
@@ -261,6 +272,7 @@
         settings: {
           autoSwitchToSelectOnPlace,
           autoSwitchToSelectOnWire,
+          includeSchematicValueUnitSpace,
           schematicText,
           componentDefaults,
           toolDisplayDefaults,
@@ -290,6 +302,7 @@
     const resultsPaneSplitRatio = normalizeResultsPaneSplitRatio(doc.ui?.resultsPane?.splitRatio);
     const autoSwitchToSelectOnPlace = doc.ui?.settings?.autoSwitchToSelectOnPlace;
     const autoSwitchToSelectOnWire = doc.ui?.settings?.autoSwitchToSelectOnWire;
+    const includeSchematicValueUnitSpace = doc.ui?.settings?.includeSchematicValueUnitSpace;
     const rawSchematicText = doc.ui?.settings?.schematicText;
     const schematicText = rawSchematicText && typeof rawSchematicText === "object"
       ? {
@@ -345,6 +358,9 @@
         settings: {
           autoSwitchToSelectOnPlace: typeof autoSwitchToSelectOnPlace === "boolean" ? autoSwitchToSelectOnPlace : null,
           autoSwitchToSelectOnWire: typeof autoSwitchToSelectOnWire === "boolean" ? autoSwitchToSelectOnWire : null,
+          includeSchematicValueUnitSpace: typeof includeSchematicValueUnitSpace === "boolean"
+            ? normalizeSchematicValueUnitSpacing(includeSchematicValueUnitSpace, DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE)
+            : null,
           schematicText,
           componentDefaults,
           toolDisplayDefaults,

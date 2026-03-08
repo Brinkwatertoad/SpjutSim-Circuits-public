@@ -204,6 +204,7 @@
     getComponentLabelLayout: requireSchematicMethod("getComponentLabelLayout")
   });
   const parseSpdtSwitchValue = requireSchematicMethod("parseSpdtSwitchValue");
+  const normalizeTransformerComponentState = requireSchematicMethod("normalizeTransformerComponentState");
   const getElementPropertyDefinitions = requireSchematicMethod("getElementPropertyDefinitions");
   const elementPropertyNormalizeMethodCache = new Map();
   const elementPropertySpecsCache = new Map();
@@ -264,8 +265,13 @@
         if (!normalizeMethodName) {
           throw new Error(`Element property contract '${normalizedType}.${key}' missing normalizeMethod at index ${index}.`);
         }
+        const control = String(property?.control ?? "").trim().toLowerCase();
+        const propertyInput = property?.input && typeof property.input === "object" && !Array.isArray(property.input)
+          ? property.input
+          : {};
         specs.push(Object.freeze({
           key,
+          preserveRawInput: control === "text" && propertyInput.readOnly !== true,
           normalizeValue: resolveElementPropertyNormalizeMethod(normalizeMethodName)
         }));
       });
@@ -359,6 +365,7 @@
     bold: false,
     italic: false
   });
+  const DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE = true;
   const normalizeSchematicTextStyle = (value, fallback = DEFAULT_SCHEMATIC_TEXT_STYLE) => {
     const base = fallback && typeof fallback === "object"
       ? fallback
@@ -386,6 +393,15 @@
     };
   };
   const resolveSchematicTextStyle = (value) => normalizeSchematicTextStyle(value);
+  const normalizeSchematicValueUnitSpacing = (
+    value,
+    fallback = DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE
+  ) => {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    return fallback !== false;
+  };
   const getSchematicTextValueSize = (style) => {
     const size = Number(style?.size);
     if (!Number.isFinite(size)) {
@@ -437,7 +453,20 @@
     });
   };
 
-  const formatDisplayValue = (component) => valueFormatApi.formatComponentDisplayValue(component);
+  const formatDisplayValue = (component, options) => {
+    const rawValue = valueFormatApi.formatComponentDisplayValue(component);
+    const text = String(rawValue ?? "").trim();
+    if (!text) {
+      return "";
+    }
+    if (normalizeSchematicValueUnitSpacing(options?.includeSchematicValueUnitSpace)) {
+      return text;
+    }
+    return text.replace(
+      /([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s+([pnumkMGTµμ]?[A-Za-zΩΩ°]+)/g,
+      "$1$2"
+    );
+  };
 
   const getDisplayName = (component) => {
     if (!component) {
@@ -561,10 +590,14 @@
     const text = getNamedNodeLabelText(component);
     const baseStyle = resolveNetLabelStyle();
     const resolvedTextStyle = resolveSchematicTextStyle(schematicTextStyle);
-    const style = { ...baseStyle };
+    const style = {
+      ...baseStyle,
+      fontSize: getSchematicTextValueSize(resolvedTextStyle)
+    };
+    const resolvedFontSize = Number(style.fontSize);
     const textWidth = measureTextWidth(
       text,
-      Number(style.fontSize),
+      Number.isFinite(resolvedFontSize) ? resolvedFontSize : Number(baseStyle.fontSize),
       resolvedTextStyle.bold ? 700 : 400,
       resolvedTextStyle.font
     );
@@ -614,8 +647,9 @@
     const textTransform = getNamedNodeTextTransform(rotation, metrics.style, { textOnly });
     const textX = getNamedNodeTextAnchorX(rotation, metrics, { textOnly });
     const fontSize = Number(metrics.style?.fontSize);
+    const fallbackFontSize = getSchematicTextValueSize(resolvedTextStyle);
     const label = appendText(group, textX, textTransform.y, metrics.text, {
-      size: Number.isFinite(fontSize) ? fontSize : 12,
+      size: Number.isFinite(fontSize) ? fontSize : fallbackFontSize,
       fill: labelColor,
       anchor: "middle",
       baseline: "middle",
@@ -725,6 +759,12 @@
   const getSpdtSwitchExtents = (component) =>
     renderPlanContracts.getSpdtSwitchExtents(component);
 
+  const getTransformerRenderPlan = (component) =>
+    renderPlanContracts.getTransformerRenderPlan(component);
+
+  const getTransformerExtents = (component) =>
+    renderPlanContracts.getTransformerExtents(component);
+
   const normalizeSpdtThrow = (value) =>
     String(value ?? "").trim().toUpperCase() === "B" ? "B" : "A";
 
@@ -793,7 +833,8 @@
 
   const getTwoPinInfo = (component) => {
     const pins = Array.isArray(component?.pins) ? component.pins : [];
-    if (pins.length < 2) {
+    // Guard shared two-pin geometry paths so multi-pin symbols don't inherit two-pin label extents.
+    if (pins.length !== 2) {
       return null;
     }
     const start = pins[0];
@@ -1419,6 +1460,10 @@
     return renderPlanContracts.getSpdtLabelGeometry(component, plan);
   };
 
+  const getTransformerLabelGeometry = (component, plan) => {
+    return renderPlanContracts.getTransformerLabelGeometry(component, plan);
+  };
+
   const drawSpdtSwitchSymbol = (svg, component, options) => {
     const plan = getSpdtSwitchRenderPlan(component);
     const group = document.createElementNS(SVG_NS, "g");
@@ -1450,6 +1495,79 @@
       return;
     }
     svg.appendChild(group);
+  };
+
+  const drawTransformerSymbol = (svg, component, options) => {
+    const plan = getTransformerRenderPlan(component);
+    const group = document.createElementNS(SVG_NS, "g");
+    group.setAttribute("data-component", component.id);
+    group.setAttribute("data-symbol", "XFMR");
+    if (options?.className) {
+      group.setAttribute("class", options.className);
+    }
+    if (options?.dataHighlight) {
+      group.setAttribute("data-component-highlight", String(options.dataHighlight));
+    }
+    if (Number.isFinite(options?.opacity)) {
+      group.setAttribute("opacity", String(options.opacity));
+    }
+    const style = {
+      stroke: options?.stroke ?? STROKE,
+      width: options?.width ?? STROKE_WIDTH,
+      fill: options?.fill
+    };
+    const handled = typeof symbolApi?.drawShape === "function"
+      ? symbolApi.drawShape(symbolCtx, "XFMR", group, {
+        style,
+        pins: component?.pins,
+        plan
+      })
+      : false;
+    if (!handled) {
+      return;
+    }
+    svg.appendChild(group);
+    if (options?.showLabel !== false) {
+      const labelGeometry = getTransformerLabelGeometry(component, plan);
+      const measurementText = options?.measurements?.get?.(component.id);
+      const extents = getTransformerExtents(component);
+      const symbolHalfExtent = extents
+        ? Math.max(
+          0,
+          (Math.max(extents.maxX - extents.minX, extents.maxY - extents.minY) / 2)
+        )
+        : 0;
+      const labelInfo = drawComponentLabel(svg, component, {
+        midX: labelGeometry.midX,
+        midY: labelGeometry.midY,
+        angle: labelGeometry.angle,
+        symbolHalfExtent,
+        labelColor: options?.labelColor,
+        valueColor: options?.valueColor,
+        dataHighlight: options?.dataHighlight,
+        schematicTextStyle: options?.schematicTextStyle,
+        includeSchematicValueUnitSpace: options?.includeSchematicValueUnitSpace,
+        extraLines: measurementText ? 1 : 0
+      });
+      if (measurementText && labelInfo) {
+        const resolvedTextStyle = resolveSchematicTextStyle(options?.schematicTextStyle);
+        const measurementLabel = appendText(svg, labelInfo.layout.x, labelInfo.layout.y + labelInfo.layout.lineHeight * (labelInfo.lineCount - 1), measurementText, {
+          size: getSchematicTextValueSize(resolvedTextStyle),
+          fill: options?.valueColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value,
+          anchor: labelInfo.layout.anchor,
+          baseline: labelInfo.layout.baseline ?? undefined,
+          family: resolvedTextStyle.font,
+          style: resolvedTextStyle.italic ? "italic" : "normal",
+          weight: resolvedTextStyle.bold ? 700 : MEASUREMENT_TEXT_WEIGHT
+        });
+        if (component?.id) {
+          measurementLabel.setAttribute("data-component-id", String(component.id));
+        }
+        if (options?.dataHighlight) {
+          measurementLabel.setAttribute("data-component-label-highlight", String(options.dataHighlight));
+        }
+      }
+    }
   };
 
   const drawDifferentialProbeOverlayLink = (svg, component, options) => {
@@ -1528,6 +1646,10 @@
       drawSpdtSwitchSymbol(svg, component, options);
       return;
     }
+    if (type === "XFMR") {
+      drawTransformerSymbol(svg, component, options);
+      return;
+    }
     const info = getTwoPinInfo(component);
     if (!info) {
       return;
@@ -1583,6 +1705,7 @@
         valueColor: options?.valueColor,
         dataHighlight: options?.dataHighlight,
         schematicTextStyle: options?.schematicTextStyle,
+        includeSchematicValueUnitSpace: options?.includeSchematicValueUnitSpace,
         extraLines: measurementText ? 1 : 0
       });
       if (measurementText && labelInfo) {
@@ -1609,7 +1732,9 @@
   const drawComponentLabel = (svg, component, options) => {
     const resolvedTextStyle = resolveSchematicTextStyle(options?.schematicTextStyle);
     const valueSize = getSchematicTextValueSize(resolvedTextStyle);
-    const displayValue = formatDisplayValue(component);
+    const displayValue = formatDisplayValue(component, {
+      includeSchematicValueUnitSpace: options?.includeSchematicValueUnitSpace
+    });
     const hasValue = Boolean(displayValue);
     const displayName = getDisplayName(component);
     const labelRotation = Number(component?.labelRotation ?? 0);
@@ -1744,6 +1869,24 @@
           { id: "B", name: "B", x: 40, y: 18 }
         ]
       };
+    } else if (normalized === "XFMR") {
+      component = {
+        id: "XFMR",
+        type: "XFMR",
+        value: "1",
+        xfmrLp: "1",
+        xfmrLs: "1",
+        xfmrK: "1",
+        xfmrRpri: "0",
+        xfmrRsec: "0",
+        xfmrSolveBy: "ratio",
+        pins: [
+          { id: "P1", name: "P1", x: 8, y: 4 },
+          { id: "P2", name: "P2", x: 8, y: 20 },
+          { id: "S1", name: "S1", x: 40, y: 4 },
+          { id: "S2", name: "S2", x: 40, y: 20 }
+        ]
+      };
     } else if (isProbeComponentType(normalized)) {
       const probePins = normalized === "PD"
         ? [
@@ -1783,7 +1926,13 @@
     return svg;
   };
 
-  const getComponentBounds = (component, padding, probeLabels, schematicTextStyle) => {
+  const getComponentBounds = (
+    component,
+    padding,
+    probeLabels,
+    schematicTextStyle,
+    includeSchematicValueUnitSpace
+  ) => {
     const type = String(component?.type ?? "").toUpperCase();
     const pins = Array.isArray(component?.pins) ? component.pins : [];
     if (!pins.length) {
@@ -1876,6 +2025,13 @@
       }
     } else if (type === "SW") {
       const extents = getSpdtSwitchExtents(component);
+      const pad = 6;
+      minX = extents.minX - pad;
+      maxX = extents.maxX + pad;
+      minY = extents.minY - pad;
+      maxY = extents.maxY + pad;
+    } else if (type === "XFMR") {
+      const extents = getTransformerExtents(component);
       const pad = 6;
       minX = extents.minX - pad;
       maxX = extents.maxX + pad;
@@ -2081,6 +2237,7 @@
       measurements: new Map(),
       probeLabels: new Map(),
       schematicTextStyle: { ...DEFAULT_SCHEMATIC_TEXT_STYLE },
+      includeSchematicValueUnitSpace: DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE,
       componentDefaults: getBuiltInComponentDefaults(),
       wireDefaultColor: null,
       externalHighlightComponentIds: new Set(),
@@ -2097,6 +2254,10 @@
       skipViewSyncOnce: false
     };
     state.schematicTextStyle = normalizeSchematicTextStyle(options?.schematicTextStyle, state.schematicTextStyle);
+    state.includeSchematicValueUnitSpace = normalizeSchematicValueUnitSpacing(
+      options?.includeSchematicValueUnitSpace,
+      state.includeSchematicValueUnitSpace
+    );
     state.componentDefaults = normalizeComponentDefaultsValue(options?.componentDefaults, state.componentDefaults);
     if (options?.placementDefaults && typeof options.placementDefaults === "object") {
       state.groundPlacementVariant = normalizeGroundVariantValue(
@@ -2362,7 +2523,13 @@
       const entry = defaults[key];
       return {
         value: String(entry?.value ?? ""),
-        netColor: normalizeNetColorValue(entry?.netColor) ?? null
+        netColor: normalizeNetColorValue(entry?.netColor) ?? null,
+        ...(key === "XFMR"
+          ? {
+            xfmrPolarity: String(entry?.xfmrPolarity ?? ""),
+            xfmrSolveBy: String(entry?.xfmrSolveBy ?? "")
+          }
+          : {})
       };
     };
 
@@ -3684,7 +3851,13 @@
         if (isProbeComponentType(component?.type)) {
           return;
         }
-        const bounds = getComponentBounds(component, padding, state.probeLabels, state.schematicTextStyle);
+        const bounds = getComponentBounds(
+          component,
+          padding,
+          state.probeLabels,
+          state.schematicTextStyle,
+          state.includeSchematicValueUnitSpace
+        );
         if (bounds) {
           obstacles.push(bounds);
         }
@@ -5419,6 +5592,7 @@
           measurements: state.measurements,
           probeLabels: state.probeLabels,
           schematicTextStyle: state.schematicTextStyle,
+          includeSchematicValueUnitSpace: state.includeSchematicValueUnitSpace,
           ...(strokeColor ? {
             stroke: strokeColor,
             labelColor: strokeColor,
@@ -5830,7 +6004,8 @@
             valueColor: hoverColor,
             measurements: state.measurements,
             probeLabels: state.probeLabels,
-            schematicTextStyle: state.schematicTextStyle
+            schematicTextStyle: state.schematicTextStyle,
+            includeSchematicValueUnitSpace: state.includeSchematicValueUnitSpace
           });
         }
         if (component?.pins?.length && isElectricalComponentType(component?.type)) {
@@ -5870,7 +6045,9 @@
               width: selectionSymbolWidth,
               fill: "none",
               className: "schematic-component-highlight",
-              dataHighlight: id
+              dataHighlight: id,
+              schematicTextStyle: state.schematicTextStyle,
+              includeSchematicValueUnitSpace: state.includeSchematicValueUnitSpace
             });
           }
           if (type === "ARR" && Array.isArray(component?.pins) && component.pins.length >= 2) {
@@ -5911,9 +6088,11 @@
             ? null
             : (type === "SW"
               ? getSpdtLabelGeometry(component)
-              : (info
-                ? { midX: info.midX, midY: info.midY, angle: info.angle }
-                : null));
+              : (type === "XFMR"
+                ? getTransformerLabelGeometry(component)
+                : (info
+                  ? { midX: info.midX, midY: info.midY, angle: info.angle }
+                  : null)));
           if (isProbeComponentType(type)) {
             drawProbeLabel(overlayGroup, component, {
               labelColor: "#0f62fe",
@@ -5932,7 +6111,20 @@
             }
           } else if (labelGeometry) {
             const measurementText = state.measurements?.get?.(component.id);
-            const symbolHalfExtent = info ? getTwoPinSymbolHalfExtent(component, info) : 0;
+            const transformerExtents = type === "XFMR"
+              ? getTransformerExtents(component)
+              : null;
+            const symbolHalfExtent = info
+              ? getTwoPinSymbolHalfExtent(component, info)
+              : (transformerExtents
+                ? Math.max(
+                  0,
+                  (Math.max(
+                    transformerExtents.maxX - transformerExtents.minX,
+                    transformerExtents.maxY - transformerExtents.minY
+                  ) / 2)
+                )
+                : 0);
             const labelInfo = drawComponentLabel(overlayGroup, component, {
               midX: labelGeometry.midX,
               midY: labelGeometry.midY,
@@ -5942,7 +6134,8 @@
               labelColor: "#0f62fe",
               valueColor: "#0f62fe",
               dataHighlight: 1,
-              schematicTextStyle: state.schematicTextStyle
+              schematicTextStyle: state.schematicTextStyle,
+              includeSchematicValueUnitSpace: state.includeSchematicValueUnitSpace
             });
             if (measurementText && labelInfo) {
               const resolvedTextStyle = resolveSchematicTextStyle(state.schematicTextStyle);
@@ -6044,7 +6237,8 @@
               valueColor: externalColor,
               measurements: state.measurements,
               probeLabels: state.probeLabels,
-              schematicTextStyle: state.schematicTextStyle
+              schematicTextStyle: state.schematicTextStyle,
+              includeSchematicValueUnitSpace: state.includeSchematicValueUnitSpace
             });
           });
           if (!wireIds.size) {
@@ -6716,18 +6910,23 @@
         if (!Object.prototype.hasOwnProperty.call(updates, spec.key)) {
           return;
         }
-        const normalizedValue = spec.normalizeValue(updates[spec.key]);
+        const nextRawValue = String(updates[spec.key] ?? "");
+        const currentRawValue = Object.prototype.hasOwnProperty.call(component, spec.key)
+          ? String(component[spec.key] ?? "")
+          : "";
+        const normalizedValue = spec.normalizeValue(nextRawValue);
         const currentValue = spec.normalizeValue(
           Object.prototype.hasOwnProperty.call(component, spec.key)
             ? component[spec.key]
             : undefined
         );
-        if (Object.is(normalizedValue, currentValue)) {
+        const preserveRawInput = spec.preserveRawInput === true;
+        if (Object.is(normalizedValue, currentValue) && (!preserveRawInput || nextRawValue === currentRawValue)) {
           return;
         }
         genericPropertyUpdates.push({
           key: spec.key,
-          value: normalizedValue
+          value: preserveRawInput ? nextRawValue : normalizedValue
         });
       });
       const typeChanged = nextType !== null
@@ -6984,6 +7183,16 @@
           }
           component[entry.key] = entry.value;
         });
+        if (String(component?.type ?? "").toUpperCase() === "XFMR") {
+          const transformer = normalizeTransformerComponentState(component);
+          component.xfmrSolveBy = transformer.solveBy;
+          if (transformer.solveBy === "secondary") {
+            component.value = transformer.turnsRatio;
+          } else {
+            component.xfmrLs = transformer.secondaryInductance;
+          }
+          component.xfmrPolarity = transformer.polarity;
+        }
       }, { notifySelection: true });
     };
 
@@ -7798,6 +8007,13 @@
       state.schematicTextStyle = normalizeSchematicTextStyle(next, state.schematicTextStyle);
       render();
     };
+    const setSchematicValueUnitSpacing = (next) => {
+      state.includeSchematicValueUnitSpace = normalizeSchematicValueUnitSpacing(
+        next,
+        state.includeSchematicValueUnitSpace
+      );
+      render();
+    };
 
     const setExternalHighlights = (next) => {
       const normalizeIdSet = (value) => {
@@ -7947,6 +8163,20 @@
       } else if (component && useSymbolFactory) {
         const typeDefaults = getComponentDefaultForType(component.type);
         component.value = String(typeDefaults.value ?? "");
+      }
+      if (String(component?.type ?? "").toUpperCase() === "XFMR") {
+        if (Object.prototype.hasOwnProperty.call(spec, "xfmrPolarity")) {
+          component.xfmrPolarity = String(spec.xfmrPolarity ?? "");
+        } else if (useSymbolFactory) {
+          const typeDefaults = getComponentDefaultForType(component.type);
+          component.xfmrPolarity = String(typeDefaults?.xfmrPolarity ?? "");
+        }
+        if (Object.prototype.hasOwnProperty.call(spec, "xfmrSolveBy")) {
+          component.xfmrSolveBy = String(spec.xfmrSolveBy ?? "");
+        } else if (useSymbolFactory) {
+          const typeDefaults = getComponentDefaultForType(component.type);
+          component.xfmrSolveBy = String(typeDefaults?.xfmrSolveBy ?? "");
+        }
       }
       if (component && hasExplicitNetColor) {
         const normalizedColor = normalizeNetColorValue(spec.netColor);
@@ -8194,7 +8424,13 @@
           if (filter && !filter(component)) {
             return;
           }
-          const bounds = getComponentBounds(component, 10, state.probeLabels, state.schematicTextStyle);
+          const bounds = getComponentBounds(
+            component,
+            10,
+            state.probeLabels,
+            state.schematicTextStyle,
+            state.includeSchematicValueUnitSpace
+          );
           if (!bounds) {
             return;
           }
@@ -10982,7 +11218,13 @@
         const isTouch = box.mode === "touch";
         const components = Array.isArray(state.model?.components) ? state.model.components : [];
         components.forEach((component) => {
-          const bounds = getComponentBounds(component, 10, state.probeLabels, state.schematicTextStyle);
+          const bounds = getComponentBounds(
+            component,
+            10,
+            state.probeLabels,
+            state.schematicTextStyle,
+            state.includeSchematicValueUnitSpace
+          );
           if (!bounds) {
             return;
           }
@@ -11679,6 +11921,8 @@
       setProbeLabels,
       setSchematicTextStyle,
       getSchematicTextStyle: () => ({ ...state.schematicTextStyle }),
+      setSchematicValueUnitSpacing,
+      getSchematicValueUnitSpacing: () => state.includeSchematicValueUnitSpace === true,
       setExternalHighlights,
       getGrid,
       setSelection,
@@ -11720,7 +11964,15 @@
           if (bounds.minY < minY) { minY = bounds.minY; }
           if (bounds.maxY > maxY) { maxY = bounds.maxY; }
         };
-        components.forEach((comp) => expand(getComponentBounds(comp, 0, state.probeLabels, state.schematicTextStyle)));
+        components.forEach((comp) => expand(
+          getComponentBounds(
+            comp,
+            0,
+            state.probeLabels,
+            state.schematicTextStyle,
+            state.includeSchematicValueUnitSpace
+          )
+        ));
         wires.forEach((wire) => expand(getWireBounds(wire)));
         if (!Number.isFinite(minX)) {
           return null;

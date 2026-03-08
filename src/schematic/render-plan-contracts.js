@@ -33,6 +33,7 @@
     };
     const getProbeHelper = (name) => getHelper(name, "Probe");
     const getSpdtSwitchHelper = (name) => getHelper(name, "SPDT");
+    const getTransformerHelper = (name) => getHelper(name, "Transformer");
     const getNamedNodeHelper = (name) => getHelper(name, "Named-node");
     const getGroundHelper = (name) => getHelper(name, "Ground");
     const getAnnotationHelper = (name) => getHelper(name, "Annotation");
@@ -583,6 +584,78 @@
       };
     };
 
+    const getTransformerRenderPlan = (component) => {
+      const helper = getTransformerHelper("getTransformerRenderPlan");
+      const plan = helper(component?.pins, component?.xfmrPolarity);
+      if (
+        !plan
+        || !plan.center
+        || !plan.extents
+        || !plan.coils
+        || !Number.isFinite(plan.center.x)
+        || !Number.isFinite(plan.center.y)
+        || !Number.isFinite(plan.angle)
+        || !Number.isFinite(plan.extents.minX)
+        || !Number.isFinite(plan.extents.maxX)
+        || !Number.isFinite(plan.extents.minY)
+        || !Number.isFinite(plan.extents.maxY)
+      ) {
+        throw new Error("Transformer render plan helper returned invalid data.");
+      }
+      return {
+        ...plan,
+        center: {
+          x: Number(plan.center.x),
+          y: Number(plan.center.y)
+        },
+        angle: Number(plan.angle),
+        extents: {
+          minX: Number(plan.extents.minX),
+          maxX: Number(plan.extents.maxX),
+          minY: Number(plan.extents.minY),
+          maxY: Number(plan.extents.maxY)
+        }
+      };
+    };
+
+    const getTransformerExtents = (component) => {
+      const helper = getTransformerHelper("getTransformerExtents");
+      const extents = helper(component?.pins, component?.xfmrPolarity);
+      if (
+        !extents
+        || !Number.isFinite(extents.minX)
+        || !Number.isFinite(extents.maxX)
+        || !Number.isFinite(extents.minY)
+        || !Number.isFinite(extents.maxY)
+      ) {
+        throw new Error("Transformer extents helper returned invalid data.");
+      }
+      return {
+        minX: Number(extents.minX),
+        maxX: Number(extents.maxX),
+        minY: Number(extents.minY),
+        maxY: Number(extents.maxY)
+      };
+    };
+
+    const getTransformerLabelGeometry = (component, plan) => {
+      const helper = getTransformerHelper("getTransformerLabelGeometry");
+      const geometry = helper(component?.pins, component?.xfmrPolarity, plan);
+      if (
+        !geometry
+        || !Number.isFinite(geometry.midX)
+        || !Number.isFinite(geometry.midY)
+        || !Number.isFinite(geometry.angle)
+      ) {
+        throw new Error("Transformer label geometry helper returned invalid data.");
+      }
+      return {
+        midX: Number(geometry.midX),
+        midY: Number(geometry.midY),
+        angle: Number(geometry.angle)
+      };
+    };
+
     const snapQuarterRotation = (angle) => {
       if (!Number.isFinite(angle)) {
         return 0;
@@ -736,6 +809,9 @@
       getSpdtSwitchRenderPlan,
       getSpdtSwitchExtents,
       getSpdtLabelGeometry,
+      getTransformerRenderPlan,
+      getTransformerExtents,
+      getTransformerLabelGeometry,
       getTwoPinVisualHalfExtent,
       resolveTwoPinLabelPosition
     });

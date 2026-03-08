@@ -47,6 +47,13 @@
     control: String(property?.control ?? ""),
     defaultValue: property?.defaultValue,
     normalizeMethod: String(property?.normalizeMethod ?? ""),
+    help: property?.help && typeof property.help === "object" && !Array.isArray(property.help)
+      ? {
+        title: String(property.help.title ?? ""),
+        summary: String(property.help.summary ?? ""),
+        definition: String(property.help.definition ?? "")
+      }
+      : null,
     inlineEditVisible: property?.inlineEditVisible !== false,
     options: Array.isArray(property?.options)
       ? property.options.map((option) => ({

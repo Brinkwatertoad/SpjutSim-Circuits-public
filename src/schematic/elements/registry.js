@@ -54,6 +54,19 @@
     value: assertNonEmptyString(option?.value, `${fieldPath}.value`),
     label: assertNonEmptyString(option?.label, `${fieldPath}.label`)
   });
+  const normalizePropertyHelp = (help, fieldPath) => {
+    if (help === null || help === undefined) {
+      return null;
+    }
+    if (!help || typeof help !== "object" || Array.isArray(help)) {
+      throw new Error(`Element registry property '${fieldPath}.help' requires an object when provided.`);
+    }
+    return {
+      title: assertNonEmptyString(help?.title, `${fieldPath}.help.title`),
+      summary: assertNonEmptyString(help?.summary, `${fieldPath}.help.summary`),
+      definition: assertNonEmptyString(help?.definition, `${fieldPath}.help.definition`)
+    };
+  };
   const normalizePropertyInput = (control, input, fieldPath) => {
     if (input === null || input === undefined) {
       return {};
@@ -67,6 +80,9 @@
     }
     if (Object.prototype.hasOwnProperty.call(input, "unit")) {
       normalized.unit = String(input.unit ?? "").trim();
+    }
+    if (Object.prototype.hasOwnProperty.call(input, "readOnly")) {
+      normalized.readOnly = input.readOnly === true;
     }
     if (control === "number") {
       ["min", "max", "step"].forEach((key) => {
@@ -123,6 +139,7 @@
         control,
         defaultValue,
         normalizeMethod,
+        help: normalizePropertyHelp(property?.help, fieldPath),
         inlineEditVisible: property?.inlineEditVisible !== false,
         options,
         input: normalizePropertyInput(control, property?.input, fieldPath)
@@ -136,6 +153,13 @@
     control: String(property?.control ?? ""),
     defaultValue: property?.defaultValue,
     normalizeMethod: String(property?.normalizeMethod ?? ""),
+    help: property?.help && typeof property.help === "object" && !Array.isArray(property.help)
+      ? {
+        title: String(property.help.title ?? ""),
+        summary: String(property.help.summary ?? ""),
+        definition: String(property.help.definition ?? "")
+      }
+      : null,
     inlineEditVisible: property?.inlineEditVisible !== false,
     options: Array.isArray(property?.options)
       ? property.options.map((option) => ({
@@ -197,6 +221,7 @@
       properties: Object.freeze(
         normalizePropertyDefinitions(definition?.properties).map((property) => Object.freeze({
           ...property,
+          help: property.help ? Object.freeze({ ...property.help }) : null,
           options: Object.freeze(property.options.map((option) => Object.freeze({ ...option })))
         }))
       )

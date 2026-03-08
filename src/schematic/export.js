@@ -114,6 +114,7 @@
     bold: false,
     italic: false
   });
+  const DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE = true;
   const normalizeSchematicTextStyle = (value, fallback = DEFAULT_SCHEMATIC_TEXT_STYLE) => {
     const base = fallback && typeof fallback === "object"
       ? fallback
@@ -141,6 +142,15 @@
     };
   };
   const resolveSchematicTextStyle = (value) => normalizeSchematicTextStyle(value);
+  const normalizeSchematicValueUnitSpacing = (
+    value,
+    fallback = DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE
+  ) => {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    return fallback !== false;
+  };
   const getSchematicTextValueSize = (style) => {
     const size = Number(style?.size);
     if (!Number.isFinite(size)) {
@@ -351,7 +361,20 @@
     });
   };
 
-  const formatDisplayValue = (component) => valueFormatApi.formatComponentDisplayValue(component);
+  const formatDisplayValue = (component, options) => {
+    const rawValue = valueFormatApi.formatComponentDisplayValue(component);
+    const text = String(rawValue ?? "").trim();
+    if (!text) {
+      return "";
+    }
+    if (normalizeSchematicValueUnitSpacing(options?.includeSchematicValueUnitSpace)) {
+      return text;
+    }
+    return text.replace(
+      /([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s+([pnumkMGTµμ]?[A-Za-zΩΩ°]+)/g,
+      "$1$2"
+    );
+  };
 
   const getDisplayName = (component) => {
     if (!component) {
@@ -458,10 +481,14 @@
     const text = getNamedNodeLabelText(component);
     const baseStyle = resolveNetLabelStyle();
     const resolvedTextStyle = resolveSchematicTextStyle(schematicTextStyle);
-    const style = { ...baseStyle };
+    const style = {
+      ...baseStyle,
+      fontSize: getSchematicTextValueSize(resolvedTextStyle)
+    };
+    const resolvedFontSize = Number(style.fontSize);
     const textWidth = measureTextWidth(
       text,
-      Number(style.fontSize),
+      Number.isFinite(resolvedFontSize) ? resolvedFontSize : Number(baseStyle.fontSize),
       resolvedTextStyle.bold ? 700 : 400,
       resolvedTextStyle.font
     );
@@ -510,8 +537,9 @@
     const textTransform = getNamedNodeTextTransform(rotation, metrics.style, { textOnly });
     const textX = getNamedNodeTextAnchorX(rotation, metrics, { textOnly });
     const fontSize = Number(metrics.style?.fontSize);
+    const fallbackFontSize = getSchematicTextValueSize(resolvedTextStyle);
     const label = appendText(group, textX, textTransform.y, metrics.text, {
-      size: Number.isFinite(fontSize) ? fontSize : 11,
+      size: Number.isFinite(fontSize) ? fontSize : fallbackFontSize,
       fill: labelColor ?? STROKE,
       anchor: "middle",
       baseline: "middle",
@@ -588,6 +616,16 @@
 
   const getSpdtLabelGeometry = (component, plan) => {
     return renderPlanContracts.getSpdtLabelGeometry(component, plan);
+  };
+
+  const getTransformerRenderPlan = (component) =>
+    renderPlanContracts.getTransformerRenderPlan(component);
+
+  const getTransformerExtents = (component) =>
+    renderPlanContracts.getTransformerExtents(component);
+
+  const getTransformerLabelGeometry = (component, plan) => {
+    return renderPlanContracts.getTransformerLabelGeometry(component, plan);
   };
 
   const createSvg = (width, height, viewBox) => {
@@ -676,7 +714,13 @@
     }
   };
 
-  const getComponentBounds = (component, measurements, probeLabels, schematicTextStyle) => {
+  const getComponentBounds = (
+    component,
+    measurements,
+    probeLabels,
+    schematicTextStyle,
+    includeSchematicValueUnitSpace
+  ) => {
     const resolvedTextStyle = resolveSchematicTextStyle(schematicTextStyle);
     const valueTextSize = getSchematicTextValueSize(resolvedTextStyle);
     const textLineHeight = getSchematicTextLineHeight(resolvedTextStyle);
@@ -816,6 +860,80 @@
         extents.maxY + pad
       );
     }
+    if (type === "XFMR") {
+      const extents = getTransformerExtents(component);
+      const pad = 6;
+      let bounds = expandBounds(
+        null,
+        extents.minX - pad,
+        extents.minY - pad,
+        extents.maxX + pad,
+        extents.maxY + pad
+      );
+      const geometry = getTransformerLabelGeometry(component);
+      const displayValue = formatDisplayValue(component, { includeSchematicValueUnitSpace });
+      const hasValue = Boolean(displayValue);
+      const measurementText = measurements?.get?.(component.id);
+      const labelRotation = Number(component?.labelRotation ?? 0);
+      const lineCount = (hasValue ? 2 : 1) + (measurementText ? 1 : 0);
+      const layout = getLabelLayout(geometry.midX, geometry.midY, geometry.angle, lineCount, labelRotation);
+      const symbolHalfExtent = Math.max(0, (Math.max(extents.maxX - extents.minX, extents.maxY - extents.minY) / 2));
+      const resolvedPosition = resolveComponentLabelPosition(layout, {
+        midX: geometry.midX,
+        midY: geometry.midY,
+        angle: geometry.angle,
+        labelRotation,
+        lineCount,
+        lineHeight: textLineHeight,
+        labelSize: resolvedTextStyle.size,
+        valueSize: valueTextSize,
+        symbolHalfExtent
+      });
+      const resolvedY = resolvedPosition.y;
+      const resolvedX = resolvedPosition.x;
+      const labelBaseline = "middle";
+      const nameBounds = getTextBounds(
+        resolvedX,
+        resolvedY,
+        getDisplayName(component),
+        resolvedTextStyle.size,
+        layout.anchor,
+        textWeight,
+        labelBaseline
+      );
+      if (nameBounds) {
+        bounds = expandBounds(bounds, nameBounds.minX, nameBounds.minY, nameBounds.maxX, nameBounds.maxY);
+      }
+      if (hasValue) {
+        const valueBounds = getTextBounds(
+          resolvedX,
+          resolvedY + textLineHeight,
+          displayValue,
+          valueTextSize,
+          layout.anchor,
+          textWeight,
+          labelBaseline
+        );
+        if (valueBounds) {
+          bounds = expandBounds(bounds, valueBounds.minX, valueBounds.minY, valueBounds.maxX, valueBounds.maxY);
+        }
+      }
+      if (measurementText) {
+        const measurementBounds = getTextBounds(
+          resolvedX,
+          resolvedY + textLineHeight * (lineCount - 1),
+          measurementText,
+          valueTextSize,
+          layout.anchor,
+          measurementWeight,
+          labelBaseline
+        );
+        if (measurementBounds) {
+          bounds = expandBounds(bounds, measurementBounds.minX, measurementBounds.minY, measurementBounds.maxX, measurementBounds.maxY);
+        }
+      }
+      return bounds;
+    }
     if (isProbeComponentType(type)) {
       const shapePad = 6;
       let bounds = null;
@@ -905,7 +1023,7 @@
       Math.max(info.start.y, info.end.y) + symbolPad
     );
 
-    const displayValue = formatDisplayValue(component);
+    const displayValue = formatDisplayValue(component, { includeSchematicValueUnitSpace });
     const displayName = getDisplayName(component);
     const hasValue = Boolean(displayValue);
     const measurementText = measurements?.get?.(component.id);
@@ -990,7 +1108,13 @@
       }
     });
     components.forEach((component) => {
-      const componentBounds = getComponentBounds(component, measurements, probeLabels, options?.schematicTextStyle);
+      const componentBounds = getComponentBounds(
+        component,
+        measurements,
+        probeLabels,
+        options?.schematicTextStyle,
+        options?.includeSchematicValueUnitSpace
+      );
       if (componentBounds) {
         bounds = expandBounds(bounds, componentBounds.minX, componentBounds.minY, componentBounds.maxX, componentBounds.maxY);
       }
@@ -1486,6 +1610,88 @@
     svg.appendChild(group);
   };
 
+  const drawTransformerSymbol = (svg, component, componentColor, measurements, schematicTextStyle, includeSchematicValueUnitSpace) => {
+    const plan = getTransformerRenderPlan(component);
+    const group = document.createElementNS(SVG_NS, "g");
+    group.setAttribute("data-component", component.id);
+    group.setAttribute("data-symbol", "XFMR");
+    const strokeColor = componentColor ?? STROKE;
+    const handled = typeof symbolApi?.drawShape === "function"
+      ? symbolApi.drawShape(symbolCtx, "XFMR", group, {
+        style: { stroke: strokeColor, width: STROKE_WIDTH },
+        pins: component?.pins,
+        plan
+      })
+      : false;
+    if (!handled) {
+      return;
+    }
+    svg.appendChild(group);
+
+    const geometry = getTransformerLabelGeometry(component, plan);
+    const extents = getTransformerExtents(component);
+    const displayValue = formatDisplayValue(component, { includeSchematicValueUnitSpace });
+    const hasValue = Boolean(displayValue);
+    const labelRotation = Number(component?.labelRotation ?? 0);
+    const measurementText = measurements?.get?.(component.id);
+    const lineCount = (hasValue ? 2 : 1) + (measurementText ? 1 : 0);
+    const layout = getLabelLayout(geometry.midX, geometry.midY, geometry.angle, lineCount, labelRotation);
+    const symbolHalfExtent = extents
+      ? Math.max(0, (Math.max(extents.maxX - extents.minX, extents.maxY - extents.minY) / 2))
+      : 0;
+    const resolvedPosition = resolveComponentLabelPosition(layout, {
+      midX: geometry.midX,
+      midY: geometry.midY,
+      angle: geometry.angle,
+      labelRotation,
+      lineCount,
+      lineHeight: getSchematicTextLineHeight(schematicTextStyle),
+      labelSize: schematicTextStyle.size,
+      valueSize: getSchematicTextValueSize(schematicTextStyle),
+      symbolHalfExtent
+    });
+    const resolvedY = resolvedPosition.y;
+    const resolvedX = resolvedPosition.x;
+    const labelBaseline = "middle";
+    const textFamily = getSchematicFontFamily(schematicTextStyle.font);
+    const textWeight = schematicTextStyle.bold ? 700 : 400;
+    const valueTextSize = getSchematicTextValueSize(schematicTextStyle);
+    const textLineHeight = getSchematicTextLineHeight(schematicTextStyle);
+    const measurementWeight = schematicTextStyle.bold ? 700 : MEASUREMENT_TEXT_WEIGHT;
+    appendText(svg, resolvedX, resolvedY, getDisplayName(component), {
+      size: schematicTextStyle.size,
+      anchor: layout.anchor,
+      baseline: labelBaseline,
+      fill: componentColor ?? STROKE,
+      family: textFamily,
+      weight: textWeight,
+      style: schematicTextStyle.italic ? "italic" : "normal"
+    });
+    if (hasValue) {
+      appendText(svg, resolvedX, resolvedY + textLineHeight, displayValue, {
+        size: valueTextSize,
+        fill: componentColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value,
+        anchor: layout.anchor,
+        baseline: labelBaseline,
+        family: textFamily,
+        weight: textWeight,
+        style: schematicTextStyle.italic ? "italic" : "normal"
+      });
+    }
+    if (measurementText) {
+      const measurementY = resolvedY + textLineHeight * (lineCount - 1);
+      appendText(svg, resolvedX, measurementY, measurementText, {
+        size: valueTextSize,
+        fill: componentColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value,
+        anchor: layout.anchor,
+        baseline: labelBaseline,
+        family: textFamily,
+        weight: measurementWeight,
+        style: schematicTextStyle.italic ? "italic" : "normal"
+      });
+    }
+  };
+
   const drawComponent = (svg, component, options) => {
     const type = String(component?.type ?? "").toUpperCase();
     const componentColor = normalizeNetColorValue(options?.componentColor);
@@ -1529,6 +1735,17 @@
       drawSpdtSwitchSymbol(svg, component, componentColor, options?.measurements, resolvedTextStyle);
       return;
     }
+    if (type === "XFMR") {
+      drawTransformerSymbol(
+        svg,
+        component,
+        componentColor,
+        options?.measurements,
+        resolvedTextStyle,
+        options?.includeSchematicValueUnitSpace
+      );
+      return;
+    }
     const info = getTwoPinInfo(component);
     if (!info) {
       return;
@@ -1558,7 +1775,9 @@
       appendLine(group, 0, 0, info.length, 0);
     }
     svg.appendChild(group);
-    const displayValue = formatDisplayValue(component);
+    const displayValue = formatDisplayValue(component, {
+      includeSchematicValueUnitSpace: options?.includeSchematicValueUnitSpace
+    });
     const hasValue = Boolean(displayValue);
     const labelRotation = Number(component?.labelRotation ?? 0);
     const measurementText = options?.measurements?.get?.(component.id);
@@ -1646,6 +1865,7 @@
       measurements: options?.measurements,
       probeLabels: options?.probeLabels,
       schematicTextStyle: options?.schematicTextStyle,
+      includeSchematicValueUnitSpace: options?.includeSchematicValueUnitSpace,
       netColor: normalizeNetColorValue(netColors[String(component?.id ?? "")]),
       componentColor: normalizeNetColorValue(component?.netColor)
     });

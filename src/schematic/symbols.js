@@ -29,6 +29,16 @@
         { id: "2", name: "2", x: 20, y: 0 }
       ]
     },
+    XFMR: {
+      type: "XFMR",
+      label: "Transformer",
+      pins: [
+        { id: "P1", name: "P1", x: -20, y: -20 },
+        { id: "P2", name: "P2", x: -20, y: 20 },
+        { id: "S1", name: "S1", x: 20, y: -20 },
+        { id: "S2", name: "S2", x: 20, y: 20 }
+      ]
+    },
     V: {
       type: "V",
       label: "Voltage Source",

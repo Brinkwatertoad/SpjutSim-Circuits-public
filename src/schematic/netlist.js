@@ -493,6 +493,107 @@
     return { line, additionalLines };
   };
 
+  const normalizeTransformerPinToken = (pin) => String(pin?.id ?? pin?.name ?? "").trim().toUpperCase();
+
+  const pickTransformerPinByToken = (pins, token, used) => {
+    for (const pin of pins) {
+      if (used.has(pin)) {
+        continue;
+      }
+      if (normalizeTransformerPinToken(pin) !== token) {
+        continue;
+      }
+      used.add(pin);
+      return pin;
+    }
+    return null;
+  };
+
+  const pickNextTransformerPin = (pins, used) => {
+    for (const pin of pins) {
+      if (used.has(pin)) {
+        continue;
+      }
+      used.add(pin);
+      return pin;
+    }
+    return null;
+  };
+
+  const resolveTransformerPins = (component) => {
+    const pins = getComponentPins(component);
+    if (pins.length < 4) {
+      return null;
+    }
+    const used = new Set();
+    const p1 = pickTransformerPinByToken(pins, "P1", used) ?? pickNextTransformerPin(pins, used);
+    const p2 = pickTransformerPinByToken(pins, "P2", used) ?? pickNextTransformerPin(pins, used);
+    const s1 = pickTransformerPinByToken(pins, "S1", used) ?? pickNextTransformerPin(pins, used);
+    const s2 = pickTransformerPinByToken(pins, "S2", used) ?? pickNextTransformerPin(pins, used);
+    if (!p1 || !p2 || !s1 || !s2) {
+      return null;
+    }
+    return {
+      P1: p1,
+      P2: p2,
+      S1: s1,
+      S2: s2
+    };
+  };
+
+  const buildTransformerNetlistLines = (component, context) => {
+    const compileErrors = Array.isArray(context?.compileErrors) ? context.compileErrors : [];
+    const pinNetMap = context?.pinNetMap;
+    const normalizeTransformerComponentState = context?.normalizeTransformerComponentState;
+    if (typeof normalizeTransformerComponentState !== "function") {
+      throw new Error("Transformer netlist builder requires normalizeTransformerComponentState helper.");
+    }
+    const resolvedPins = resolveTransformerPins(component);
+    if (!resolvedPins) {
+      compileErrors.push(`Transformer '${component?.id ?? "?"}' is missing P1/P2/S1/S2 pins.`);
+      return null;
+    }
+    const normalized = normalizeTransformerComponentState(component);
+    const polarity = String(normalized?.polarity ?? "subtractive").trim().toLowerCase();
+    const secondaryFromPin = polarity === "additive" ? resolvedPins.S2 : resolvedPins.S1;
+    const secondaryToPin = polarity === "additive" ? resolvedPins.S1 : resolvedPins.S2;
+    const primaryA = getNetForPin(pinNetMap, component.id, resolvedPins.P1.id);
+    const primaryB = getNetForPin(pinNetMap, component.id, resolvedPins.P2.id);
+    const secondaryA = getNetForPin(pinNetMap, component.id, secondaryFromPin.id);
+    const secondaryB = getNetForPin(pinNetMap, component.id, secondaryToPin.id);
+    if (!primaryA || !primaryB || !secondaryA || !secondaryB) {
+      return null;
+    }
+    const primaryInductance = normalizeSpiceValue(String(normalized?.primaryInductance ?? "1"));
+    const secondaryInductance = normalizeSpiceValue(String(normalized?.secondaryInductance ?? "1"));
+    const coupling = normalizeSpiceValue(String(normalized?.coupling ?? "1"));
+    const primaryResistance = normalizeSpiceValue(String(normalized?.primaryResistance ?? "0"));
+    const secondaryResistance = normalizeSpiceValue(String(normalized?.secondaryResistance ?? "0"));
+    const primaryResistanceNum = Number(primaryResistance);
+    const secondaryResistanceNum = Number(secondaryResistance);
+    const hasPrimaryResistance = Number.isFinite(primaryResistanceNum) && primaryResistanceNum > 0;
+    const hasSecondaryResistance = Number.isFinite(secondaryResistanceNum) && secondaryResistanceNum > 0;
+    const baseId = normalizeId(component.id);
+    const primaryInductorId = ensurePrefixedId("L", `${baseId}P` || "LP");
+    const secondaryInductorId = ensurePrefixedId("L", `${baseId}S` || "LS");
+    const couplingId = ensurePrefixedId("K", baseId || "K");
+    const primaryResistorId = ensurePrefixedId("R", `${baseId}P` || "RP");
+    const secondaryResistorId = ensurePrefixedId("R", `${baseId}S` || "RS");
+    const primaryInternalNode = hasPrimaryResistance ? `${primaryInductorId}_IN` : primaryA;
+    const secondaryInternalNode = hasSecondaryResistance ? `${secondaryInductorId}_IN` : secondaryA;
+    const line = `${primaryInductorId} ${primaryInternalNode} ${primaryB} ${primaryInductance}`;
+    const additionalLines = [];
+    if (hasPrimaryResistance) {
+      additionalLines.push(`${primaryResistorId} ${primaryA} ${primaryInternalNode} ${primaryResistance}`);
+    }
+    if (hasSecondaryResistance) {
+      additionalLines.push(`${secondaryResistorId} ${secondaryA} ${secondaryInternalNode} ${secondaryResistance}`);
+    }
+    additionalLines.push(`${secondaryInductorId} ${secondaryInternalNode} ${secondaryB} ${secondaryInductance}`);
+    additionalLines.push(`${couplingId} ${primaryInductorId} ${secondaryInductorId} ${coupling}`);
+    return { line, additionalLines };
+  };
+
   // Maps diode element property keys to SPICE .model parameter names.
   const DIODE_MODEL_PARAM_MAP = Object.freeze([
     ["diodeIS",   "IS"],
@@ -584,6 +685,7 @@
       additionalLines: []
     }),
     SW: (component, context) => buildSwitchNetlistLines(component, context),
+    XFMR: (component, context) => buildTransformerNetlistLines(component, context),
     D: (component, context) => {
       const modelName = component.value
         ? normalizeSpiceValue(String(component.value))
@@ -612,6 +714,7 @@
     const buildNets = requireSchematicMethod("buildNets");
     const isElectricalComponentType = requireSchematicMethod("isElectricalComponentType");
     const parseSpdtSwitchValue = requireSchematicMethod("parseSpdtSwitchValue");
+    const normalizeTransformerComponentState = requireSchematicMethod("normalizeTransformerComponentState");
     const getBuiltInComponentDefaults = requireSchematicMethod("getBuiltInComponentDefaults");
     const componentDefaults = getBuiltInComponentDefaults();
     const nets = buildNets(model);
@@ -657,6 +760,7 @@
       const built = builder(component, {
         pinNetMap,
         parseSpdtSwitchValue,
+        normalizeTransformerComponentState,
         compileErrors,
         componentDefaults
       });

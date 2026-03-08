@@ -223,6 +223,11 @@ const ALLOWED_GRID_SIZES = Object.freeze(
 const DEFAULT_GRID_SIZE = Number.isFinite(Number(uiToolsDomain.DEFAULT_GRID_SIZE))
   ? Number(uiToolsDomain.DEFAULT_GRID_SIZE)
   : 10;
+if (typeof uiToolsDomain.buildToolSettingsCatalog !== "function"
+  || typeof uiToolsDomain.resolveToolSettingsScopeType !== "function"
+  || typeof uiToolsDomain.getToolSettingsScope !== "function") {
+  throw new Error("UI tools domain missing tool-settings helpers. Check src/app/ui/domains/tools.js load order.");
+}
 
 const simulationKinds = [
   { id: "op", label: "Operating Point (.op)" },
@@ -255,6 +260,7 @@ const RESULTS_PANE_COMPACT_WIDTH_THRESHOLD = Number.isFinite(Number(uiResultsPan
   : 600;
 const DEFAULT_AUTO_SWITCH_TO_SELECT_ON_PLACE = true;
 const DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE = false;
+const DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE = true;
 const DEFAULT_SCHEMATIC_TEXT_STYLE = Object.freeze({
   font: "Segoe UI",
   size: 12,
@@ -545,6 +551,12 @@ const buildSettingsDialog = (container, config = {}) => {
   const onSchematicTextStyleChange = typeof config.onSchematicTextStyleChange === "function"
     ? config.onSchematicTextStyleChange
     : () => { };
+  const getSchematicValueUnitSpacing = typeof config.getSchematicValueUnitSpacing === "function"
+    ? config.getSchematicValueUnitSpacing
+    : () => DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE;
+  const onSchematicValueUnitSpacingChange = typeof config.onSchematicValueUnitSpacingChange === "function"
+    ? config.onSchematicValueUnitSpacingChange
+    : () => { };
   const getComponentDefaultSpecs = typeof config.getComponentDefaultSpecs === "function"
     ? config.getComponentDefaultSpecs
     : () => [];
@@ -581,12 +593,12 @@ const buildSettingsDialog = (container, config = {}) => {
   const parseSwitchComponentDefaultValue = typeof config.parseSwitchComponentDefaultValue === "function"
     ? config.parseSwitchComponentDefaultValue
     : () => ({ ron: "0", roff: "" });
-  const isProbeComponentType = typeof config.isProbeComponentType === "function"
-    ? config.isProbeComponentType
-    : () => false;
   const onResetComponentTypeDefaults = typeof config.onResetComponentTypeDefaults === "function"
     ? config.onResetComponentTypeDefaults
     : () => { };
+  const getToolSettingsCatalog = typeof config.getToolSettingsCatalog === "function"
+    ? config.getToolSettingsCatalog
+    : () => ({ scopes: [], toolToScope: {} });
   const createNetColorPicker = typeof config.createNetColorPicker === "function"
     ? config.createNetColorPicker
     : null;
@@ -677,6 +689,14 @@ const buildSettingsDialog = (container, config = {}) => {
   const schematicTextItalicLabel = document.createElement("span");
   schematicTextItalicLabel.textContent = "Schematic text italic";
   schematicTextItalicRow.append(schematicTextItalicToggle, schematicTextItalicLabel);
+  const schematicValueUnitSpacingRow = document.createElement("label");
+  schematicValueUnitSpacingRow.className = "modal-field";
+  const schematicValueUnitSpacingToggle = document.createElement("input");
+  schematicValueUnitSpacingToggle.type = "checkbox";
+  schematicValueUnitSpacingToggle.dataset.settingsSetting = "schematic-value-unit-spacing";
+  const schematicValueUnitSpacingLabel = document.createElement("span");
+  schematicValueUnitSpacingLabel.textContent = "Include space between value and unit on schematic";
+  schematicValueUnitSpacingRow.append(schematicValueUnitSpacingToggle, schematicValueUnitSpacingLabel);
   const componentDefaultSpecsRaw = getComponentDefaultSpecs();
   const componentDefaultSpecs = Array.isArray(componentDefaultSpecsRaw)
     ? componentDefaultSpecsRaw
@@ -693,10 +713,63 @@ const buildSettingsDialog = (container, config = {}) => {
               label: String(option?.label ?? "").trim()
             }))
             .filter((option) => option.value)
+          : [],
+        xfmrPolarityControl: entry?.xfmrPolarityControl === true,
+        xfmrPolarityOptions: Array.isArray(entry?.xfmrPolarityOptions)
+          ? entry.xfmrPolarityOptions
+            .map((option) => ({
+              value: String(option?.value ?? "").trim(),
+              label: String(option?.label ?? "").trim()
+            }))
+            .filter((option) => option.value)
+          : [],
+        xfmrSolveByControl: entry?.xfmrSolveByControl === true,
+        xfmrSolveByOptions: Array.isArray(entry?.xfmrSolveByOptions)
+          ? entry.xfmrSolveByOptions
+            .map((option) => ({
+              value: String(option?.value ?? "").trim(),
+              label: String(option?.label ?? "").trim()
+            }))
+            .filter((option) => option.value)
           : []
       }))
       .filter((entry) => entry.type)
     : [];
+  const toolSettingsCatalogRaw = getToolSettingsCatalog();
+  const toolSettingsCatalog = toolSettingsCatalogRaw && typeof toolSettingsCatalogRaw === "object"
+    ? toolSettingsCatalogRaw
+    : { scopes: [], toolToScope: {} };
+  const toolSettingsScopes = Array.isArray(toolSettingsCatalog.scopes)
+    ? toolSettingsCatalog.scopes
+      .map((entry) => ({
+        scopeType: String(entry?.scopeType ?? "").trim().toUpperCase(),
+        label: String(entry?.label ?? "").trim(),
+        supportsApply: entry?.supportsApply !== false,
+        supportsReset: entry?.supportsReset !== false
+      }))
+      .filter((entry) => entry.scopeType)
+    : [];
+  const toolSettingsScopeByType = new Map(
+    toolSettingsScopes.map((entry) => [entry.scopeType, entry])
+  );
+  const toolSettingsScopeByToolType = (() => {
+    const map = new Map();
+    const source = toolSettingsCatalog.toolToScope && typeof toolSettingsCatalog.toolToScope === "object"
+      ? toolSettingsCatalog.toolToScope
+      : {};
+    Object.entries(source).forEach(([toolTypeRaw, scopeTypeRaw]) => {
+      const toolType = String(toolTypeRaw ?? "").trim().toUpperCase();
+      const scopeType = String(scopeTypeRaw ?? "").trim().toUpperCase();
+      if (!toolType || !scopeType) {
+        return;
+      }
+      if (!toolSettingsScopeByType.has(scopeType)) {
+        return;
+      }
+      map.set(toolType, scopeType);
+    });
+    return map;
+  })();
   const componentDefaultsTitle = document.createElement("div");
   componentDefaultsTitle.className = "modal-subtitle";
   componentDefaultsTitle.textContent = "Component defaults (new placements)";
@@ -766,6 +839,30 @@ const buildSettingsDialog = (container, config = {}) => {
     switchRoffUnit.className = "inline-edit-unit";
     switchRoffUnit.textContent = spec.unit || "\u03a9";
     const isSwitchDefaults = spec.type === "SW";
+    const isTransformerDefaults = spec.type === "XFMR"
+      && (spec.xfmrPolarityControl === true || spec.xfmrSolveByControl === true);
+    const xfmrPolarityLabel = document.createElement("span");
+    xfmrPolarityLabel.textContent = "Polarity:";
+    const xfmrPolaritySelect = document.createElement("select");
+    xfmrPolaritySelect.className = "settings-short-value-input";
+    xfmrPolaritySelect.dataset.settingsComponentDefaultXfmrPolarity = spec.type;
+    (Array.isArray(spec.xfmrPolarityOptions) ? spec.xfmrPolarityOptions : []).forEach((optionEntry) => {
+      const option = document.createElement("option");
+      option.value = optionEntry.value;
+      option.textContent = optionEntry.label || optionEntry.value;
+      xfmrPolaritySelect.appendChild(option);
+    });
+    const xfmrSolveByLabel = document.createElement("span");
+    xfmrSolveByLabel.textContent = "Solve for:";
+    const xfmrSolveBySelect = document.createElement("select");
+    xfmrSolveBySelect.className = "settings-short-value-input";
+    xfmrSolveBySelect.dataset.settingsComponentDefaultXfmrSolveBy = spec.type;
+    (Array.isArray(spec.xfmrSolveByOptions) ? spec.xfmrSolveByOptions : []).forEach((optionEntry) => {
+      const option = document.createElement("option");
+      option.value = optionEntry.value;
+      option.textContent = optionEntry.label || optionEntry.value;
+      xfmrSolveBySelect.appendChild(option);
+    });
     let colorPicker = null;
     if (typeof createNetColorPicker === "function") {
       colorPicker = createNetColorPicker({
@@ -809,6 +906,14 @@ const buildSettingsDialog = (container, config = {}) => {
       );
     } else {
       row.append(valueLabel, valueInput, valueUnit);
+      if (isTransformerDefaults) {
+        if (spec.xfmrPolarityControl === true) {
+          row.append(xfmrPolarityLabel, xfmrPolaritySelect);
+        }
+        if (spec.xfmrSolveByControl === true) {
+          row.append(xfmrSolveByLabel, xfmrSolveBySelect);
+        }
+      }
       if (spec.type === "R") {
         const resistorDisplayTypeLabel = document.createElement("span");
         resistorDisplayTypeLabel.textContent = "Type:";
@@ -824,6 +929,8 @@ const buildSettingsDialog = (container, config = {}) => {
       row,
       valueInput,
       valueUnit,
+      xfmrPolaritySelect,
+      xfmrSolveBySelect,
       switchRonInput,
       switchRoffInput,
       colorPicker,
@@ -954,6 +1061,15 @@ const buildSettingsDialog = (container, config = {}) => {
   const probeDefaultsLabel = document.createElement("span");
   probeDefaultsLabel.dataset.settingsComponentDefaultLabel = "PROBE";
   probeDefaultsLabel.textContent = "Probe";
+  const selectDefaultsRow = document.createElement("div");
+  selectDefaultsRow.className = "modal-field settings-component-default-row";
+  selectDefaultsRow.dataset.settingsComponentDefaultRow = "SELECT";
+  const selectDefaultsLabel = document.createElement("span");
+  selectDefaultsLabel.dataset.settingsComponentDefaultLabel = "SELECT";
+  selectDefaultsLabel.textContent = "Select";
+  const selectDefaultsDescription = document.createElement("span");
+  selectDefaultsDescription.textContent = "No configurable defaults";
+  selectDefaultsRow.append(selectDefaultsLabel, selectDefaultsDescription);
   groundDefaultsRow.append(groundDefaultsLabel, groundDisplayTypeLabel, groundDisplayTypeSelect);
   if (groundColorPicker?.row) {
     groundDefaultsRow.append(groundColorPicker.row);
@@ -969,6 +1085,30 @@ const buildSettingsDialog = (container, config = {}) => {
     probeDefaultsRow.append(probeDefaultColorPicker.row);
   }
   probeDefaultsRow.append(probeDefaultColorClear);
+  const settingsRowByScopeType = new Map(
+    componentDefaultRows.map((entry) => [entry.type, entry.row])
+  );
+  settingsRowByScopeType.set("SELECT", selectDefaultsRow);
+  settingsRowByScopeType.set("GND", groundDefaultsRow);
+  settingsRowByScopeType.set("WIRE", wireDefaultsRow);
+  settingsRowByScopeType.set("PROBE", probeDefaultsRow);
+  const settingsRowsOrdered = [];
+  const seenRows = new Set();
+  const appendSettingsRow = (row) => {
+    if (!(row instanceof HTMLElement) || seenRows.has(row)) {
+      return;
+    }
+    seenRows.add(row);
+    settingsRowsOrdered.push(row);
+  };
+  toolSettingsScopes.forEach((entry) => {
+    appendSettingsRow(settingsRowByScopeType.get(entry.scopeType));
+  });
+  componentDefaultRows.forEach((entry) => appendSettingsRow(entry.row));
+  appendSettingsRow(selectDefaultsRow);
+  appendSettingsRow(groundDefaultsRow);
+  appendSettingsRow(wireDefaultsRow);
+  appendSettingsRow(probeDefaultsRow);
   settingsBody.append(
     autoSwitchToolUseRow,
     autoSwitchWireUseRow,
@@ -976,11 +1116,9 @@ const buildSettingsDialog = (container, config = {}) => {
     schematicTextSizeRow,
     schematicTextBoldRow,
     schematicTextItalicRow,
+    schematicValueUnitSpacingRow,
     componentDefaultsTitle,
-    ...componentDefaultRows.map((entry) => entry.row),
-    groundDefaultsRow,
-    wireDefaultsRow,
-    probeDefaultsRow
+    ...settingsRowsOrdered
   );
   const settingsActions = document.createElement("div");
   settingsActions.className = "modal-actions";
@@ -1018,14 +1156,12 @@ const buildSettingsDialog = (container, config = {}) => {
     if (!type) {
       return "";
     }
-    if (componentDefaultRowByType.has(type)) {
-      return type;
+    const mappedScopeType = toolSettingsScopeByToolType.get(type);
+    if (mappedScopeType) {
+      return mappedScopeType;
     }
-    if (type === "GND" || type === "WIRE") {
+    if (toolSettingsScopeByType.has(type)) {
       return type;
-    }
-    if (isProbeComponentType(type)) {
-      return "PROBE";
     }
     return "";
   };
@@ -1033,18 +1169,13 @@ const buildSettingsDialog = (container, config = {}) => {
     if (!type) {
       return "Settings";
     }
-    const defaultsRow = componentDefaultRowByType.get(type);
-    if (defaultsRow) {
-      return defaultsRow.label || defaultsRow.type;
+    const settingsScope = toolSettingsScopeByType.get(String(type ?? "").trim().toUpperCase());
+    if (settingsScope && settingsScope.label) {
+      return settingsScope.label;
     }
-    if (type === "GND") {
-      return "Ground";
-    }
-    if (type === "WIRE") {
-      return "Wire";
-    }
-    if (type === "PROBE") {
-      return "Probe";
+    const componentDefaultRow = componentDefaultRowByType.get(type);
+    if (componentDefaultRow) {
+      return componentDefaultRow.label || componentDefaultRow.type;
     }
     return type;
   };
@@ -1053,6 +1184,11 @@ const buildSettingsDialog = (container, config = {}) => {
   const syncDialogScopeState = () => {
     const scopedType = activeScopedSettingsType;
     const scoped = Boolean(scopedType);
+    const scopedSettings = scoped
+      ? (toolSettingsScopeByType.get(scopedType) ?? null)
+      : null;
+    const supportsScopedApply = scopedSettings?.supportsApply === true;
+    const supportsScopedReset = scopedSettings?.supportsReset === true;
     settingsDialog.dataset.settingsScopeType = scopedType;
     settingsTitle.textContent = scoped
       ? `${getScopedSettingsLabel(scopedType)} Defaults`
@@ -1063,6 +1199,7 @@ const buildSettingsDialog = (container, config = {}) => {
     schematicTextSizeRow.hidden = scoped;
     schematicTextBoldRow.hidden = scoped;
     schematicTextItalicRow.hidden = scoped;
+    schematicValueUnitSpacingRow.hidden = scoped;
     componentDefaultsTitle.hidden = scoped;
     componentDefaultRows.forEach((entry) => {
       entry.row.hidden = scoped && entry.type !== scopedType;
@@ -1070,14 +1207,19 @@ const buildSettingsDialog = (container, config = {}) => {
     groundDefaultsRow.hidden = scoped && scopedType !== "GND";
     wireDefaultsRow.hidden = scoped && scopedType !== "WIRE";
     probeDefaultsRow.hidden = scoped && scopedType !== "PROBE";
-    settingsDefaultComponentType.hidden = !scoped;
+    selectDefaultsRow.hidden = scoped && scopedType !== "SELECT";
+    settingsDefaultComponentType.hidden = !scoped || !supportsScopedReset;
     settingsReset.hidden = scoped;
     settingsApplyComponentDefaults.hidden = scoped
-      ? !scopedType
+      ? !supportsScopedApply
       : componentDefaultRows.length < 1;
   };
   const buildScopedApplyOptions = () => {
     if (!activeScopedSettingsType) {
+      return null;
+    }
+    const scopedSettings = toolSettingsScopeByType.get(activeScopedSettingsType) ?? null;
+    if (scopedSettings?.supportsApply !== true) {
       return null;
     }
     const options = {
@@ -1112,6 +1254,7 @@ const buildSettingsDialog = (container, config = {}) => {
       : String(DEFAULT_SCHEMATIC_TEXT_STYLE.size);
     schematicTextBoldToggle.checked = textSettings?.bold === true;
     schematicTextItalicToggle.checked = textSettings?.italic === true;
+    schematicValueUnitSpacingToggle.checked = getSchematicValueUnitSpacing() !== false;
     const componentDefaults = getComponentDefaults();
     componentDefaultRows.forEach((entry) => {
       const typeDefaults = componentDefaults && typeof componentDefaults === "object"
@@ -1138,6 +1281,14 @@ const buildSettingsDialog = (container, config = {}) => {
           }
         }
         entry.valueInput.value = normalizedValue;
+        if (entry.type === "XFMR" && entry.xfmrPolaritySelect instanceof HTMLSelectElement) {
+          const normalizedPolarity = String(typeDefaults?.xfmrPolarity ?? "subtractive").trim().toLowerCase();
+          entry.xfmrPolaritySelect.value = normalizedPolarity === "additive" ? "additive" : "subtractive";
+        }
+        if (entry.type === "XFMR" && entry.xfmrSolveBySelect instanceof HTMLSelectElement) {
+          const normalizedSolveBy = String(typeDefaults?.xfmrSolveBy ?? "ratio").trim().toLowerCase();
+          entry.xfmrSolveBySelect.value = normalizedSolveBy === "secondary" ? "secondary" : "ratio";
+        }
       }
       const normalizedColor = String(typeDefaults?.netColor ?? "").trim().toLowerCase();
       entry.colorClear.dataset.settingsComponentDefaultCurrentColor = normalizedColor;
@@ -1210,6 +1361,9 @@ const buildSettingsDialog = (container, config = {}) => {
   schematicTextItalicToggle.addEventListener("change", () => {
     onSchematicTextStyleChange({ italic: schematicTextItalicToggle.checked });
   });
+  schematicValueUnitSpacingToggle.addEventListener("change", () => {
+    onSchematicValueUnitSpacingChange(schematicValueUnitSpacingToggle.checked);
+  });
   resistorDisplayTypeSelect.addEventListener("change", () => {
     onToolDisplayDefaultChange("resistorStyle", resistorDisplayTypeSelect.value);
   });
@@ -1229,10 +1383,23 @@ const buildSettingsDialog = (container, config = {}) => {
     entry.valueInput.addEventListener("change", () => {
       onComponentDefaultChange(entry.type, { value: entry.valueInput.value });
     });
+    if (entry.type === "XFMR" && entry.xfmrPolaritySelect instanceof HTMLSelectElement) {
+      entry.xfmrPolaritySelect.addEventListener("change", () => {
+        onComponentDefaultChange(entry.type, { xfmrPolarity: entry.xfmrPolaritySelect.value });
+      });
+    }
+    if (entry.type === "XFMR" && entry.xfmrSolveBySelect instanceof HTMLSelectElement) {
+      entry.xfmrSolveBySelect.addEventListener("change", () => {
+        onComponentDefaultChange(entry.type, { xfmrSolveBy: entry.xfmrSolveBySelect.value });
+      });
+    }
   });
   settingsApplyComponentDefaults.addEventListener("click", () => {
     if (activeScopedSettingsType) {
       const scopedOptions = buildScopedApplyOptions();
+      if (!scopedOptions) {
+        return;
+      }
       onApplyComponentDefaultsToExisting(scopedOptions ?? undefined);
       return;
     }
@@ -1240,6 +1407,10 @@ const buildSettingsDialog = (container, config = {}) => {
   });
   settingsDefaultComponentType.addEventListener("click", () => {
     if (!activeScopedSettingsType) {
+      return;
+    }
+    const scopedSettings = toolSettingsScopeByType.get(activeScopedSettingsType) ?? null;
+    if (scopedSettings?.supportsReset !== true) {
       return;
     }
     onResetComponentTypeDefaults(activeScopedSourceType || activeScopedSettingsType);
@@ -1295,6 +1466,7 @@ function createUI(container, state, actions) {
   let schematicTool = "select";
   let autoSwitchToSelectOnPlace = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_PLACE;
   let autoSwitchToSelectOnWire = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE;
+  let includeSchematicValueUnitSpace = DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE;
   let schematicTextStyle = { ...DEFAULT_SCHEMATIC_TEXT_STYLE };
   let componentDefaults = {};
   let wireDefaultColor = null;
@@ -1526,14 +1698,44 @@ function createUI(container, state, actions) {
     return Object.freeze({
       key,
       label,
+      help: normalizePropertyHelpContract(propertyFieldPath, property?.help),
       options: Object.freeze(options)
     });
+  };
+  const normalizePropertyHelpContract = (propertyFieldPath, help) => {
+    if (help === null || help === undefined) {
+      return null;
+    }
+    if (!help || typeof help !== "object" || Array.isArray(help)) {
+      throw new Error(`Property contract '${propertyFieldPath}.help' requires an object when provided.`);
+    }
+    const title = String(help.title ?? "").trim();
+    const summary = String(help.summary ?? "").trim();
+    const definition = String(help.definition ?? "").trim();
+    if (!title || !summary || !definition) {
+      throw new Error(`Property contract '${propertyFieldPath}.help' requires non-empty title, summary, and definition.`);
+    }
+    return Object.freeze({ title, summary, definition });
+  };
+  const arePropertyHelpContractsEqual = (left, right) => {
+    if (left === null && right === null) {
+      return true;
+    }
+    if (!left || !right) {
+      return false;
+    }
+    return left.title === right.title
+      && left.summary === right.summary
+      && left.definition === right.definition;
   };
   const areInlineSelectContractsEqual = (left, right) => {
     if (!left || !right) {
       return false;
     }
     if (left.label !== right.label) {
+      return false;
+    }
+    if (!arePropertyHelpContractsEqual(left.help ?? null, right.help ?? null)) {
       return false;
     }
     if (!Array.isArray(left.options) || !Array.isArray(right.options) || left.options.length !== right.options.length) {
@@ -1681,14 +1883,18 @@ function createUI(container, state, actions) {
     }
     return Object.freeze({
       key,
-      label
+      label,
+      help: normalizePropertyHelpContract(propertyFieldPath, property?.help)
     });
   };
   const areInlineToggleContractsEqual = (left, right) => {
     if (!left || !right) {
       return false;
     }
-    return left.label === right.label;
+    if (left.label !== right.label) {
+      return false;
+    }
+    return arePropertyHelpContractsEqual(left.help ?? null, right.help ?? null);
   };
   const buildInlineTogglePropertySpecs = () => {
     const definitions = elementCatalogApi.listElementDefinitions();
@@ -1781,6 +1987,9 @@ function createUI(container, state, actions) {
     if (Object.prototype.hasOwnProperty.call(input, "unit")) {
       normalizedInput.unit = String(input.unit ?? "").trim();
     }
+    if (Object.prototype.hasOwnProperty.call(input, "readOnly")) {
+      normalizedInput.readOnly = input.readOnly === true;
+    }
     if (control === "number") {
       ["min", "max", "step"].forEach((name) => {
         if (!Object.prototype.hasOwnProperty.call(input, name)) return;
@@ -1812,10 +2021,19 @@ function createUI(container, state, actions) {
     const label = String(property?.label ?? "").trim();
     if (!label) throw new Error(`Property contract '${propertyFieldPath}' requires a non-empty label.`);
     const input = property?.input && typeof property.input === "object" && !Array.isArray(property.input) ? property.input : {};
-    return Object.freeze({ key, label, control, input: Object.freeze(normalizeInputContractMetadata(propertyFieldPath, control, input)) });
+    return Object.freeze({
+      key,
+      label,
+      help: normalizePropertyHelpContract(propertyFieldPath, property?.help),
+      control,
+      input: Object.freeze(normalizeInputContractMetadata(propertyFieldPath, control, input))
+    });
   };
   const areInlineInputContractsEqual = (left, right) => {
     if (!left || !right || left.label !== right.label || left.control !== right.control) return false;
+    if (!arePropertyHelpContractsEqual(left.help ?? null, right.help ?? null)) {
+      return false;
+    }
     const leftInput = left.input && typeof left.input === "object" ? left.input : {};
     const rightInput = right.input && typeof right.input === "object" ? right.input : {};
     return !Array.from(new Set([...Object.keys(leftInput), ...Object.keys(rightInput)])).some((entryKey) => leftInput[entryKey] !== rightInput[entryKey]);
@@ -1906,6 +2124,15 @@ function createUI(container, state, actions) {
         ? source.italic === true
         : base.italic === true
     };
+  };
+  const normalizeSchematicValueUnitSpacing = (
+    value,
+    fallback = DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE
+  ) => {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    return fallback !== false;
   };
   const listComponentDefaultTypes = () => {
     const raw = componentDefaultsApi.listComponentDefaultTypes();
@@ -2006,8 +2233,38 @@ function createUI(container, state, actions) {
           return key === "diodePreset" && control === "select";
         })
         : null;
+      const transformerPolarityProperty = Array.isArray(definition?.properties)
+        ? definition.properties.find((property) => {
+          const key = String(property?.key ?? "").trim();
+          const control = String(property?.control ?? "").trim().toLowerCase();
+          return key === "xfmrPolarity" && control === "select";
+        })
+        : null;
+      const transformerSolveByProperty = Array.isArray(definition?.properties)
+        ? definition.properties.find((property) => {
+          const key = String(property?.key ?? "").trim();
+          const control = String(property?.control ?? "").trim().toLowerCase();
+          return key === "xfmrSolveBy" && control === "select";
+        })
+        : null;
       const diodeModelOptions = Array.isArray(diodePresetProperty?.options)
         ? diodePresetProperty.options
+          .map((option) => ({
+            value: String(option?.value ?? "").trim(),
+            label: String(option?.label ?? "").trim()
+          }))
+          .filter((option) => option.value)
+        : [];
+      const transformerPolarityOptions = Array.isArray(transformerPolarityProperty?.options)
+        ? transformerPolarityProperty.options
+          .map((option) => ({
+            value: String(option?.value ?? "").trim(),
+            label: String(option?.label ?? "").trim()
+          }))
+          .filter((option) => option.value)
+        : [];
+      const transformerSolveByOptions = Array.isArray(transformerSolveByProperty?.options)
+        ? transformerSolveByProperty.options
           .map((option) => ({
             value: String(option?.value ?? "").trim(),
             label: String(option?.label ?? "").trim()
@@ -2021,7 +2278,11 @@ function createUI(container, state, actions) {
         valueLabel: type === "D" ? "Model" : defaultValueLabel,
         valueControl: isDiodeModelSelect ? "select" : "text",
         valueOptions: isDiodeModelSelect ? Object.freeze(diodeModelOptions) : Object.freeze([]),
-        unit: String(valueField?.unit ?? "").trim()
+        unit: String(valueField?.unit ?? "").trim(),
+        xfmrPolarityControl: type === "XFMR" && transformerPolarityOptions.length > 0,
+        xfmrPolarityOptions: type === "XFMR" ? Object.freeze(transformerPolarityOptions) : Object.freeze([]),
+        xfmrSolveByControl: type === "XFMR" && transformerSolveByOptions.length > 0,
+        xfmrSolveByOptions: type === "XFMR" ? Object.freeze(transformerSolveByOptions) : Object.freeze([])
       });
     });
   };
@@ -2031,6 +2292,12 @@ function createUI(container, state, actions) {
       return;
     }
     schematicEditor.setSchematicTextStyle(schematicTextStyle);
+  };
+  const applySchematicValueUnitSpacingToEditor = () => {
+    if (!schematicEditor || typeof schematicEditor.setSchematicValueUnitSpacing !== "function") {
+      return;
+    }
+    schematicEditor.setSchematicValueUnitSpacing(includeSchematicValueUnitSpace);
   };
   const applyComponentDefaultsToEditor = () => {
     if (!schematicEditor || typeof schematicEditor.setComponentDefaults !== "function") {
@@ -2051,6 +2318,7 @@ function createUI(container, state, actions) {
     schematicEditor.setPlacementDefaults(toolDisplayDefaults);
   };
   schematicTextStyle = normalizeSchematicTextStyle(schematicTextStyle);
+  includeSchematicValueUnitSpace = normalizeSchematicValueUnitSpacing(includeSchematicValueUnitSpace);
   componentDefaults = normalizeComponentDefaults(componentDefaults);
   wireDefaultColor = normalizeWireDefaultColor(wireDefaultColor);
   toolDisplayDefaults = normalizeToolDisplayDefaults(toolDisplayDefaults);
@@ -2403,60 +2671,95 @@ function createUI(container, state, actions) {
   };
 
   const schematicToolButtonEntries = [
-    { tool: "select", label: "Select", name: "Select", shortcut: "S" },
-    { tool: "wire", label: "Wire", name: "Wire", shortcut: "W" },
+    { tool: "select", label: "Select", name: "Select", shortcut: "S", classification: "ui" },
+    { tool: "wire", label: "Wire", name: "Wire", shortcut: "W", classification: "ui" },
     ...toolbarElementDefinitions.map((entry) => ({
       tool: entry.type,
       label: entry.toolLabel,
       name: entry.toolName,
       shortcut: entry.shortcut,
+      classification: entry.classification,
       isElement: true
     }))
   ];
+  const toolSettingsCatalog = uiToolsDomain.buildToolSettingsCatalog(schematicToolButtonEntries, {
+    componentDefaultTypes: COMPONENT_DEFAULT_SPECS.map((entry) => entry.type)
+  });
   const tooltipNameOnlyTools = new Set(["ARR", "BOX", "VM", "AM"]);
   const normalizeToolHotkeyKey = (value) => String(value ?? "").trim().toLowerCase();
-  const normalizeShortcutToken = (value) => String(value ?? "").trim().toUpperCase();
+  const normalizeShortcutToken = (value) => String(value ?? "").trim();
+  const normalizeShortcutMarkerToken = (value) => String(value ?? "").trim().replace(/\s+/g, "").toUpperCase();
+  const parseToolShortcutBinding = (value) => {
+    const token = normalizeShortcutToken(value);
+    if (!token) {
+      return null;
+    }
+    const singleKey = /^([a-z0-9])$/i.exec(token);
+    if (singleKey) {
+      const key = String(singleKey[1] ?? "").toLowerCase();
+      return {
+        key,
+        shift: false,
+        display: key.toUpperCase()
+      };
+    }
+    const shiftKey = /^shift\+([a-z0-9])$/i.exec(token);
+    if (shiftKey) {
+      const key = String(shiftKey[1] ?? "").toLowerCase();
+      return {
+        key,
+        shift: true,
+        display: `Shift+${key.toUpperCase()}`
+      };
+    }
+    return null;
+  };
+  const getToolHotkeySignature = (key, shift) => `${shift ? "shift+" : ""}${String(key ?? "").trim().toLowerCase()}`;
   const parseShortcutMarker = (value) => {
     const title = String(value ?? "").trim();
     if (!title) {
       return "";
     }
     const match = title.match(/\(([^)]+)\)\s*$/);
-    return match ? normalizeShortcutToken(match[1]) : "";
+    return match ? normalizeShortcutMarkerToken(match[1]) : "";
   };
   const buildSchematicToolHotkeyState = () => {
-    const keyToTool = {};
+    const keySignatureToTool = {};
     const shortcutByTool = {};
+    const normalizedShortcutByTool = {};
     const entries = [];
     const reservedKeys = new Set(["x", "y", "h"]);
     schematicToolButtonEntries.forEach((entry) => {
       const toolKey = normalizeToolHotkeyKey(entry.tool);
-      const shortcutText = String(entry?.shortcut ?? "").trim();
-      const key = shortcutText.toLowerCase();
+      const shortcutText = normalizeShortcutToken(entry?.shortcut);
+      const binding = parseToolShortcutBinding(shortcutText);
       const normalizedTool = String(entry.tool ?? "").trim().toUpperCase();
-      if (!/^[a-z0-9]$/.test(key)) {
+      if (!binding) {
         return;
       }
-      if (reservedKeys.has(key)) {
+      if (reservedKeys.has(binding.key)) {
         return;
       }
       if (tooltipNameOnlyTools.has(normalizedTool)) {
         return;
       }
-      if (Object.prototype.hasOwnProperty.call(keyToTool, key)) {
+      const signature = getToolHotkeySignature(binding.key, binding.shift);
+      if (Object.prototype.hasOwnProperty.call(keySignatureToTool, signature)) {
         return;
       }
-      keyToTool[key] = String(entry.tool ?? "");
-      shortcutByTool[toolKey] = normalizeShortcutToken(shortcutText);
+      keySignatureToTool[signature] = String(entry.tool ?? "");
+      shortcutByTool[toolKey] = binding.display;
+      normalizedShortcutByTool[toolKey] = normalizeShortcutMarkerToken(binding.display);
       entries.push({
         tool: String(entry.tool ?? ""),
-        shortcut: normalizeShortcutToken(shortcutText),
+        shortcut: binding.display,
         name: String(entry.name ?? entry.label ?? entry.tool ?? "").trim() || String(entry.tool ?? "")
       });
     });
     return Object.freeze({
-      keyToTool: Object.freeze(keyToTool),
+      keySignatureToTool: Object.freeze(keySignatureToTool),
       shortcutByTool: Object.freeze(shortcutByTool),
+      normalizedShortcutByTool: Object.freeze(normalizedShortcutByTool),
       entries: Object.freeze(entries.map((entry) => Object.freeze(entry)))
     });
   };
@@ -2464,13 +2767,16 @@ function createUI(container, state, actions) {
   const getImplementedToolShortcut = (tool) => {
     return schematicToolHotkeyState.shortcutByTool[normalizeToolHotkeyKey(tool)] ?? "";
   };
+  const getImplementedToolShortcutMarker = (tool) => {
+    return schematicToolHotkeyState.normalizedShortcutByTool[normalizeToolHotkeyKey(tool)] ?? "";
+  };
   Object.entries(toolHelp).forEach(([toolKey, help]) => {
     const helpTitle = String(help?.title ?? "").trim();
     const marker = parseShortcutMarker(helpTitle);
     if (!marker) {
       return;
     }
-    const implementedShortcut = getImplementedToolShortcut(toolKey);
+    const implementedShortcut = getImplementedToolShortcutMarker(toolKey);
     if (!implementedShortcut || marker !== implementedShortcut) {
       throw new Error(
         `Help title shortcut marker mismatch for tool '${toolKey}'. marker='${marker}' implemented='${implementedShortcut || "none"}'.`
@@ -5121,6 +5427,7 @@ function createUI(container, state, actions) {
     if (!schematicEditor && typeof api.createEditor === "function") {
       schematicEditor = api.createEditor(schematicCanvasWrap, schematicModel, {
         schematicTextStyle,
+        includeSchematicValueUnitSpace,
         componentDefaults,
         wireDefaultColor,
         placementDefaults: toolDisplayDefaults,
@@ -6000,6 +6307,7 @@ function createUI(container, state, actions) {
       settings: {
         autoSwitchToSelectOnPlace: Boolean(autoSwitchToSelectOnPlace),
         autoSwitchToSelectOnWire: Boolean(autoSwitchToSelectOnWire),
+        includeSchematicValueUnitSpace: includeSchematicValueUnitSpace !== false,
         schematicText: {
           font: schematicTextStyle.font,
           size: schematicTextStyle.size,
@@ -6320,6 +6628,13 @@ function createUI(container, state, actions) {
     }
     if (typeof extracted.ui?.settings?.autoSwitchToSelectOnWire === "boolean") {
       autoSwitchToSelectOnWire = extracted.ui.settings.autoSwitchToSelectOnWire;
+    }
+    if (typeof extracted.ui?.settings?.includeSchematicValueUnitSpace === "boolean") {
+      includeSchematicValueUnitSpace = normalizeSchematicValueUnitSpacing(
+        extracted.ui.settings.includeSchematicValueUnitSpace,
+        includeSchematicValueUnitSpace
+      );
+      applySchematicValueUnitSpacingToEditor();
     }
     componentDefaults = normalizeComponentDefaults(extracted.ui?.settings?.componentDefaults, getBuiltInComponentDefaults());
     applyComponentDefaultsToEditor();
@@ -7641,7 +7956,8 @@ function createUI(container, state, actions) {
       padding: EXPORT_PADDING,
       measurements: schematicMeasurements,
       probeLabels: schematicProbeLabels,
-      schematicTextStyle
+      schematicTextStyle,
+      includeSchematicValueUnitSpace
     });
     if (!svgText) {
       return;
@@ -7671,7 +7987,8 @@ function createUI(container, state, actions) {
         transparent: Boolean(transparent),
         measurements: schematicMeasurements,
         probeLabels: schematicProbeLabels,
-        schematicTextStyle
+        schematicTextStyle,
+        includeSchematicValueUnitSpace
       });
       if (!result || !result.dataUrl) {
         return;
@@ -7706,7 +8023,8 @@ function createUI(container, state, actions) {
         scale: safeScale,
         measurements: schematicMeasurements,
         probeLabels: schematicProbeLabels,
-        schematicTextStyle
+        schematicTextStyle,
+        includeSchematicValueUnitSpace
       });
       if (!result || !result.dataUrl) {
         return;
@@ -7740,7 +8058,8 @@ function createUI(container, state, actions) {
         scale: getExportScale(exportDiagramPrefs.scale),
         measurements: schematicMeasurements,
         probeLabels: schematicProbeLabels,
-        schematicTextStyle
+        schematicTextStyle,
+        includeSchematicValueUnitSpace
       });
       if (!result || !(result.bytes instanceof Uint8Array) || !result.bytes.length) {
         return;
@@ -7919,11 +8238,12 @@ function createUI(container, state, actions) {
       }
     });
     button.addEventListener("contextmenu", (event) => {
-      if (button.dataset.schematicElementTool !== "1") {
-        return;
-      }
       const tool = String(button.dataset.schematicTool ?? "").trim().toUpperCase();
       if (!tool) {
+        return;
+      }
+      const scopedType = uiToolsDomain.resolveToolSettingsScopeType(tool, toolSettingsCatalog);
+      if (!scopedType) {
         return;
       }
       const opened = typeof openSettingsDialogForType === "function"
@@ -8409,7 +8729,7 @@ function createUI(container, state, actions) {
       toggleHelpEnabled();
       return;
     }
-    const tool = schematicToolHotkeyState.keyToTool[key];
+    const tool = schematicToolHotkeyState.keySignatureToTool[getToolHotkeySignature(key, event.shiftKey)];
     if (tool) {
       event.preventDefault();
       setActiveSchematicTool(tool);
@@ -8760,6 +9080,8 @@ function createUI(container, state, actions) {
     inlineValueLabel,
     inlineValueInput,
     inlineValueUnit,
+    inlineValueReadOnlyChip,
+    inlineValueReadOnlyLock,
     inlineSwitchPositionRow,
     inlineSwitchPositionLabel,
     inlineSwitchPositionA,
@@ -8800,9 +9122,11 @@ function createUI(container, state, actions) {
     inlineBoxOpacityInput,
     inlineBoxOpacityValue,
     inlineNetColorPicker,
+    inlineNetColorDefaultAnchor,
     syncInlineLabelColumnWidth
   } = inlineEditorPanel;
   workspace.appendChild(inlineEditor);
+  registerAllHelpTargets(inlineEditor);
 
   const positionInlineEditor = (component) => {
     const anchor = uiInlineEditorPositioningModule.getComponentAnchor(component);
@@ -8893,8 +9217,11 @@ function createUI(container, state, actions) {
     inlineSwitchShowRonInput,
     inlineSwitchShowRoffInput,
     inlineNetColorPicker,
+    inlineNetColorDefaultAnchor,
     inlineValueLabel,
     inlineValueUnit,
+    inlineValueReadOnlyChip,
+    inlineValueReadOnlyLock,
     syncInlineLabelColumnWidth,
     inlineSwitchPositionA,
     inlineSwitchPositionB,
@@ -8959,7 +9286,12 @@ function createUI(container, state, actions) {
       const key = String(spec?.key ?? "").trim();
       const entry = inlineInputControlsByKey[key];
       if (!entry || !(entry.row && entry.input)) throw new Error(`Inline input control refs missing for property '${key || "?"}'.`);
-      refsByPropertyKey[key] = Object.freeze({ row: entry.row, input: entry.input });
+      refsByPropertyKey[key] = Object.freeze({
+        row: entry.row,
+        input: entry.input,
+        readOnlyChip: entry.readOnlyChip instanceof HTMLElement ? entry.readOnlyChip : null,
+        readOnlyLock: entry.readOnlyLock instanceof HTMLElement ? entry.readOnlyLock : null
+      });
     });
     return Object.freeze(refsByPropertyKey);
   })();
@@ -9005,6 +9337,9 @@ function createUI(container, state, actions) {
       propertyKey: entry.spec.key,
       row: entry.refs.row,
       input: entry.refs.input,
+      readOnlyChip: entry.refs.readOnlyChip,
+      readOnlyLock: entry.refs.readOnlyLock,
+      defaultReadOnly: entry.spec.contract?.input?.readOnly === true,
       normalizeValue: entry.spec.normalizeValue
     })));
     return entries;
@@ -9493,14 +9828,23 @@ function createUI(container, state, actions) {
       applySchematicTextStyleToEditor();
       queueAutosave();
     },
+    getSchematicValueUnitSpacing: () => includeSchematicValueUnitSpace !== false,
+    onSchematicValueUnitSpacingChange: (value) => {
+      includeSchematicValueUnitSpace = normalizeSchematicValueUnitSpacing(
+        value,
+        includeSchematicValueUnitSpace
+      );
+      applySchematicValueUnitSpacingToEditor();
+      queueAutosave();
+    },
     getComponentDefaultSpecs: () => COMPONENT_DEFAULT_SPECS.slice(),
+    getToolSettingsCatalog: () => toolSettingsCatalog,
     getComponentDefaults: () => normalizeComponentDefaults(componentDefaults, componentDefaults),
     getToolDisplayDefaults: () => normalizeToolDisplayDefaults(toolDisplayDefaults, toolDisplayDefaults),
     getWireDefaultColor: () => normalizeWireDefaultColor(wireDefaultColor, wireDefaultColor),
     getResistorDisplayTypeOptions,
     getGroundDisplayTypeOptions,
     parseSwitchComponentDefaultValue,
-    isProbeComponentType: (type) => isProbeType(type),
     createNetColorPicker,
     onComponentDefaultChange: (type, updates) => {
       const key = String(type ?? "").trim().toUpperCase();
@@ -9509,6 +9853,8 @@ function createUI(container, state, actions) {
         : null;
       const hasSwitchRon = Object.prototype.hasOwnProperty.call(updates ?? {}, "switchRon");
       const hasSwitchRoff = Object.prototype.hasOwnProperty.call(updates ?? {}, "switchRoff");
+      const hasTransformerPolarity = Object.prototype.hasOwnProperty.call(updates ?? {}, "xfmrPolarity");
+      const hasTransformerSolveBy = Object.prototype.hasOwnProperty.call(updates ?? {}, "xfmrSolveBy");
       let nextValue = Object.prototype.hasOwnProperty.call(updates ?? {}, "value")
         ? updates.value
         : current?.value;
@@ -9522,11 +9868,23 @@ function createUI(container, state, actions) {
       const nextColor = Object.prototype.hasOwnProperty.call(updates ?? {}, "netColor")
         ? updates.netColor
         : current?.netColor;
+      const nextTransformerPolarity = hasTransformerPolarity
+        ? updates.xfmrPolarity
+        : current?.xfmrPolarity;
+      const nextTransformerSolveBy = hasTransformerSolveBy
+        ? updates.xfmrSolveBy
+        : current?.xfmrSolveBy;
       componentDefaults = normalizeComponentDefaults({
         ...componentDefaults,
         [key]: {
           value: nextValue,
-          netColor: nextColor
+          netColor: nextColor,
+          ...(key === "XFMR"
+            ? {
+              xfmrPolarity: nextTransformerPolarity,
+              xfmrSolveBy: nextTransformerSolveBy
+            }
+            : {})
         }
       }, componentDefaults);
       applyComponentDefaultsToEditor();
@@ -9655,12 +10013,14 @@ function createUI(container, state, actions) {
     onResetSettings: () => {
       autoSwitchToSelectOnPlace = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_PLACE;
       autoSwitchToSelectOnWire = DEFAULT_AUTO_SWITCH_TO_SELECT_ON_WIRE;
+      includeSchematicValueUnitSpace = DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE;
       schematicTextStyle = { ...DEFAULT_SCHEMATIC_TEXT_STYLE };
       schematicTextStyle = normalizeSchematicTextStyle(schematicTextStyle);
       componentDefaults = getBuiltInComponentDefaults();
       wireDefaultColor = normalizeWireDefaultColor(null);
       toolDisplayDefaults = getBuiltInToolDisplayDefaults();
       applySchematicTextStyleToEditor();
+      applySchematicValueUnitSpacingToEditor();
       applyComponentDefaultsToEditor();
       applyWireDefaultColorToEditor();
       applyToolDisplayDefaultsToEditor();

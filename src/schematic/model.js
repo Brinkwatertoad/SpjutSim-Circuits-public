@@ -72,6 +72,13 @@
   });
   const DIODE_PRESET_KEYS = Object.freeze(Object.keys(DIODE_MODEL_PRESETS));
   const DIODE_PRESET_KEY_SET = new Set(DIODE_PRESET_KEYS);
+  const DEFAULT_TRANSFORMER_TURNS_RATIO = "1";
+  const DEFAULT_TRANSFORMER_PRIMARY_INDUCTANCE = "1";
+  const DEFAULT_TRANSFORMER_SECONDARY_INDUCTANCE = "1";
+  const DEFAULT_TRANSFORMER_COUPLING = "1";
+  const DEFAULT_TRANSFORMER_WINDING_RESISTANCE = "0";
+  const DEFAULT_TRANSFORMER_POLARITY = "subtractive";
+  const DEFAULT_TRANSFORMER_SOLVE_BY = "ratio";
   const COMPONENT_VALUE_UNITS = Object.freeze({
     R: "\u03a9",
     C: "F",
@@ -82,18 +89,43 @@
     AM: "\u03a9",
     SW: "\u03a9"
   });
-  const COMPONENT_DEFAULT_TYPES = Object.freeze(["R", "C", "L", "V", "I", "VM", "AM", "SW", "D"]);
+  const COMPONENT_DEFAULT_TYPES = Object.freeze([
+    "R",
+    "C",
+    "L",
+    "XFMR",
+    "V",
+    "I",
+    "VM",
+    "AM",
+    "SW",
+    "D",
+    "NET",
+    "TEXT",
+    "ARR",
+    "BOX"
+  ]);
   const COMPONENT_DEFAULT_TYPE_SET = new Set(COMPONENT_DEFAULT_TYPES);
   const BUILT_IN_COMPONENT_DEFAULTS = Object.freeze({
     R: Object.freeze({ value: "1k", netColor: null }),
     C: Object.freeze({ value: "1u", netColor: null }),
     L: Object.freeze({ value: "1m", netColor: null }),
+    XFMR: Object.freeze({
+      value: DEFAULT_TRANSFORMER_TURNS_RATIO,
+      netColor: null,
+      xfmrPolarity: DEFAULT_TRANSFORMER_POLARITY,
+      xfmrSolveBy: DEFAULT_TRANSFORMER_SOLVE_BY
+    }),
     V: Object.freeze({ value: "1", netColor: null }),
     I: Object.freeze({ value: "1", netColor: null }),
     VM: Object.freeze({ value: "", netColor: null }),
     AM: Object.freeze({ value: "", netColor: null }),
     SW: Object.freeze({ value: "", netColor: null }),
-    D: Object.freeze({ value: "1N4148", netColor: null })
+    D: Object.freeze({ value: "1N4148", netColor: null }),
+    NET: Object.freeze({ value: "", netColor: null }),
+    TEXT: Object.freeze({ value: "", netColor: null }),
+    ARR: Object.freeze({ value: "", netColor: null }),
+    BOX: Object.freeze({ value: "", netColor: null })
   });
   const METRIC_PREFIXES = Object.freeze([
     { symbol: "T", exponent: 12 },
@@ -165,6 +197,104 @@
   const getDiodePresetKeys = () => DIODE_PRESET_KEYS.slice();
   const getDiodeModelParamKeys = () => DIODE_MODEL_PARAM_KEYS.slice();
   const normalizeDiodeParamValue = (value) => String(value ?? "").trim();
+  const formatNumericToken = (value, fallback) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return String(fallback);
+    }
+    const rounded = Number.parseFloat(parsed.toPrecision(12));
+    if (!Number.isFinite(rounded)) {
+      return String(fallback);
+    }
+    return String(rounded);
+  };
+  const normalizeTransformerTurnsRatio = (value) => {
+    const parsed = parseMetricValue(String(value ?? "").trim(), "");
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return DEFAULT_TRANSFORMER_TURNS_RATIO;
+    }
+    return formatNumericToken(parsed, DEFAULT_TRANSFORMER_TURNS_RATIO);
+  };
+  const normalizeTransformerPrimaryInductance = (value) => {
+    const parsed = parseMetricValue(String(value ?? "").trim(), "H");
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return DEFAULT_TRANSFORMER_PRIMARY_INDUCTANCE;
+    }
+    return formatNumericToken(parsed, DEFAULT_TRANSFORMER_PRIMARY_INDUCTANCE);
+  };
+  const normalizeTransformerSecondaryInductance = (value) => {
+    const parsed = parseMetricValue(String(value ?? "").trim(), "H");
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return DEFAULT_TRANSFORMER_SECONDARY_INDUCTANCE;
+    }
+    return formatNumericToken(parsed, DEFAULT_TRANSFORMER_SECONDARY_INDUCTANCE);
+  };
+  const normalizeTransformerCouplingCoefficient = (value) => {
+    const parsed = parseMetricValue(String(value ?? "").trim(), "");
+    if (!Number.isFinite(parsed)) {
+      return DEFAULT_TRANSFORMER_COUPLING;
+    }
+    const clamped = Math.max(0, Math.min(1, parsed));
+    return formatNumericToken(clamped, DEFAULT_TRANSFORMER_COUPLING);
+  };
+  const normalizeTransformerWindingResistance = (value) => {
+    const parsed = parseMetricValue(String(value ?? "").trim(), "\u03a9");
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return DEFAULT_TRANSFORMER_WINDING_RESISTANCE;
+    }
+    return formatNumericToken(parsed, DEFAULT_TRANSFORMER_WINDING_RESISTANCE);
+  };
+  const normalizeTransformerPolarity = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return normalized === "additive" ? "additive" : DEFAULT_TRANSFORMER_POLARITY;
+  };
+  const normalizeTransformerSolveBy = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return normalized === "secondary" ? "secondary" : DEFAULT_TRANSFORMER_SOLVE_BY;
+  };
+  const computeTransformerSecondaryInductance = (primaryInductance, turnsRatio) => {
+    const normalizedPrimary = Number.parseFloat(normalizeTransformerPrimaryInductance(primaryInductance));
+    const normalizedRatio = Number.parseFloat(normalizeTransformerTurnsRatio(turnsRatio));
+    const computed = normalizedPrimary * normalizedRatio * normalizedRatio;
+    if (!Number.isFinite(computed) || computed <= 0) {
+      return DEFAULT_TRANSFORMER_SECONDARY_INDUCTANCE;
+    }
+    return formatNumericToken(computed, DEFAULT_TRANSFORMER_SECONDARY_INDUCTANCE);
+  };
+  const computeTransformerTurnsRatio = (primaryInductance, secondaryInductance) => {
+    const normalizedPrimary = Number.parseFloat(normalizeTransformerPrimaryInductance(primaryInductance));
+    const normalizedSecondary = Number.parseFloat(normalizeTransformerSecondaryInductance(secondaryInductance));
+    const computed = Math.sqrt(normalizedSecondary / normalizedPrimary);
+    if (!Number.isFinite(computed) || computed <= 0) {
+      return DEFAULT_TRANSFORMER_TURNS_RATIO;
+    }
+    return formatNumericToken(computed, DEFAULT_TRANSFORMER_TURNS_RATIO);
+  };
+  const normalizeTransformerComponentState = (component) => {
+    const source = component && typeof component === "object" ? component : {};
+    const primaryInductance = normalizeTransformerPrimaryInductance(source.xfmrLp);
+    const solveBy = normalizeTransformerSolveBy(source.xfmrSolveBy);
+    const turnsRatio = solveBy === "secondary"
+      ? computeTransformerTurnsRatio(primaryInductance, source.xfmrLs)
+      : normalizeTransformerTurnsRatio(source.value);
+    const secondaryInductance = solveBy === "secondary"
+      ? normalizeTransformerSecondaryInductance(source.xfmrLs)
+      : computeTransformerSecondaryInductance(primaryInductance, turnsRatio);
+    const coupling = normalizeTransformerCouplingCoefficient(source.xfmrK);
+    const primaryResistance = normalizeTransformerWindingResistance(source.xfmrRpri);
+    const secondaryResistance = normalizeTransformerWindingResistance(source.xfmrRsec);
+    const polarity = normalizeTransformerPolarity(source.xfmrPolarity);
+    return {
+      turnsRatio,
+      primaryInductance,
+      secondaryInductance,
+      coupling,
+      primaryResistance,
+      secondaryResistance,
+      polarity,
+      solveBy
+    };
+  };
   const normalizeTextOnly = (value) => {
     if (value === true) {
       return true;
@@ -192,7 +322,13 @@
       const entry = BUILT_IN_COMPONENT_DEFAULTS[type];
       clone[type] = {
         value: String(entry?.value ?? ""),
-        netColor: normalizeNetColor(entry?.netColor) ?? null
+        netColor: normalizeNetColor(entry?.netColor) ?? null,
+        ...(type === "XFMR"
+          ? {
+            xfmrPolarity: normalizeTransformerPolarity(entry?.xfmrPolarity),
+            xfmrSolveBy: normalizeTransformerSolveBy(entry?.xfmrSolveBy)
+          }
+          : {})
       };
     });
     return clone;
@@ -203,17 +339,32 @@
     return COMPONENT_DEFAULT_TYPE_SET.has(normalized) ? normalized : "";
   };
 
-  const normalizeComponentDefaultEntry = (entry, fallbackEntry) => {
+  const normalizeComponentDefaultEntry = (entry, fallbackEntry, type) => {
     const fallbackValue = String(fallbackEntry?.value ?? "").trim();
     const fallbackColor = normalizeNetColor(fallbackEntry?.netColor) ?? null;
+    const normalizedType = String(type ?? "").trim().toUpperCase();
+    const fallbackPolarity = normalizedType === "XFMR"
+      ? normalizeTransformerPolarity(fallbackEntry?.xfmrPolarity)
+      : undefined;
+    const fallbackSolveBy = normalizedType === "XFMR"
+      ? normalizeTransformerSolveBy(fallbackEntry?.xfmrSolveBy)
+      : undefined;
     let rawValue = undefined;
     let rawColor = undefined;
+    let rawPolarity = undefined;
+    let rawSolveBy = undefined;
     if (entry && typeof entry === "object" && !Array.isArray(entry)) {
       if (Object.prototype.hasOwnProperty.call(entry, "value")) {
         rawValue = entry.value;
       }
       if (Object.prototype.hasOwnProperty.call(entry, "netColor")) {
         rawColor = entry.netColor;
+      }
+      if (Object.prototype.hasOwnProperty.call(entry, "xfmrPolarity")) {
+        rawPolarity = entry.xfmrPolarity;
+      }
+      if (Object.prototype.hasOwnProperty.call(entry, "xfmrSolveBy")) {
+        rawSolveBy = entry.xfmrSolveBy;
       }
     } else if (entry !== undefined) {
       rawValue = entry;
@@ -229,7 +380,16 @@
         netColor = normalizeNetColor(rawColor) ?? fallbackColor;
       }
     }
-    return { value, netColor };
+    const normalized = { value, netColor };
+    if (normalizedType === "XFMR") {
+      normalized.xfmrPolarity = rawPolarity === undefined
+        ? fallbackPolarity
+        : normalizeTransformerPolarity(rawPolarity);
+      normalized.xfmrSolveBy = rawSolveBy === undefined
+        ? fallbackSolveBy
+        : normalizeTransformerSolveBy(rawSolveBy);
+    }
+    return normalized;
   };
 
   const normalizeComponentDefaults = (value, fallback) => {
@@ -251,9 +411,10 @@
     COMPONENT_DEFAULT_TYPES.forEach((type) => {
       const fallbackEntry = normalizeComponentDefaultEntry(
         fallbackSource?.[type],
-        BUILT_IN_COMPONENT_DEFAULTS[type]
+        BUILT_IN_COMPONENT_DEFAULTS[type],
+        type
       );
-      normalized[type] = normalizeComponentDefaultEntry(sourceByType[type], fallbackEntry);
+      normalized[type] = normalizeComponentDefaultEntry(sourceByType[type], fallbackEntry, type);
     });
     return normalized;
   };
@@ -522,6 +683,9 @@
         return fallbackValue;
       }
     }
+    if (String(component?.type ?? "").toUpperCase() === "XFMR") {
+      return "";
+    }
     const unit = getComponentValueUnit(component?.type);
     const numeric = parseMetricValue(trimmed, unit);
     if (numeric !== null) {
@@ -620,6 +784,13 @@
     normalizeDiodeDisplayType,
     normalizeDiodePreset,
     normalizeDiodeParamValue,
+    normalizeTransformerTurnsRatio,
+    normalizeTransformerPrimaryInductance,
+    normalizeTransformerSecondaryInductance,
+    normalizeTransformerCouplingCoefficient,
+    normalizeTransformerWindingResistance,
+    normalizeTransformerPolarity,
+    normalizeTransformerSolveBy,
     normalizeTextOnly,
     normalizeTextFont,
     normalizeTextSize,
@@ -744,6 +915,17 @@
       }
     }
     applyRegisteredElementProperties(normalized, component, type);
+    if (type === "XFMR") {
+      const transformer = normalizeTransformerComponentState(normalized);
+      normalized.value = transformer.turnsRatio;
+      normalized.xfmrLp = transformer.primaryInductance;
+      normalized.xfmrLs = transformer.secondaryInductance;
+      normalized.xfmrK = transformer.coupling;
+      normalized.xfmrRpri = transformer.primaryResistance;
+      normalized.xfmrRsec = transformer.secondaryResistance;
+      normalized.xfmrPolarity = transformer.polarity;
+      normalized.xfmrSolveBy = transformer.solveBy;
+    }
     model.components.push(normalized);
     return normalized;
   };
@@ -1040,6 +1222,16 @@
     getDiodePresetKeys,
     getDiodeModelParamKeys,
     normalizeDiodeParamValue,
+    normalizeTransformerTurnsRatio,
+    normalizeTransformerPrimaryInductance,
+    normalizeTransformerSecondaryInductance,
+    normalizeTransformerCouplingCoefficient,
+    normalizeTransformerWindingResistance,
+    normalizeTransformerPolarity,
+    normalizeTransformerSolveBy,
+    computeTransformerSecondaryInductance,
+    computeTransformerTurnsRatio,
+    normalizeTransformerComponentState,
     normalizeTextOnly,
     resolveNetColors,
     getTextFontOptions: () => TEXT_FONT_OPTIONS.slice(),
