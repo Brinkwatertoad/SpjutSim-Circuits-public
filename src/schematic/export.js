@@ -1885,6 +1885,10 @@
           }
         }
       });
+    });
+    wires.forEach((wire) => {
+      const wireColor = normalizeNetColorValue(wireColors[String(wire?.id ?? "")])
+        ?? normalizeNetColorValue(wire?.netColor);
       drawWire(svg, wire, wireColor, segments, pointKeys);
     });
     const { pinCounts, combinedDegrees } = wireRender.collectJunctionInfo(

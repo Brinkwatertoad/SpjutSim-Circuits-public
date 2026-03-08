@@ -16,9 +16,9 @@
     help: {
       title: "Transformer (Shift+L)",
       summary: "Couples AC energy between primary and secondary windings.",
-      definition: "Ideal model with turns ratio N=Ns/Np, primary inductance Lp, derived secondary inductance Ls=Lp*N^2, and coupling K."
+      definition: "Ideal model with turns ratio N=Np/Ns, primary inductance Lp, derived secondary inductance Ls=Lp*N^2, and coupling K."
     },
-    valueField: { label: "Turns ratio", unit: "", visible: true },
+    valueField: { label: "N = Np/Ns", unit: "", visible: true },
     properties: [
       {
         key: "xfmrLp",
@@ -45,8 +45,8 @@
         ],
         help: {
           title: "Solve for",
-          summary: "Chooses which transformer field drives the derived value.",
-          definition: "Ratio mode uses N to compute Ls; secondary mode uses Ls to compute N while Lp remains user-specified."
+          summary: "Chooses which transformer field is computed from the other winding value.",
+          definition: "Turns-ratio mode computes N from Lp and Ls; secondary-inductance mode computes Ls from Lp and N while Lp remains user-specified."
         }
       },
       {
@@ -59,7 +59,7 @@
         help: {
           title: "Secondary inductance (Ls)",
           summary: "Secondary winding inductance in henries.",
-          definition: "Editable when Solve by is Secondary inductance (Ls); otherwise computed from Lp and N."
+          definition: "Computed when Solve for is Secondary inductance (Ls); otherwise user-entered and used to solve N."
         }
       },
       {

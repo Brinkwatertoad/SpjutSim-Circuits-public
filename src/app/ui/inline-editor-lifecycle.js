@@ -45,6 +45,7 @@
     const inlineNameInput = args.inlineNameInput;
     const inlineValueInput = args.inlineValueInput;
     const inlineStyleInput = args.inlineStyleInput;
+    const inlineProbeTypeSelect = args.inlineProbeTypeSelect;
     if (focusTarget === "style") {
       if (inlineStyleInput && typeof inlineStyleInput.focus === "function") {
         inlineStyleInput.focus();
@@ -67,6 +68,12 @@
       const target = resolveActiveSwitchToggle(args);
       if (target && typeof target.focus === "function") {
         target.focus();
+      }
+      return;
+    }
+    if (focusTarget === "probe-type") {
+      if (inlineProbeTypeSelect && typeof inlineProbeTypeSelect.focus === "function") {
+        inlineProbeTypeSelect.focus();
       }
       return;
     }

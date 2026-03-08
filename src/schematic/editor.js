@@ -2378,6 +2378,27 @@
       return `${descriptor.primary}${nextIndex}`;
     };
 
+    const shouldSyncCopiedComponentNameWithRefDes = (type) => {
+      const normalizedType = String(type ?? "").toUpperCase();
+      if (!isElectricalComponentType(normalizedType)) {
+        return false;
+      }
+      if (normalizedType === "NET" || isProbeComponentType(normalizedType)) {
+        return false;
+      }
+      return true;
+    };
+
+    const syncCopiedComponentNameWithRefDes = (component, nextId) => {
+      if (!component || !nextId) {
+        return;
+      }
+      if (!shouldSyncCopiedComponentNameWithRefDes(component.type)) {
+        return;
+      }
+      component.name = String(nextId);
+    };
+
     const nextWireId = () => {
       state.wireCount += 1;
       return `W${state.wireCount}`;
@@ -7186,7 +7207,7 @@
         if (String(component?.type ?? "").toUpperCase() === "XFMR") {
           const transformer = normalizeTransformerComponentState(component);
           component.xfmrSolveBy = transformer.solveBy;
-          if (transformer.solveBy === "secondary") {
+          if (transformer.solveBy === "ratio") {
             component.value = transformer.turnsRatio;
           } else {
             component.xfmrLs = transformer.secondaryInductance;
@@ -7769,6 +7790,34 @@
       });
     };
 
+    const cloneComponentValue = (value) => {
+      if (Array.isArray(value)) {
+        return value.map((entry) => cloneComponentValue(entry));
+      }
+      if (value && typeof value === "object") {
+        const clone = {};
+        Object.keys(value).forEach((key) => {
+          clone[key] = cloneComponentValue(value[key]);
+        });
+        return clone;
+      }
+      return value;
+    };
+
+    const cloneComponentWithoutPins = (component) => {
+      const clone = {};
+      if (!component || typeof component !== "object") {
+        return clone;
+      }
+      Object.keys(component).forEach((key) => {
+        if (key === "pins") {
+          return;
+        }
+        clone[key] = cloneComponentValue(component[key]);
+      });
+      return clone;
+    };
+
     const duplicateWireIds = (wireIdList, offset) => {
       if (!Array.isArray(wireIdList) || !wireIdList.length) {
         return [];
@@ -7826,52 +7875,10 @@
             x: pin.x + offset,
             y: pin.y + offset
           }));
-          const clone = {
-            id: newId,
-            name: Object.prototype.hasOwnProperty.call(component, "name")
-              ? String(component.name ?? "")
-              : String(component.id ?? ""),
-            type: component.type,
-            value: component.value ?? "",
-            ...(Object.prototype.hasOwnProperty.call(component, "netColor")
-              ? { netColor: component.netColor ?? "" }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(component, "textOnly")
-              ? { textOnly: component.textOnly === true }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(component, "textFont")
-              ? { textFont: String(component.textFont ?? "") }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(component, "textSize")
-              ? { textSize: Number(component.textSize) }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(component, "textBold")
-              ? { textBold: component.textBold === true }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(component, "textItalic")
-              ? { textItalic: component.textItalic === true }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(component, "textUnderline")
-              ? { textUnderline: component.textUnderline === true }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(component, "groundVariant")
-              ? { groundVariant: normalizeGroundVariantValue(component.groundVariant) }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(component, "resistorStyle")
-              ? { resistorStyle: normalizeResistorStyleValue(component.resistorStyle) }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(component, "probeDiffRotations")
-              ? {
-                probeDiffRotations: {
-                  "P+": Number(component?.probeDiffRotations?.["P+"]),
-                  "P-": Number(component?.probeDiffRotations?.["P-"])
-                }
-              }
-              : {}),
-            pins: newPins,
-            rotation: component.rotation,
-            labelRotation: component.labelRotation
-          };
+          const clone = cloneComponentWithoutPins(component);
+          clone.id = newId;
+          syncCopiedComponentNameWithRefDes(clone, newId);
+          clone.pins = newPins;
           const normalized = api.addComponent(state.model, clone);
           syncCounters(normalized);
           newIds.push(normalized.id);
@@ -8228,55 +8235,13 @@
         }
       }
       if (component && transform && !isIdentityTransform(transform)) {
-        const cloned = {
-          id: component.id,
-          name: Object.prototype.hasOwnProperty.call(component, "name")
-            ? String(component.name ?? "")
-            : String(component.id ?? ""),
-          type: component.type,
-          value: component.value ?? "",
-          ...(Object.prototype.hasOwnProperty.call(component, "netColor")
-            ? { netColor: component.netColor ?? "" }
-            : {}),
-          ...(Object.prototype.hasOwnProperty.call(component, "textOnly")
-            ? { textOnly: component.textOnly === true }
-            : {}),
-          ...(Object.prototype.hasOwnProperty.call(component, "textFont")
-            ? { textFont: String(component.textFont ?? "") }
-            : {}),
-          ...(Object.prototype.hasOwnProperty.call(component, "textSize")
-            ? { textSize: Number(component.textSize) }
-            : {}),
-          ...(Object.prototype.hasOwnProperty.call(component, "textBold")
-            ? { textBold: component.textBold === true }
-            : {}),
-          ...(Object.prototype.hasOwnProperty.call(component, "textItalic")
-            ? { textItalic: component.textItalic === true }
-            : {}),
-          ...(Object.prototype.hasOwnProperty.call(component, "textUnderline")
-            ? { textUnderline: component.textUnderline === true }
-            : {}),
-          ...(Object.prototype.hasOwnProperty.call(component, "groundVariant")
-            ? { groundVariant: normalizeGroundVariantValue(component.groundVariant) }
-            : {}),
-          ...(Object.prototype.hasOwnProperty.call(component, "resistorStyle")
-            ? { resistorStyle: normalizeResistorStyleValue(component.resistorStyle) }
-            : {}),
-          ...(Object.prototype.hasOwnProperty.call(component, "probeDiffRotations")
-            ? {
-              probeDiffRotations: {
-                "P+": Number(component?.probeDiffRotations?.["P+"]),
-                "P-": Number(component?.probeDiffRotations?.["P-"])
-              }
-            }
-            : {}),
-          pins: (component.pins ?? []).map((pin) => ({
-            id: pin.id,
-            name: pin.name,
-            x: pin.x,
-            y: pin.y
-          }))
-        };
+        const cloned = cloneComponentWithoutPins(component);
+        cloned.pins = (component.pins ?? []).map((pin) => ({
+          id: pin.id,
+          name: pin.name,
+          x: pin.x,
+          y: pin.y
+        }));
         component = applyTransformToComponent(cloned, transform, true);
       }
       if (!component || typeof api.addComponent !== "function") {
@@ -11425,56 +11390,17 @@
       if (!component || !Array.isArray(component.pins) || !component.pins.length) {
         return null;
       }
-      return {
-        type: component.type,
-        name: Object.prototype.hasOwnProperty.call(component, "name")
-          ? String(component.name ?? "")
-          : String(component.id ?? ""),
-        value: component.value ?? "",
-        ...(Object.prototype.hasOwnProperty.call(component, "netColor")
-          ? { netColor: component.netColor ?? "" }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "textOnly")
-          ? { textOnly: component.textOnly === true }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "textFont")
-          ? { textFont: String(component.textFont ?? "") }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "textSize")
-          ? { textSize: Number(component.textSize) }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "textBold")
-          ? { textBold: component.textBold === true }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "textItalic")
-          ? { textItalic: component.textItalic === true }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "textUnderline")
-          ? { textUnderline: component.textUnderline === true }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "groundVariant")
-          ? { groundVariant: normalizeGroundVariantValue(component.groundVariant) }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "resistorStyle")
-          ? { resistorStyle: normalizeResistorStyleValue(component.resistorStyle) }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "probeDiffRotations")
-          ? {
-            probeDiffRotations: {
-              "P+": Number(component?.probeDiffRotations?.["P+"]),
-              "P-": Number(component?.probeDiffRotations?.["P-"])
-            }
-          }
-          : {}),
-        rotation: component.rotation,
-        labelRotation: component.labelRotation,
-        pins: component.pins.map((pin) => ({
-          id: pin.id,
-          name: pin.name,
-          x: pin.x - anchor.x,
-          y: pin.y - anchor.y
-        }))
-      };
+      const template = cloneComponentWithoutPins(component);
+      if (Object.prototype.hasOwnProperty.call(template, "id")) {
+        delete template.id;
+      }
+      template.pins = component.pins.map((pin) => ({
+        id: pin.id,
+        name: pin.name,
+        x: pin.x - anchor.x,
+        y: pin.y - anchor.y
+      }));
+      return template;
     };
 
     const clonePlacementWireTemplate = (wire, anchor) => {
@@ -11711,50 +11637,10 @@
               y: mapped.y
             };
           });
-          const clone = {
-            id: nextRefDes(template.type),
-            name: String(template.name ?? ""),
-            type: template.type,
-            value: template.value ?? "",
-            ...(Object.prototype.hasOwnProperty.call(template, "netColor")
-              ? { netColor: template.netColor ?? "" }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(template, "textOnly")
-              ? { textOnly: template.textOnly === true }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(template, "textFont")
-              ? { textFont: String(template.textFont ?? "") }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(template, "textSize")
-              ? { textSize: Number(template.textSize) }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(template, "textBold")
-              ? { textBold: template.textBold === true }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(template, "textItalic")
-              ? { textItalic: template.textItalic === true }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(template, "textUnderline")
-              ? { textUnderline: template.textUnderline === true }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(template, "groundVariant")
-              ? { groundVariant: normalizeGroundVariantValue(template.groundVariant) }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(template, "resistorStyle")
-              ? { resistorStyle: normalizeResistorStyleValue(template.resistorStyle) }
-              : {}),
-            ...(Object.prototype.hasOwnProperty.call(template, "probeDiffRotations")
-              ? {
-                probeDiffRotations: {
-                  "P+": Number(template?.probeDiffRotations?.["P+"]),
-                  "P-": Number(template?.probeDiffRotations?.["P-"])
-                }
-              }
-              : {}),
-            pins,
-            rotation: template.rotation,
-            labelRotation: template.labelRotation
-          };
+          const clone = cloneComponentWithoutPins(template);
+          clone.id = nextRefDes(template.type);
+          syncCopiedComponentNameWithRefDes(clone, clone.id);
+          clone.pins = pins;
           if (pins.length === 1) {
             clone.rotation = resolveSinglePinPlacementRotation(clone.type, template.rotation, transform);
           }

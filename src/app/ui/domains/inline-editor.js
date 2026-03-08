@@ -60,7 +60,10 @@
     if (flags.isBoxAnnotation || flags.isArrowAnnotation) {
       return "style";
     }
-    if (flags.isNamedNode || flags.isTextAnnotation || flags.isProbeComponent) {
+    if (flags.isProbeComponent) {
+      return "probe-type";
+    }
+    if (flags.isNamedNode || flags.isTextAnnotation) {
       return "name";
     }
     if (flags.isSwitchComponent) {

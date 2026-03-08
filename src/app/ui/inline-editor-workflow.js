@@ -419,9 +419,9 @@
       input: panel.inlineValueInput,
       readOnlyChip: panel.inlineValueReadOnlyChip,
       readOnlyLock: panel.inlineValueReadOnlyLock,
-      readOnly: type === "XFMR" && transformerSolveBySecondary,
-      reason: type === "XFMR" && transformerSolveBySecondary
-        ? "Computed from Lp and Ls in Secondary inductance mode."
+      readOnly: type === "XFMR" && !transformerSolveBySecondary,
+      reason: type === "XFMR" && !transformerSolveBySecondary
+        ? "Computed from Lp and Ls in Turns ratio mode."
         : ""
     });
     const inlineSelectSyncEntries = requireInlineSelectSyncEntries(args);
@@ -451,8 +451,8 @@
         let readOnly = entry.defaultReadOnly === true;
         let reason = readOnly ? "Read-only property." : "";
         if (type === "XFMR" && entry.propertyKey === "xfmrLs") {
-          readOnly = !transformerSolveBySecondary;
-          reason = readOnly ? "Computed from Lp and N in Turns ratio mode." : "";
+          readOnly = transformerSolveBySecondary;
+          reason = readOnly ? "Computed from Lp and N in Secondary inductance mode." : "";
         }
         setInputReadOnlyState({
           row: entry.row,
@@ -467,7 +467,7 @@
     const isBoxComponent = inlineModeFlags.isBoxAnnotation === true;
     const isArrowComponent = type === "ARR";
     const isTextComponent = inlineModeFlags.isTextAnnotation === true;
-    setRowHidden(panel.inlineNameRow, isBoxComponent || isArrowComponent);
+    setRowHidden(panel.inlineNameRow, isBoxComponent || isArrowComponent || inlineModeFlags.isProbeComponent === true);
     const boxStyle = isBoxComponent
       ? parseBoxAnnotationStyle(component.value, {
         type,

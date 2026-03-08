@@ -274,10 +274,10 @@
     const source = component && typeof component === "object" ? component : {};
     const primaryInductance = normalizeTransformerPrimaryInductance(source.xfmrLp);
     const solveBy = normalizeTransformerSolveBy(source.xfmrSolveBy);
-    const turnsRatio = solveBy === "secondary"
+    const turnsRatio = solveBy === "ratio"
       ? computeTransformerTurnsRatio(primaryInductance, source.xfmrLs)
       : normalizeTransformerTurnsRatio(source.value);
-    const secondaryInductance = solveBy === "secondary"
+    const secondaryInductance = solveBy === "ratio"
       ? normalizeTransformerSecondaryInductance(source.xfmrLs)
       : computeTransformerSecondaryInductance(primaryInductance, turnsRatio);
     const coupling = normalizeTransformerCouplingCoefficient(source.xfmrK);
@@ -816,15 +816,17 @@
       if (!key || Object.prototype.hasOwnProperty.call(target, key)) {
         return;
       }
-      if (!Object.prototype.hasOwnProperty.call(source, key)) {
-        return;
-      }
       const normalizeMethod = String(property?.normalizeMethod ?? "");
       const normalizer = COMPONENT_PROPERTY_NORMALIZERS[normalizeMethod];
       if (typeof normalizer !== "function") {
         throw new Error(`Unsupported normalize method '${normalizeMethod}' for component property '${key}'.`);
       }
-      const normalizedValue = normalizer(source[key]);
+      const hasSourceValue = Object.prototype.hasOwnProperty.call(source, key);
+      const rawValue = hasSourceValue ? source[key] : property?.defaultValue;
+      if (!hasSourceValue && rawValue === undefined) {
+        return;
+      }
+      const normalizedValue = normalizer(rawValue);
       if (String(property?.control ?? "").toLowerCase() === "toggle") {
         if (normalizedValue === true) {
           target[key] = true;

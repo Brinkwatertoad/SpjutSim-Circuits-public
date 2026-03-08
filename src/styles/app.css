@@ -13,6 +13,7 @@
   --color-muted-strong: #5a534b;
   --color-shortcut: #8b877f;
   --color-danger: #da1e28;
+  --color-danger-action: #8a151b;
   --color-success: #198038;
   --color-action: #0f62fe;
   --color-log-bg: #111111;
@@ -533,34 +534,43 @@ button.menu-button:hover,
 
 .inline-edit-readonly-lock {
   position: relative;
-  width: 12px;
-  min-width: 12px;
-  max-width: 12px;
-  height: 12px;
-  flex: 0 0 12px;
+  width: 13px;
+  min-width: 13px;
+  max-width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  margin-left: 1px;
+  border: 1.5px solid var(--color-field-readonly-border);
+  border-radius: 2px;
+  background: var(--color-field-readonly-chip-bg);
+  box-sizing: border-box;
 }
 
 .inline-edit-readonly-lock::before {
   content: "";
   position: absolute;
   left: 2px;
-  top: 1px;
-  width: 8px;
-  height: 5px;
+  top: -6px;
+  width: 7px;
+  height: 6px;
   border: 1.5px solid var(--color-field-readonly-border);
   border-bottom: 0;
-  border-radius: 5px 5px 0 0;
+  border-radius: 6px 6px 0 0;
 }
 
 .inline-edit-readonly-lock::after {
   content: "";
   position: absolute;
-  left: 1px;
-  top: 5px;
-  width: 10px;
+  left: 4px;
+  top: 2px;
+  width: 5px;
   height: 7px;
-  border-radius: 2px;
-  background: var(--color-field-readonly-border);
+  background-image:
+    radial-gradient(circle at 50% 22%, var(--color-field-readonly-border) 0 1.2px, transparent 1.3px),
+    linear-gradient(var(--color-field-readonly-border), var(--color-field-readonly-border));
+  background-repeat: no-repeat, no-repeat;
+  background-size: 5px 3px, 2px 4px;
+  background-position: center top, center 3px;
 }
 
 .inline-edit-unit[data-inline-box-opacity-value="1"] {
@@ -1338,12 +1348,12 @@ button[data-action-intent="run"]:active:not(:disabled) {
 }
 
 button[data-action-intent="danger"] {
-  color: var(--color-danger);
-  border-color: var(--color-danger);
+  color: var(--color-danger-action);
+  border-color: var(--color-danger-action);
 }
 
 button[data-action-intent="danger"]:active:not(:disabled) {
-  background: var(--color-danger);
+  background: var(--color-danger-action);
   color: var(--color-bg);
 }
 

@@ -9415,6 +9415,7 @@ function createUI(container, state, actions) {
       uiInlineEditorLifecycleModule.applyInlineEditorOpenFocus({
         focusTarget,
         inlineNameInput,
+        inlineProbeTypeSelect,
         inlineStyleInput: inlineBoxThicknessInput,
         inlineValueInput,
         inlineSwitchPositionA,
