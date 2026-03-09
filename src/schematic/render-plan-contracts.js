@@ -708,7 +708,7 @@
         const triBase = Math.min(20, bodyLength * 0.6);
         return Math.max(0, triBase / 2);
       }
-      if (normalized === "V" || normalized === "I" || normalized === "VM" || normalized === "AM") {
+      if (normalized === "V" || normalized === "VAC" || normalized === "I" || normalized === "VM" || normalized === "AM") {
         return Math.max(0, Math.min(12, safeLength * 0.25));
       }
       return 0;

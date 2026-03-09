@@ -47,6 +47,14 @@
         { id: "-", name: "-", x: 0, y: 20 }
       ]
     },
+    VAC: {
+      type: "VAC",
+      label: "AC Voltage Source",
+      pins: [
+        { id: "+", name: "+", x: 0, y: -20 },
+        { id: "-", name: "-", x: 0, y: 20 }
+      ]
+    },
     I: {
       type: "I",
       label: "Current Source",
@@ -62,6 +70,14 @@
         { id: "C", name: "C", x: -20, y: 0 },
         { id: "A", name: "A", x: 20, y: -10 },
         { id: "B", name: "B", x: 20, y: 10 }
+      ]
+    },
+    SPST: {
+      type: "SPST",
+      label: "SPST Switch",
+      pins: [
+        { id: "1", name: "1", x: -20, y: 0 },
+        { id: "2", name: "2", x: 20, y: 0 }
       ]
     },
     D: {

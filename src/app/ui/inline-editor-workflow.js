@@ -283,14 +283,17 @@
     const component = getModelComponent(componentId);
     const isSwitchComponentType = typeof args.isSwitchComponentType === "function"
       ? args.isSwitchComponentType
-      : (type) => String(type ?? "").toUpperCase() === "SW";
+      : (type) => {
+        const normalized = String(type ?? "").toUpperCase();
+        return normalized === "SW" || normalized === "SPST";
+      };
     if (!isSwitchComponentType(component?.type)) {
       return;
     }
     const parseSpdtSwitchValueSafe = typeof args.parseSpdtSwitchValueSafe === "function" ? args.parseSpdtSwitchValueSafe : () => null;
     const buildInlineSwitchState = typeof args.buildInlineSwitchState === "function" ? args.buildInlineSwitchState : () => null;
     const formatSpdtSwitchValue = typeof args.formatSpdtSwitchValue === "function" ? args.formatSpdtSwitchValue : () => "";
-    const readSwitchInputs = typeof args.readSwitchInputs === "function" ? args.readSwitchInputs : () => ({ ron: "", roff: "", showRon: false, showRoff: false });
+    const readSwitchInputs = typeof args.readSwitchInputs === "function" ? args.readSwitchInputs : () => ({ ron: "", roff: "" });
     const updateComponent = typeof args.updateComponent === "function" ? args.updateComponent : () => { };
     const onResync = typeof args.onResync === "function" ? args.onResync : () => { };
     const parsed = parseSpdtSwitchValueSafe(component.value);
@@ -300,9 +303,7 @@
       baseState: parsed,
       overrides,
       ronInput: switchInputs.ron,
-      roffInput: switchInputs.roff,
-      showRonChecked: switchInputs.showRon,
-      showRoffChecked: switchInputs.showRoff
+      roffInput: switchInputs.roff
     });
     updateComponent(componentId, { value: formatSpdtSwitchValue(nextState) });
     if (args.options?.resync) {
@@ -530,8 +531,8 @@
     panel.inlineSwitchPositionRow.hidden = !inlineModeFlags.isSwitchComponent;
     panel.inlineSwitchRonRow.hidden = !inlineModeFlags.isSwitchComponent;
     panel.inlineSwitchRoffRow.hidden = !inlineModeFlags.isSwitchComponent;
-    panel.inlineSwitchShowRonRow.hidden = !inlineModeFlags.isSwitchComponent;
-    panel.inlineSwitchShowRoffRow.hidden = !inlineModeFlags.isSwitchComponent;
+    panel.inlineSwitchShowRonRow.hidden = true;
+    panel.inlineSwitchShowRoffRow.hidden = true;
 
     const parseSpdtSwitchValueSafe = typeof args.parseSpdtSwitchValueSafe === "function" ? args.parseSpdtSwitchValueSafe : () => null;
     const setInlineSwitchActiveThrow = typeof args.setInlineSwitchActiveThrow === "function" ? args.setInlineSwitchActiveThrow : () => { };
@@ -540,8 +541,6 @@
       setInlineSwitchActiveThrow(switchValue?.activeThrow);
       panel.inlineSwitchRonInput.value = String(switchValue?.ron ?? "0");
       panel.inlineSwitchRoffInput.value = String(switchValue?.roff ?? "");
-      panel.inlineSwitchShowRonInput.checked = switchValue?.showRon === true;
-      panel.inlineSwitchShowRoffInput.checked = switchValue?.showRoff === true;
     }
 
     panel.inlineNetColorPicker.row.hidden = false;
@@ -697,14 +696,15 @@
         canCommit: canEditInlineInputs,
         getEditingComponentId,
         getModelComponent,
-        isSwitchComponentType: (type) => String(type ?? "").toUpperCase() === "SW",
+        isSwitchComponentType: (type) => {
+          const normalized = String(type ?? "").toUpperCase();
+          return normalized === "SW" || normalized === "SPST";
+        },
         parseSpdtSwitchValueSafe,
         buildInlineSwitchState,
         readSwitchInputs: () => ({
           ron: panel.inlineSwitchRonInput?.value,
-          roff: panel.inlineSwitchRoffInput?.value,
-          showRon: panel.inlineSwitchShowRonInput?.checked === true,
-          showRoff: panel.inlineSwitchShowRoffInput?.checked === true
+          roff: panel.inlineSwitchRoffInput?.value
         }),
         overrides,
         formatSpdtSwitchValue,

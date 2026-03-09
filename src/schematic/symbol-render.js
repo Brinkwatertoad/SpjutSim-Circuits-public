@@ -99,6 +99,7 @@
 
   const normalizeGroundVariant = requireSchematicMethod("normalizeGroundVariant");
   const normalizeResistorStyle = requireSchematicMethod("normalizeResistorStyle");
+  const normalizeAcSourceWaveform = requireSchematicMethod("normalizeAcSourceWaveform");
 
   const resolveNamedNodeLabelStyle = (style) => {
     const base = style ?? DEFAULT_NET_LABEL_STYLE;
@@ -1051,16 +1052,45 @@
     const towardThrowsUnit = towardThrowsLength > 0
       ? { x: towardThrowsDx / towardThrowsLength, y: towardThrowsDy / towardThrowsLength }
       : { x: 1, y: 0 };
-    const pivotOffset = Math.max(4, Math.min(16, towardThrowsLength * 0.55));
-    const pivot = {
-      x: center.x + towardThrowsUnit.x * pivotOffset,
-      y: center.y + towardThrowsUnit.y * pivotOffset
+    const pivotProbeOffset = Math.max(4, Math.min(16, towardThrowsLength * 0.55));
+    const pivotProbe = {
+      x: center.x + towardThrowsUnit.x * pivotProbeOffset,
+      y: center.y + towardThrowsUnit.y * pivotProbeOffset
     };
-    const pivotToA = Math.hypot(throwA.x - pivot.x, throwA.y - pivot.y);
-    const pivotToB = Math.hypot(throwB.x - pivot.x, throwB.y - pivot.y);
-    const contactInset = Math.max(2.5, Math.min(10, Math.min(pivotToA, pivotToB) * 0.35));
-    const contactA = movePointToward(throwA, pivot, contactInset);
-    const contactB = movePointToward(throwB, pivot, contactInset);
+    const pivotProbeToA = Math.hypot(throwA.x - pivotProbe.x, throwA.y - pivotProbe.y);
+    const pivotProbeToB = Math.hypot(throwB.x - pivotProbe.x, throwB.y - pivotProbe.y);
+    const leadInset = Math.max(2.5, Math.min(10, Math.min(pivotProbeToA, pivotProbeToB) * 0.35));
+    const pivot = {
+      x: center.x + towardThrowsUnit.x * leadInset,
+      y: center.y + towardThrowsUnit.y * leadInset
+    };
+    const throwSpanDx = throwB.x - throwA.x;
+    const throwSpanDy = throwB.y - throwA.y;
+    const throwSpanLength = Math.hypot(throwSpanDx, throwSpanDy);
+    let throwLeadDirection = {
+      x: -towardThrowsUnit.x,
+      y: -towardThrowsUnit.y
+    };
+    if (throwSpanLength > 0) {
+      const perpendicular = {
+        x: -throwSpanDy / throwSpanLength,
+        y: throwSpanDx / throwSpanLength
+      };
+      const centerDx = center.x - throwMid.x;
+      const centerDy = center.y - throwMid.y;
+      const towardCenterDot = perpendicular.x * centerDx + perpendicular.y * centerDy;
+      throwLeadDirection = towardCenterDot >= 0
+        ? perpendicular
+        : { x: -perpendicular.x, y: -perpendicular.y };
+    }
+    const contactA = {
+      x: throwA.x + throwLeadDirection.x * leadInset,
+      y: throwA.y + throwLeadDirection.y * leadInset
+    };
+    const contactB = {
+      x: throwB.x + throwLeadDirection.x * leadInset,
+      y: throwB.y + throwLeadDirection.y * leadInset
+    };
     const activeContact = activeThrow === "A" ? contactA : contactB;
     const inactiveContact = activeThrow === "A" ? contactB : contactA;
     const labelAngle = Math.atan2(towardThrowsDy, towardThrowsDx) * (180 / Math.PI);
@@ -1546,6 +1576,53 @@
     return true;
   };
 
+  const resolveSwitchActiveThrowFromValue = (value) => {
+    const parser = getSpdtSwitchParser();
+    try {
+      const parsed = parser(value);
+      return String(parsed?.activeThrow ?? "A").toUpperCase() === "B" ? "B" : "A";
+    } catch {
+      return "A";
+    }
+  };
+
+  const drawSpstSwitchShape = (ctx, group, length, value, style) => {
+    if (!ctx || !group || !Number.isFinite(length) || length <= 0 || typeof ctx.line !== "function" || typeof ctx.circle !== "function") {
+      return false;
+    }
+    const stroke = resolveStroke(style, ctx);
+    const openFill = resolveFill(style, ctx);
+    const closedFill = resolveTextFill(style, ctx);
+    const activeThrow = resolveSwitchActiveThrowFromValue(value);
+    const contactInset = Math.max(5, Math.min(10, length * 0.25));
+    const pivotOffset = contactInset;
+    const contact = {
+      x: length - contactInset,
+      y: 0
+    };
+    const pivot = {
+      x: pivotOffset,
+      y: 0
+    };
+    const openTip = {
+      x: Math.max(pivot.x + 2, contact.x - 2.5),
+      y: -Math.max(5, Math.min(12, length * 0.25))
+    };
+    const bladeTip = activeThrow === "A" ? contact : openTip;
+    ctx.line(group, 0, 0, pivot.x, pivot.y, stroke);
+    ctx.line(group, contact.x, contact.y, length, 0, stroke);
+    ctx.line(group, pivot.x, pivot.y, bladeTip.x, bladeTip.y, stroke);
+    ctx.circle(group, contact.x, contact.y, 2.25, {
+      ...stroke,
+      fill: activeThrow === "A" ? closedFill : openFill
+    });
+    ctx.circle(group, pivot.x, pivot.y, 2.1, {
+      ...stroke,
+      fill: closedFill
+    });
+    return true;
+  };
+
   const drawTransformerShape = (ctx, group, plan, style) => {
     if (!ctx || !group || !plan || typeof ctx.line !== "function" || typeof ctx.path !== "function" || typeof ctx.circle !== "function") {
       return false;
@@ -1840,6 +1917,70 @@
     ctx.line(group, minusX, -glyphHalfSpan, minusX, glyphHalfSpan, glyphStroke);
   };
 
+  const drawAcVoltageSourceSymbol = (ctx, group, length, style, options) => {
+    const stroke = resolveStroke(style, ctx);
+    const radius = Math.min(12, length * 0.25);
+    const center = length / 2;
+    ctx.line(group, 0, 0, center - radius, 0, stroke);
+    ctx.line(group, center + radius, 0, length, 0, stroke);
+    ctx.circle(group, center, 0, radius, { ...stroke, fill: resolveFill(style, ctx) });
+    const span = Math.max(4, Math.min(radius - 2, radius * 0.78)) * 0.75;
+    const amplitude = Math.max(1.6, Math.min(radius - 3, radius * 0.34));
+    const sampleCount = 16;
+    const glyphWidth = Math.max(1.2, Math.min(2.2, Number(stroke.width) || 1.6));
+    const glyphStroke = {
+      stroke: resolveTextFill(style, ctx),
+      width: glyphWidth,
+      cap: "round",
+      join: "round"
+    };
+    const waveform = normalizeAcSourceWaveform(options?.vacWaveform);
+    let d = "";
+    if (waveform === "triangle") {
+      d = [
+        `M ${center - span} 0`,
+        `L ${center - (span * 0.5)} ${-amplitude}`,
+        `L ${center} 0`,
+        `L ${center + (span * 0.5)} ${amplitude}`,
+        `L ${center + span} 0`
+      ].join(" ");
+    } else if (waveform === "sawtooth") {
+      const resetX = center;
+      d = [
+        `M ${center - span} 0`,
+        `L ${resetX} ${-amplitude}`,
+        `L ${resetX} ${amplitude}`,
+        `L ${center + span} 0`
+      ].join(" ");
+    } else if (waveform === "square") {
+      const fallX = center - (span * 0.5);
+      const riseX = center + (span * 0.5);
+      d = [
+        `M ${center - span} ${amplitude}`,
+        `L ${fallX} ${amplitude}`,
+        `L ${fallX} ${-amplitude}`,
+        `L ${riseX} ${-amplitude}`,
+        `L ${riseX} ${amplitude}`,
+        `L ${center + span} ${amplitude}`
+      ].join(" ");
+    } else {
+      for (let index = 0; index < sampleCount; index += 1) {
+        const t = index / (sampleCount - 1);
+        const x = center - span + (span * 2 * t);
+        const y = Math.sin(t * Math.PI * 2) * amplitude;
+        d += index === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`;
+      }
+    }
+    const glyph = ctx.path(group, d, glyphStroke);
+    if (glyph && typeof glyph.setAttribute === "function") {
+      glyph.setAttribute("data-source-glyph", waveform);
+      const rotation = Number(options?.rotation);
+      if (Number.isFinite(rotation) && rotation % 360 !== 0) {
+        glyph.setAttribute("transform", `rotate(${-rotation} ${center} 0)`);
+      }
+    }
+  };
+
   const drawCurrentSourceSymbol = (ctx, group, length, style) => {
     const stroke = resolveStroke(style, ctx);
     const radius = Math.min(12, length * 0.25);
@@ -1963,6 +2104,10 @@
       drawVoltageSourceSymbol(ctx, group, length, style);
       return true;
     },
+    VAC: (ctx, group, length, style, options) => {
+      drawAcVoltageSourceSymbol(ctx, group, length, style, options);
+      return true;
+    },
     I: (ctx, group, length, style) => {
       drawCurrentSourceSymbol(ctx, group, length, style);
       return true;
@@ -1979,6 +2124,8 @@
       drawAmmeterSymbol(ctx, group, length, style, options);
       return true;
     },
+    SPST: (ctx, group, length, style, options) =>
+      drawSpstSwitchShape(ctx, group, length, options?.value, style),
     IMG: (ctx, group, length, style) => drawAnnotationShape(ctx, group, "IMG", style, length),
     ARR: (ctx, group, length, style) => drawAnnotationShape(ctx, group, "ARR", style, length),
     BOX: (ctx, group, length, style) => drawAnnotationShape(ctx, group, "BOX", style, length),

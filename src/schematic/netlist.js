@@ -115,6 +115,50 @@
     };
   };
 
+  const normalizeSpstPinToken = (pin) => String(pin?.id ?? pin?.name ?? "").trim().toUpperCase();
+
+  const pickSpstPinByToken = (pins, token, used) => {
+    for (const pin of pins) {
+      if (used.has(pin)) {
+        continue;
+      }
+      if (normalizeSpstPinToken(pin) !== token) {
+        continue;
+      }
+      used.add(pin);
+      return pin;
+    }
+    return null;
+  };
+
+  const pickNextSpstPin = (pins, used) => {
+    for (const pin of pins) {
+      if (used.has(pin)) {
+        continue;
+      }
+      used.add(pin);
+      return pin;
+    }
+    return null;
+  };
+
+  const resolveSpstPins = (component) => {
+    const pins = getComponentPins(component);
+    if (pins.length < 2) {
+      return null;
+    }
+    const used = new Set();
+    const pin1 = pickSpstPinByToken(pins, "1", used) ?? pickNextSpstPin(pins, used);
+    const pin2 = pickSpstPinByToken(pins, "2", used) ?? pickNextSpstPin(pins, used);
+    if (!pin1 || !pin2) {
+      return null;
+    }
+    return {
+      "1": pin1,
+      "2": pin2
+    };
+  };
+
   const RESERVED_NODE_NAMES = new Set(["0", "gnd"]);
 
   const normalizeNodeLabel = (value) => String(value ?? "").trim();
@@ -493,6 +537,46 @@
     return { line, additionalLines };
   };
 
+  const buildSpstSwitchNetlistLines = (component, context) => {
+    const pinNetMap = context?.pinNetMap;
+    const parseSpdtSwitchValue = context?.parseSpdtSwitchValue;
+    const compileErrors = Array.isArray(context?.compileErrors) ? context.compileErrors : [];
+    const resolvedPins = resolveSpstPins(component);
+    if (!resolvedPins) {
+      compileErrors.push(`Switch '${component.id}' is missing 1/2 pins.`);
+      return null;
+    }
+    let parsedSwitch = null;
+    try {
+      parsedSwitch = parseSpdtSwitchValue(component.value);
+    } catch (error) {
+      const reason = String(error?.message ?? error ?? "Invalid switch value.");
+      compileErrors.push(`Switch '${component.id}' value parse error: ${reason}`);
+      return null;
+    }
+    const activeThrow = String(parsedSwitch?.activeThrow ?? "A").toUpperCase() === "B" ? "B" : "A";
+    const net1 = getNetForPin(pinNetMap, component.id, resolvedPins["1"].id);
+    const net2 = getNetForPin(pinNetMap, component.id, resolvedPins["2"].id);
+    const baseId = normalizeId(component.id);
+    if (!net1 || !net2) {
+      return { line: null, additionalLines: [] };
+    }
+    if (activeThrow === "A") {
+      const lineId = ensurePrefixedId("R", `${baseId}A` || "A");
+      const value = normalizeSpiceValue(String(parsedSwitch?.ron ?? "0"));
+      const line = value ? `${lineId} ${net1} ${net2} ${value}` : null;
+      return { line, additionalLines: [] };
+    }
+    const roffValueRaw = parsedSwitch?.roff;
+    if (roffValueRaw === null || roffValueRaw === undefined) {
+      return { line: null, additionalLines: [] };
+    }
+    const lineId = ensurePrefixedId("R", `${baseId}B` || "B");
+    const value = normalizeSpiceValue(String(roffValueRaw));
+    const line = value ? `${lineId} ${net1} ${net2} ${value}` : null;
+    return { line, additionalLines: [] };
+  };
+
   const normalizeTransformerPinToken = (pin) => String(pin?.id ?? pin?.name ?? "").trim().toUpperCase();
 
   const pickTransformerPinByToken = (pins, token, used) => {
@@ -651,6 +735,18 @@
     return parts.length ? ` ${parts.join(" ")}` : "";
   };
 
+  const buildAcVoltageSourceNetlistLine = (component, context) => {
+    const buildAcVoltageSourceSpiceValue = context?.buildAcVoltageSourceSpiceValue;
+    if (typeof buildAcVoltageSourceSpiceValue !== "function") {
+      throw new Error("AC voltage source netlist builder requires buildAcVoltageSourceSpiceValue helper.");
+    }
+    const fallbackValue = buildAcVoltageSourceSpiceValue(component);
+    if (!String(fallbackValue ?? "").trim()) {
+      return null;
+    }
+    return buildLine({ ...component, value: "" }, context?.pinNetMap, fallbackValue, "V");
+  };
+
   const COMPONENT_NETLIST_LINE_BUILDERS = Object.freeze({
     R: (component, context) => ({
       line: buildLine(component, context?.pinNetMap, getComponentFallbackValue(context, "R", "1k"), "R"),
@@ -666,6 +762,10 @@
     }),
     V: (component, context) => ({
       line: buildLine(component, context?.pinNetMap, getComponentFallbackValue(context, "V", "1"), "V"),
+      additionalLines: []
+    }),
+    VAC: (component, context) => ({
+      line: buildAcVoltageSourceNetlistLine(component, context),
       additionalLines: []
     }),
     I: (component, context) => ({
@@ -685,6 +785,7 @@
       additionalLines: []
     }),
     SW: (component, context) => buildSwitchNetlistLines(component, context),
+    SPST: (component, context) => buildSpstSwitchNetlistLines(component, context),
     XFMR: (component, context) => buildTransformerNetlistLines(component, context),
     D: (component, context) => {
       const modelName = component.value
@@ -715,6 +816,7 @@
     const isElectricalComponentType = requireSchematicMethod("isElectricalComponentType");
     const parseSpdtSwitchValue = requireSchematicMethod("parseSpdtSwitchValue");
     const normalizeTransformerComponentState = requireSchematicMethod("normalizeTransformerComponentState");
+    const buildAcVoltageSourceSpiceValue = requireSchematicMethod("buildAcVoltageSourceSpiceValue");
     const getBuiltInComponentDefaults = requireSchematicMethod("getBuiltInComponentDefaults");
     const componentDefaults = getBuiltInComponentDefaults();
     const nets = buildNets(model);
@@ -761,6 +863,7 @@
         pinNetMap,
         parseSpdtSwitchValue,
         normalizeTransformerComponentState,
+        buildAcVoltageSourceSpiceValue,
         compileErrors,
         componentDefaults
       });

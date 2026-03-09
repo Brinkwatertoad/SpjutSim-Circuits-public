@@ -16,9 +16,9 @@
     help: {
       title: "Transformer (Shift+L)",
       summary: "Couples AC energy between primary and secondary windings.",
-      definition: "Ideal model with turns ratio N=Np/Ns, primary inductance Lp, derived secondary inductance Ls=Lp*N^2, and coupling K."
+      definition: "Ideal model with turns ratio N=Ns/Np, primary inductance Lp, derived secondary inductance Ls=Lp*N^2, and coupling K."
     },
-    valueField: { label: "N = Np/Ns", unit: "", visible: true },
+    valueField: { label: "N = Ns/Np", unit: "", visible: true },
     properties: [
       {
         key: "xfmrLp",
@@ -108,8 +108,8 @@
         defaultValue: "subtractive",
         normalizeMethod: "normalizeTransformerPolarity",
         options: [
-          { value: "subtractive", label: "In-phase (dots on top)" },
-          { value: "additive", label: "Reversed (dots on opposite corners)" }
+          { value: "subtractive", label: "In-phase" },
+          { value: "additive", label: "Reversed" }
         ],
         help: {
           title: "Polarity",

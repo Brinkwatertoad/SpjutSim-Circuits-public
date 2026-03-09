@@ -513,7 +513,6 @@
     const inlineSwitchShowRonInput = document.createElement("input");
     inlineSwitchShowRonInput.type = "checkbox";
     inlineSwitchShowRonInput.className = "inline-edit-checkbox-input";
-    inlineSwitchShowRonInput.dataset.inlineSwitchShowRon = "1";
     inlineSwitchShowRonField.append(inlineSwitchShowRonInput);
     inlineSwitchShowRonRow.append(inlineSwitchShowRonLabel, inlineSwitchShowRonField);
 
@@ -526,7 +525,6 @@
     const inlineSwitchShowRoffInput = document.createElement("input");
     inlineSwitchShowRoffInput.type = "checkbox";
     inlineSwitchShowRoffInput.className = "inline-edit-checkbox-input";
-    inlineSwitchShowRoffInput.dataset.inlineSwitchShowRoff = "1";
     inlineSwitchShowRoffField.append(inlineSwitchShowRoffInput);
     inlineSwitchShowRoffRow.append(inlineSwitchShowRoffLabel, inlineSwitchShowRoffField);
 

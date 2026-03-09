@@ -236,7 +236,7 @@ const simulationKinds = [
   { id: "ac", label: "AC Sweep (.ac)" }
 ];
 const simulationKindIds = new Set(simulationKinds.map((entry) => entry.id));
-const SOURCE_COMPONENT_TYPES = new Set(["V", "I"]);
+const SOURCE_COMPONENT_TYPES = new Set(["V", "VAC", "I"]);
 const RESULTS_PANE_MODES = new Set(
   Array.isArray(uiResultsPaneDomain.RESULTS_PANE_MODES)
     ? uiResultsPaneDomain.RESULTS_PANE_MODES
@@ -731,6 +731,22 @@ const buildSettingsDialog = (container, config = {}) => {
               label: String(option?.label ?? "").trim()
             }))
             .filter((option) => option.value)
+          : [],
+        vacAmplitudeControl: entry?.vacAmplitudeControl === true,
+        vacAmplitudeLabel: String(entry?.vacAmplitudeLabel ?? "").trim(),
+        vacAmplitudeUnit: String(entry?.vacAmplitudeUnit ?? "").trim(),
+        vacFrequencyControl: entry?.vacFrequencyControl === true,
+        vacFrequencyLabel: String(entry?.vacFrequencyLabel ?? "").trim(),
+        vacFrequencyUnit: String(entry?.vacFrequencyUnit ?? "").trim(),
+        vacWaveformControl: entry?.vacWaveformControl === true,
+        vacWaveformLabel: String(entry?.vacWaveformLabel ?? "").trim(),
+        vacWaveformOptions: Array.isArray(entry?.vacWaveformOptions)
+          ? entry.vacWaveformOptions
+            .map((option) => ({
+              value: String(option?.value ?? "").trim(),
+              label: String(option?.label ?? "").trim()
+            }))
+            .filter((option) => option.value)
           : []
       }))
       .filter((entry) => entry.type)
@@ -838,9 +854,10 @@ const buildSettingsDialog = (container, config = {}) => {
     const switchRoffUnit = document.createElement("span");
     switchRoffUnit.className = "inline-edit-unit";
     switchRoffUnit.textContent = spec.unit || "\u03a9";
-    const isSwitchDefaults = spec.type === "SW";
+    const isSwitchDefaults = uiInlineEditorDomain.isSwitchComponentType(spec.type);
     const isTransformerDefaults = spec.type === "XFMR"
       && (spec.xfmrPolarityControl === true || spec.xfmrSolveByControl === true);
+    const isVacDefaults = spec.type === "VAC";
     const xfmrPolarityLabel = document.createElement("span");
     xfmrPolarityLabel.textContent = "Polarity:";
     const xfmrPolaritySelect = document.createElement("select");
@@ -862,6 +879,37 @@ const buildSettingsDialog = (container, config = {}) => {
       option.value = optionEntry.value;
       option.textContent = optionEntry.label || optionEntry.value;
       xfmrSolveBySelect.appendChild(option);
+    });
+    const vacAmplitudeLabel = document.createElement("span");
+    vacAmplitudeLabel.textContent = `${spec.vacAmplitudeLabel || "Amplitude"}:`;
+    const vacAmplitudeInput = document.createElement("input");
+    vacAmplitudeInput.type = "text";
+    vacAmplitudeInput.className = "settings-short-value-input";
+    vacAmplitudeInput.dataset.settingsComponentDefaultVacAmplitude = spec.type;
+    vacAmplitudeInput.placeholder = spec.vacAmplitudeLabel || "Amplitude";
+    const vacAmplitudeUnit = document.createElement("span");
+    vacAmplitudeUnit.className = "inline-edit-unit";
+    vacAmplitudeUnit.textContent = spec.vacAmplitudeUnit || "V";
+    const vacFrequencyLabel = document.createElement("span");
+    vacFrequencyLabel.textContent = `${spec.vacFrequencyLabel || "Frequency"}:`;
+    const vacFrequencyInput = document.createElement("input");
+    vacFrequencyInput.type = "text";
+    vacFrequencyInput.className = "settings-short-value-input";
+    vacFrequencyInput.dataset.settingsComponentDefaultVacFrequency = spec.type;
+    vacFrequencyInput.placeholder = spec.vacFrequencyLabel || "Frequency";
+    const vacFrequencyUnit = document.createElement("span");
+    vacFrequencyUnit.className = "inline-edit-unit";
+    vacFrequencyUnit.textContent = spec.vacFrequencyUnit || "Hz";
+    const vacWaveformLabel = document.createElement("span");
+    vacWaveformLabel.textContent = `${spec.vacWaveformLabel || "Waveform"}:`;
+    const vacWaveformSelect = document.createElement("select");
+    vacWaveformSelect.className = "settings-short-value-input";
+    vacWaveformSelect.dataset.settingsComponentDefaultVacWaveform = spec.type;
+    (Array.isArray(spec.vacWaveformOptions) ? spec.vacWaveformOptions : []).forEach((optionEntry) => {
+      const option = document.createElement("option");
+      option.value = optionEntry.value;
+      option.textContent = optionEntry.label || optionEntry.value;
+      vacWaveformSelect.appendChild(option);
     });
     let colorPicker = null;
     if (typeof createNetColorPicker === "function") {
@@ -904,6 +952,16 @@ const buildSettingsDialog = (container, config = {}) => {
         switchRoffInput,
         switchRoffUnit
       );
+    } else if (isVacDefaults) {
+      if (spec.vacAmplitudeControl === true) {
+        row.append(vacAmplitudeLabel, vacAmplitudeInput, vacAmplitudeUnit);
+      }
+      if (spec.vacFrequencyControl === true) {
+        row.append(vacFrequencyLabel, vacFrequencyInput, vacFrequencyUnit);
+      }
+      if (spec.vacWaveformControl === true) {
+        row.append(vacWaveformLabel, vacWaveformSelect);
+      }
     } else {
       row.append(valueLabel, valueInput, valueUnit);
       if (isTransformerDefaults) {
@@ -929,6 +987,9 @@ const buildSettingsDialog = (container, config = {}) => {
       row,
       valueInput,
       valueUnit,
+      vacAmplitudeInput,
+      vacFrequencyInput,
+      vacWaveformSelect,
       xfmrPolaritySelect,
       xfmrSolveBySelect,
       switchRonInput,
@@ -1261,10 +1322,27 @@ const buildSettingsDialog = (container, config = {}) => {
         ? componentDefaults[entry.type]
         : null;
       const normalizedValue = String(typeDefaults?.value ?? "");
-      if (entry.type === "SW") {
+      if (uiInlineEditorDomain.isSwitchComponentType(entry.type)) {
         const parsedSwitchDefaults = parseSwitchComponentDefaultValue(normalizedValue);
         entry.switchRonInput.value = String(parsedSwitchDefaults?.ron ?? "0");
         entry.switchRoffInput.value = String(parsedSwitchDefaults?.roff ?? "");
+      } else if (entry.type === "VAC") {
+        if (entry.vacAmplitudeInput instanceof HTMLInputElement) {
+          entry.vacAmplitudeInput.value = String(typeDefaults?.vacAmplitude ?? "1");
+        }
+        if (entry.vacFrequencyInput instanceof HTMLInputElement) {
+          entry.vacFrequencyInput.value = String(typeDefaults?.vacFrequency ?? "1k");
+        }
+        if (entry.vacWaveformSelect instanceof HTMLSelectElement) {
+          const normalizedWaveform = String(typeDefaults?.vacWaveform ?? "sine").trim().toLowerCase();
+          const hasWaveformOption = Array.from(entry.vacWaveformSelect.options)
+            .some((option) => option.value === normalizedWaveform);
+          if (hasWaveformOption) {
+            entry.vacWaveformSelect.value = normalizedWaveform;
+          } else if (entry.vacWaveformSelect.options.length > 0) {
+            entry.vacWaveformSelect.value = entry.vacWaveformSelect.options[0].value;
+          }
+        }
       } else {
         if (entry.valueInput instanceof HTMLSelectElement) {
           const customOption = entry.valueInput.querySelector("option[data-settings-component-default-custom='1']");
@@ -1371,13 +1449,31 @@ const buildSettingsDialog = (container, config = {}) => {
     onToolDisplayDefaultChange("groundVariant", groundDisplayTypeSelect.value);
   });
   componentDefaultRows.forEach((entry) => {
-    if (entry.type === "SW") {
+    if (uiInlineEditorDomain.isSwitchComponentType(entry.type)) {
       entry.switchRonInput.addEventListener("change", () => {
         onComponentDefaultChange(entry.type, { switchRon: entry.switchRonInput.value });
       });
       entry.switchRoffInput.addEventListener("change", () => {
         onComponentDefaultChange(entry.type, { switchRoff: entry.switchRoffInput.value });
       });
+      return;
+    }
+    if (entry.type === "VAC") {
+      if (entry.vacAmplitudeInput instanceof HTMLInputElement) {
+        entry.vacAmplitudeInput.addEventListener("change", () => {
+          onComponentDefaultChange(entry.type, { vacAmplitude: entry.vacAmplitudeInput.value });
+        });
+      }
+      if (entry.vacFrequencyInput instanceof HTMLInputElement) {
+        entry.vacFrequencyInput.addEventListener("change", () => {
+          onComponentDefaultChange(entry.type, { vacFrequency: entry.vacFrequencyInput.value });
+        });
+      }
+      if (entry.vacWaveformSelect instanceof HTMLSelectElement) {
+        entry.vacWaveformSelect.addEventListener("change", () => {
+          onComponentDefaultChange(entry.type, { vacWaveform: entry.vacWaveformSelect.value });
+        });
+      }
       return;
     }
     entry.valueInput.addEventListener("change", () => {
@@ -2247,6 +2343,27 @@ function createUI(container, state, actions) {
           return key === "xfmrSolveBy" && control === "select";
         })
         : null;
+      const vacAmplitudeProperty = Array.isArray(definition?.properties)
+        ? definition.properties.find((property) => {
+          const key = String(property?.key ?? "").trim();
+          const control = String(property?.control ?? "").trim().toLowerCase();
+          return key === "vacAmplitude" && (control === "text" || control === "number");
+        })
+        : null;
+      const vacFrequencyProperty = Array.isArray(definition?.properties)
+        ? definition.properties.find((property) => {
+          const key = String(property?.key ?? "").trim();
+          const control = String(property?.control ?? "").trim().toLowerCase();
+          return key === "vacFrequency" && (control === "text" || control === "number");
+        })
+        : null;
+      const vacWaveformProperty = Array.isArray(definition?.properties)
+        ? definition.properties.find((property) => {
+          const key = String(property?.key ?? "").trim();
+          const control = String(property?.control ?? "").trim().toLowerCase();
+          return key === "vacWaveform" && control === "select";
+        })
+        : null;
       const diodeModelOptions = Array.isArray(diodePresetProperty?.options)
         ? diodePresetProperty.options
           .map((option) => ({
@@ -2271,6 +2388,14 @@ function createUI(container, state, actions) {
           }))
           .filter((option) => option.value)
         : [];
+      const vacWaveformOptions = Array.isArray(vacWaveformProperty?.options)
+        ? vacWaveformProperty.options
+          .map((option) => ({
+            value: String(option?.value ?? "").trim(),
+            label: String(option?.label ?? "").trim()
+          }))
+          .filter((option) => option.value)
+        : [];
       const isDiodeModelSelect = type === "D" && diodeModelOptions.length > 0;
       return Object.freeze({
         type,
@@ -2282,7 +2407,26 @@ function createUI(container, state, actions) {
         xfmrPolarityControl: type === "XFMR" && transformerPolarityOptions.length > 0,
         xfmrPolarityOptions: type === "XFMR" ? Object.freeze(transformerPolarityOptions) : Object.freeze([]),
         xfmrSolveByControl: type === "XFMR" && transformerSolveByOptions.length > 0,
-        xfmrSolveByOptions: type === "XFMR" ? Object.freeze(transformerSolveByOptions) : Object.freeze([])
+        xfmrSolveByOptions: type === "XFMR" ? Object.freeze(transformerSolveByOptions) : Object.freeze([]),
+        vacAmplitudeControl: type === "VAC" && Boolean(vacAmplitudeProperty),
+        vacAmplitudeLabel: type === "VAC"
+          ? (String(vacAmplitudeProperty?.label ?? "").trim() || "Amplitude")
+          : "",
+        vacAmplitudeUnit: type === "VAC"
+          ? String(vacAmplitudeProperty?.input?.unit ?? "V").trim()
+          : "",
+        vacFrequencyControl: type === "VAC" && Boolean(vacFrequencyProperty),
+        vacFrequencyLabel: type === "VAC"
+          ? (String(vacFrequencyProperty?.label ?? "").trim() || "Frequency")
+          : "",
+        vacFrequencyUnit: type === "VAC"
+          ? String(vacFrequencyProperty?.input?.unit ?? "Hz").trim()
+          : "",
+        vacWaveformControl: type === "VAC" && vacWaveformOptions.length > 0,
+        vacWaveformLabel: type === "VAC"
+          ? (String(vacWaveformProperty?.label ?? "").trim() || "Waveform")
+          : "",
+        vacWaveformOptions: type === "VAC" ? Object.freeze(vacWaveformOptions) : Object.freeze([])
       });
     });
   };
@@ -2324,6 +2468,7 @@ function createUI(container, state, actions) {
   toolDisplayDefaults = normalizeToolDisplayDefaults(toolDisplayDefaults);
 
   const normalizeSpdtThrow = (value) => uiInlineEditorDomain.normalizeSpdtThrow(value);
+  const isSwitchComponentType = (type) => uiInlineEditorDomain.isSwitchComponentType(type);
   const parseSpdtSwitchValueSafe = (value) => uiInlineEditorDomain.parseSpdtSwitchValueSafe(parseSpdtSwitchValue, value);
   const formatSpdtSwitchValue = (stateValue) => uiInlineEditorDomain.formatSpdtSwitchValue(stateValue);
   const parseSwitchComponentDefaultValue = (value) => {
@@ -6111,13 +6256,13 @@ function createUI(container, state, actions) {
           entry.label = type === "PP" ? "P(?)" : "I(?)";
         }
         const currentSignals = [];
-        if (netlistId && (targetType === "V" || targetType === "I" || targetType === "SW")) {
+        if (netlistId && (targetType === "V" || targetType === "VAC" || targetType === "I" || targetType === "SW" || targetType === "SPST")) {
           currentSignals.push(`i(${netlistId})`);
         }
         if (targetId && targetType === "D") {
           currentSignals.push(`@${targetId.toLowerCase()}[id]`);
         }
-        if (targetId && targetType && targetType !== "V" && targetType !== "I") {
+        if (targetId && targetType && targetType !== "V" && targetType !== "VAC" && targetType !== "I") {
           currentSignals.push(`@${targetId.toLowerCase()}[i]`);
         }
         if (!currentSignals.length && netlistId && lineInfo) {
@@ -6177,7 +6322,10 @@ function createUI(container, state, actions) {
     }
     if (kind === "tran" || kind === "ac") {
       const config = simulationConfig[kind] ?? {};
-      baseNetlist = applySourceOverride(baseNetlist, config.source, config.sourceValue);
+      const selectedSourceType = String(componentLines?.[config.source]?.type ?? "").trim().toUpperCase();
+      if (selectedSourceType !== "VAC") {
+        baseNetlist = applySourceOverride(baseNetlist, config.source, config.sourceValue);
+      }
     }
     const probeInfo = buildProbeDescriptors({
       netNames,
@@ -9856,10 +10004,13 @@ function createUI(container, state, actions) {
       const hasSwitchRoff = Object.prototype.hasOwnProperty.call(updates ?? {}, "switchRoff");
       const hasTransformerPolarity = Object.prototype.hasOwnProperty.call(updates ?? {}, "xfmrPolarity");
       const hasTransformerSolveBy = Object.prototype.hasOwnProperty.call(updates ?? {}, "xfmrSolveBy");
+      const hasVacAmplitude = Object.prototype.hasOwnProperty.call(updates ?? {}, "vacAmplitude");
+      const hasVacFrequency = Object.prototype.hasOwnProperty.call(updates ?? {}, "vacFrequency");
+      const hasVacWaveform = Object.prototype.hasOwnProperty.call(updates ?? {}, "vacWaveform");
       let nextValue = Object.prototype.hasOwnProperty.call(updates ?? {}, "value")
         ? updates.value
         : current?.value;
-      if (key === "SW" && (hasSwitchRon || hasSwitchRoff)) {
+      if (isSwitchComponentType(key) && (hasSwitchRon || hasSwitchRoff)) {
         const currentSwitchDefaults = parseSwitchComponentDefaultValue(current?.value);
         nextValue = formatSwitchComponentDefaultValue({
           ron: hasSwitchRon ? updates.switchRon : currentSwitchDefaults.ron,
@@ -9875,6 +10026,15 @@ function createUI(container, state, actions) {
       const nextTransformerSolveBy = hasTransformerSolveBy
         ? updates.xfmrSolveBy
         : current?.xfmrSolveBy;
+      const nextVacAmplitude = hasVacAmplitude
+        ? updates.vacAmplitude
+        : current?.vacAmplitude;
+      const nextVacFrequency = hasVacFrequency
+        ? updates.vacFrequency
+        : current?.vacFrequency;
+      const nextVacWaveform = hasVacWaveform
+        ? updates.vacWaveform
+        : current?.vacWaveform;
       componentDefaults = normalizeComponentDefaults({
         ...componentDefaults,
         [key]: {
@@ -9885,6 +10045,12 @@ function createUI(container, state, actions) {
               xfmrPolarity: nextTransformerPolarity,
               xfmrSolveBy: nextTransformerSolveBy
             }
+            : key === "VAC"
+              ? {
+                vacAmplitude: nextVacAmplitude,
+                vacFrequency: nextVacFrequency,
+                vacWaveform: nextVacWaveform
+              }
             : {})
         }
       }, componentDefaults);
@@ -9953,7 +10119,22 @@ function createUI(container, state, actions) {
         const currentColor = String(currentDefaultsEntry?.netColor ?? "").trim().toLowerCase();
         const nextValue = String(nextDefaultsEntry?.value ?? "");
         const nextColor = String(nextDefaultsEntry?.netColor ?? "").trim().toLowerCase();
+        const currentVacAmplitude = String(currentDefaultsEntry?.vacAmplitude ?? "").trim();
+        const currentVacFrequency = String(currentDefaultsEntry?.vacFrequency ?? "").trim();
+        const currentVacWaveform = String(currentDefaultsEntry?.vacWaveform ?? "").trim().toLowerCase();
+        const nextVacAmplitude = String(nextDefaultsEntry?.vacAmplitude ?? "").trim();
+        const nextVacFrequency = String(nextDefaultsEntry?.vacFrequency ?? "").trim();
+        const nextVacWaveform = String(nextDefaultsEntry?.vacWaveform ?? "").trim().toLowerCase();
         if (currentValue !== nextValue || currentColor !== nextColor) {
+          componentDefaults = normalizeComponentDefaults({
+            ...currentDefaults,
+            [key]: nextDefaultsEntry
+          }, currentDefaults);
+          changed = true;
+        } else if (key === "VAC"
+          && (currentVacAmplitude !== nextVacAmplitude
+            || currentVacFrequency !== nextVacFrequency
+            || currentVacWaveform !== nextVacWaveform)) {
           componentDefaults = normalizeComponentDefaults({
             ...currentDefaults,
             [key]: nextDefaultsEntry

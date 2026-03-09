@@ -56,6 +56,7 @@
   });
   const valueFormatApi = Object.freeze({
     formatComponentDisplayValue: requireSchematicMethod("formatComponentDisplayValue"),
+    getAcVoltageSourceDisplayLines: requireSchematicMethod("getAcVoltageSourceDisplayLines"),
     getMeasurementTextWeight: requireSchematicMethod("getMeasurementTextWeight")
   });
   const labelLayoutApi = Object.freeze({
@@ -374,6 +375,20 @@
       /([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s+([pnumkMGTµμ]?[A-Za-zΩΩ°]+)/g,
       "$1$2"
     );
+  };
+
+  const getDisplayValueLines = (component, options) => {
+    const type = String(component?.type ?? "").trim().toUpperCase();
+    if (type === "VAC") {
+      const includeUnitSpace = normalizeSchematicValueUnitSpacing(options?.includeSchematicValueUnitSpace);
+      const lines = valueFormatApi.getAcVoltageSourceDisplayLines(component, { includeUnitSpace });
+      if (Array.isArray(lines)) {
+        return lines.map((entry) => String(entry ?? "").trim()).filter(Boolean);
+      }
+      return [];
+    }
+    const displayValue = formatDisplayValue(component, options);
+    return displayValue ? [displayValue] : [];
   };
 
   const getDisplayName = (component) => {
@@ -860,6 +875,22 @@
         extents.maxY + pad
       );
     }
+    if (type === "SPST") {
+      const pins = Array.isArray(component?.pins) ? component.pins : [];
+      const xs = pins.map((pin) => Number(pin?.x));
+      const ys = pins.map((pin) => Number(pin?.y));
+      if (!xs.every(Number.isFinite) || !ys.every(Number.isFinite)) {
+        return null;
+      }
+      const pad = 6;
+      return expandBounds(
+        null,
+        Math.min(...xs) - pad,
+        Math.min(...ys) - pad,
+        Math.max(...xs) + pad,
+        Math.max(...ys) + pad
+      );
+    }
     if (type === "XFMR") {
       const extents = getTransformerExtents(component);
       const pad = 6;
@@ -1023,12 +1054,12 @@
       Math.max(info.start.y, info.end.y) + symbolPad
     );
 
-    const displayValue = formatDisplayValue(component, { includeSchematicValueUnitSpace });
+    const displayValueLines = getDisplayValueLines(component, { includeSchematicValueUnitSpace });
     const displayName = getDisplayName(component);
-    const hasValue = Boolean(displayValue);
+    const valueLineCount = displayValueLines.length;
     const measurementText = measurements?.get?.(component.id);
     const labelRotation = Number(component?.labelRotation ?? 0);
-    const lineCount = (hasValue ? 2 : 1) + (measurementText ? 1 : 0);
+    const lineCount = 1 + valueLineCount + (measurementText ? 1 : 0);
     const layout = getLabelLayout(info.midX, info.midY, info.angle, lineCount, labelRotation);
     const symbolHalfExtent = getTwoPinSymbolHalfExtent(component, info);
     const resolvedPosition = resolveComponentLabelPosition(layout, {
@@ -1058,11 +1089,11 @@
     if (idBounds) {
       bounds = expandBounds(bounds, idBounds.minX, idBounds.minY, idBounds.maxX, idBounds.maxY);
     }
-    if (hasValue) {
+    displayValueLines.forEach((lineText, index) => {
       const valueBounds = getTextBounds(
         resolvedX,
-        resolvedY + textLineHeight,
-        displayValue,
+        resolvedY + (textLineHeight * (index + 1)),
+        lineText,
         valueTextSize,
         layout.anchor,
         textWeight,
@@ -1071,7 +1102,7 @@
       if (valueBounds) {
         bounds = expandBounds(bounds, valueBounds.minX, valueBounds.minY, valueBounds.maxX, valueBounds.maxY);
       }
-    }
+    });
     if (measurementText) {
       const measurementBounds = getTextBounds(
         resolvedX,
@@ -1610,6 +1641,29 @@
     svg.appendChild(group);
   };
 
+  const drawSpstSwitchSymbol = (svg, component, componentColor, measurements, schematicTextStyle) => {
+    const info = getTwoPinInfo(component);
+    if (!info) {
+      return;
+    }
+    const group = document.createElementNS(SVG_NS, "g");
+    group.setAttribute("data-component", component.id);
+    group.setAttribute("data-symbol", "SPST");
+    group.setAttribute("transform", `translate(${info.start.x} ${info.start.y}) rotate(${info.angle})`);
+    const strokeColor = componentColor ?? STROKE;
+    const handled = typeof symbolApi?.drawShape === "function"
+      ? symbolApi.drawShape(symbolCtx, "SPST", group, {
+        style: { stroke: strokeColor, width: STROKE_WIDTH },
+        length: info.length,
+        value: component?.value
+      })
+      : false;
+    if (!handled) {
+      return;
+    }
+    svg.appendChild(group);
+  };
+
   const drawTransformerSymbol = (svg, component, componentColor, measurements, schematicTextStyle, includeSchematicValueUnitSpace) => {
     const plan = getTransformerRenderPlan(component);
     const group = document.createElementNS(SVG_NS, "g");
@@ -1735,6 +1789,10 @@
       drawSpdtSwitchSymbol(svg, component, componentColor, options?.measurements, resolvedTextStyle);
       return;
     }
+    if (type === "SPST") {
+      drawSpstSwitchSymbol(svg, component, componentColor, options?.measurements, resolvedTextStyle);
+      return;
+    }
     if (type === "XFMR") {
       drawTransformerSymbol(
         svg,
@@ -1768,20 +1826,21 @@
         rotation: info.angle,
         style: { stroke: componentColor ?? STROKE, width: STROKE_WIDTH },
         resistorStyle: normalizeResistorStyleValue(component?.resistorStyle),
-        diodeDisplayType: component?.diodeDisplayType
+        diodeDisplayType: component?.diodeDisplayType,
+        vacWaveform: component?.vacWaveform
       })
       : false;
     if (!handled) {
       appendLine(group, 0, 0, info.length, 0);
     }
     svg.appendChild(group);
-    const displayValue = formatDisplayValue(component, {
+    const displayValueLines = getDisplayValueLines(component, {
       includeSchematicValueUnitSpace: options?.includeSchematicValueUnitSpace
     });
-    const hasValue = Boolean(displayValue);
+    const valueLineCount = displayValueLines.length;
     const labelRotation = Number(component?.labelRotation ?? 0);
     const measurementText = options?.measurements?.get?.(component.id);
-    const lineCount = (hasValue ? 2 : 1) + (measurementText ? 1 : 0);
+    const lineCount = 1 + valueLineCount + (measurementText ? 1 : 0);
     const layout = getLabelLayout(info.midX, info.midY, info.angle, lineCount, labelRotation);
     const symbolHalfExtent = getTwoPinSymbolHalfExtent(component, info);
     const resolvedPosition = resolveComponentLabelPosition(layout, {
@@ -1807,8 +1866,8 @@
       weight: textWeight,
       style: resolvedTextStyle.italic ? "italic" : "normal"
     });
-    if (hasValue) {
-      appendText(svg, resolvedX, resolvedY + textLineHeight, displayValue, {
+    displayValueLines.forEach((lineText, index) => {
+      appendText(svg, resolvedX, resolvedY + (textLineHeight * (index + 1)), lineText, {
         size: valueTextSize,
         fill: componentColor ?? DEFAULT_COMPONENT_TEXT_COLORS.value,
         anchor: layout.anchor,
@@ -1817,7 +1876,7 @@
         weight: textWeight,
         style: resolvedTextStyle.italic ? "italic" : "normal"
       });
-    }
+    });
     if (measurementText) {
       appendText(
         svg,

@@ -79,6 +79,13 @@
   const DEFAULT_TRANSFORMER_WINDING_RESISTANCE = "0";
   const DEFAULT_TRANSFORMER_POLARITY = "subtractive";
   const DEFAULT_TRANSFORMER_SOLVE_BY = "ratio";
+  const AC_SOURCE_WAVEFORMS = Object.freeze(["sine", "triangle", "sawtooth", "square"]);
+  const AC_SOURCE_WAVEFORM_SET = new Set(AC_SOURCE_WAVEFORMS);
+  const DEFAULT_AC_SOURCE_AMPLITUDE = "1";
+  const DEFAULT_AC_SOURCE_FREQUENCY = "1k";
+  const DEFAULT_AC_SOURCE_PHASE = "0";
+  const DEFAULT_AC_SOURCE_DC_OFFSET = "0";
+  const DEFAULT_AC_SOURCE_WAVEFORM = "sine";
   const COMPONENT_VALUE_UNITS = Object.freeze({
     R: "\u03a9",
     C: "F",
@@ -87,7 +94,8 @@
     I: "A",
     VM: "\u03a9",
     AM: "\u03a9",
-    SW: "\u03a9"
+    SW: "\u03a9",
+    SPST: "\u03a9"
   });
   const COMPONENT_DEFAULT_TYPES = Object.freeze([
     "R",
@@ -95,10 +103,12 @@
     "L",
     "XFMR",
     "V",
+    "VAC",
     "I",
     "VM",
     "AM",
     "SW",
+    "SPST",
     "D",
     "NET",
     "TEXT",
@@ -117,10 +127,18 @@
       xfmrSolveBy: DEFAULT_TRANSFORMER_SOLVE_BY
     }),
     V: Object.freeze({ value: "1", netColor: null }),
+    VAC: Object.freeze({
+      value: "",
+      netColor: null,
+      vacAmplitude: DEFAULT_AC_SOURCE_AMPLITUDE,
+      vacFrequency: DEFAULT_AC_SOURCE_FREQUENCY,
+      vacWaveform: DEFAULT_AC_SOURCE_WAVEFORM
+    }),
     I: Object.freeze({ value: "1", netColor: null }),
     VM: Object.freeze({ value: "", netColor: null }),
     AM: Object.freeze({ value: "", netColor: null }),
     SW: Object.freeze({ value: "", netColor: null }),
+    SPST: Object.freeze({ value: "", netColor: null }),
     D: Object.freeze({ value: "1N4148", netColor: null }),
     NET: Object.freeze({ value: "", netColor: null }),
     TEXT: Object.freeze({ value: "", netColor: null }),
@@ -295,6 +313,140 @@
       solveBy
     };
   };
+  const normalizeAcSourceWaveform = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (AC_SOURCE_WAVEFORM_SET.has(normalized)) {
+      return normalized;
+    }
+    if (normalized === "sin" || normalized === "sinusoid" || normalized === "sinusoidal") {
+      return "sine";
+    }
+    if (normalized === "tri" || normalized === "triangular") {
+      return "triangle";
+    }
+    if (normalized === "saw" || normalized === "ramp") {
+      return "sawtooth";
+    }
+    if (normalized === "sq" || normalized === "rect") {
+      return "square";
+    }
+    return DEFAULT_AC_SOURCE_WAVEFORM;
+  };
+  const listAcSourceWaveforms = () => AC_SOURCE_WAVEFORMS.slice();
+  const normalizeAcSourceNumericToken = (value, unit, fallback, options) => {
+    const settings = options && typeof options === "object" ? options : {};
+    const trimmed = String(value ?? "").trim();
+    if (!trimmed) {
+      return fallback;
+    }
+    const parsed = parseMetricValue(trimmed, unit);
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    const min = Number(settings.min);
+    const max = Number(settings.max);
+    const minInclusive = settings.minInclusive !== false;
+    const maxInclusive = settings.maxInclusive !== false;
+    if (Number.isFinite(min)) {
+      if (minInclusive ? parsed < min : parsed <= min) {
+        return fallback;
+      }
+    }
+    if (Number.isFinite(max)) {
+      if (maxInclusive ? parsed > max : parsed >= max) {
+        return fallback;
+      }
+    }
+    return trimmed.replace(/\s+/g, "");
+  };
+  const normalizeAcSourceAmplitude = (value) =>
+    normalizeAcSourceNumericToken(value, "V", DEFAULT_AC_SOURCE_AMPLITUDE, { min: 0, minInclusive: true });
+  const normalizeAcSourceFrequency = (value) =>
+    normalizeAcSourceNumericToken(value, "Hz", DEFAULT_AC_SOURCE_FREQUENCY, { min: 0, minInclusive: false });
+  const normalizeAcSourcePhase = (value) =>
+    normalizeAcSourceNumericToken(value, "deg", DEFAULT_AC_SOURCE_PHASE);
+  const normalizeAcSourceDcOffset = (value) =>
+    normalizeAcSourceNumericToken(value, "V", DEFAULT_AC_SOURCE_DC_OFFSET);
+  const parseAcSourceNumericToken = (token, unit, fallbackToken) => {
+    const primary = parseMetricValue(String(token ?? "").trim(), unit);
+    if (Number.isFinite(primary)) {
+      return primary;
+    }
+    const fallback = parseMetricValue(String(fallbackToken ?? "").trim(), unit);
+    return Number.isFinite(fallback) ? fallback : 0;
+  };
+  const getAcSourceState = (component) => {
+    const source = component && typeof component === "object" ? component : {};
+    const amplitudeToken = normalizeAcSourceAmplitude(source.vacAmplitude);
+    const frequencyToken = normalizeAcSourceFrequency(source.vacFrequency);
+    const phaseToken = normalizeAcSourcePhase(source.vacPhase);
+    const dcOffsetToken = normalizeAcSourceDcOffset(source.vacDcOffset);
+    const waveform = normalizeAcSourceWaveform(source.vacWaveform);
+    const amplitude = parseAcSourceNumericToken(amplitudeToken, "V", DEFAULT_AC_SOURCE_AMPLITUDE);
+    const frequency = parseAcSourceNumericToken(frequencyToken, "Hz", DEFAULT_AC_SOURCE_FREQUENCY);
+    const phaseDegrees = parseAcSourceNumericToken(phaseToken, "deg", DEFAULT_AC_SOURCE_PHASE);
+    const dcOffset = parseAcSourceNumericToken(dcOffsetToken, "V", DEFAULT_AC_SOURCE_DC_OFFSET);
+    const periodSeconds = frequency > 0 ? 1 / frequency : 0;
+    let phaseShiftSeconds = 0;
+    if (periodSeconds > 0) {
+      phaseShiftSeconds = ((-phaseDegrees / 360) * periodSeconds) % periodSeconds;
+    }
+    return {
+      waveform,
+      amplitudeToken,
+      frequencyToken,
+      phaseToken,
+      dcOffsetToken,
+      amplitude,
+      frequency,
+      phaseDegrees,
+      dcOffset,
+      periodSeconds,
+      phaseShiftSeconds,
+      low: dcOffset - amplitude,
+      high: dcOffset + amplitude
+    };
+  };
+  const buildAcSourcePulseValue = (state, mode) => {
+    const period = Number(state?.periodSeconds);
+    const safePeriod = Number.isFinite(period) && period > 0 ? period : 0.001;
+    const safeDelay = formatNumericToken(state?.phaseShiftSeconds, 0);
+    const low = formatNumericToken(state?.low, 0);
+    const high = formatNumericToken(state?.high, 0);
+    const minEdge = Math.max(safePeriod * 1e-4, 1e-12);
+    let rise = minEdge;
+    let fall = minEdge;
+    let width = Math.max((safePeriod / 2) - minEdge, minEdge);
+    if (mode === "triangle") {
+      rise = Math.max(safePeriod / 2, minEdge);
+      fall = Math.max(safePeriod / 2, minEdge);
+      width = minEdge;
+    } else if (mode === "sawtooth") {
+      rise = Math.max(safePeriod - minEdge, minEdge);
+      fall = minEdge;
+      width = minEdge;
+    }
+    return `PULSE(${low} ${high} ${safeDelay} ${formatNumericToken(rise, minEdge)} ${formatNumericToken(fall, minEdge)} ${formatNumericToken(width, minEdge)} ${formatNumericToken(safePeriod, 0.001)})`;
+  };
+  const buildAcSourceTransientValue = (state) => {
+    const waveform = normalizeAcSourceWaveform(state?.waveform);
+    if (waveform === "sine") {
+      return `SIN(${state.dcOffsetToken} ${state.amplitudeToken} ${state.frequencyToken} 0 0 ${state.phaseToken})`;
+    }
+    if (waveform === "triangle") {
+      return buildAcSourcePulseValue(state, "triangle");
+    }
+    if (waveform === "sawtooth") {
+      return buildAcSourcePulseValue(state, "sawtooth");
+    }
+    return buildAcSourcePulseValue(state, "square");
+  };
+  const buildAcVoltageSourceSpiceValue = (component) => {
+    const state = getAcSourceState(component);
+    const acPhase = String(state.phaseToken ?? "").trim() || DEFAULT_AC_SOURCE_PHASE;
+    const transient = buildAcSourceTransientValue(state);
+    return `DC ${state.dcOffsetToken} AC ${state.amplitudeToken} ${acPhase} ${transient}`;
+  };
   const normalizeTextOnly = (value) => {
     if (value === true) {
       return true;
@@ -328,6 +480,12 @@
             xfmrPolarity: normalizeTransformerPolarity(entry?.xfmrPolarity),
             xfmrSolveBy: normalizeTransformerSolveBy(entry?.xfmrSolveBy)
           }
+          : type === "VAC"
+            ? {
+              vacAmplitude: normalizeAcSourceAmplitude(entry?.vacAmplitude),
+              vacFrequency: normalizeAcSourceFrequency(entry?.vacFrequency),
+              vacWaveform: normalizeAcSourceWaveform(entry?.vacWaveform)
+            }
           : {})
       };
     });
@@ -349,10 +507,22 @@
     const fallbackSolveBy = normalizedType === "XFMR"
       ? normalizeTransformerSolveBy(fallbackEntry?.xfmrSolveBy)
       : undefined;
+    const fallbackVacAmplitude = normalizedType === "VAC"
+      ? normalizeAcSourceAmplitude(fallbackEntry?.vacAmplitude)
+      : undefined;
+    const fallbackVacFrequency = normalizedType === "VAC"
+      ? normalizeAcSourceFrequency(fallbackEntry?.vacFrequency)
+      : undefined;
+    const fallbackVacWaveform = normalizedType === "VAC"
+      ? normalizeAcSourceWaveform(fallbackEntry?.vacWaveform)
+      : undefined;
     let rawValue = undefined;
     let rawColor = undefined;
     let rawPolarity = undefined;
     let rawSolveBy = undefined;
+    let rawVacAmplitude = undefined;
+    let rawVacFrequency = undefined;
+    let rawVacWaveform = undefined;
     if (entry && typeof entry === "object" && !Array.isArray(entry)) {
       if (Object.prototype.hasOwnProperty.call(entry, "value")) {
         rawValue = entry.value;
@@ -365,6 +535,15 @@
       }
       if (Object.prototype.hasOwnProperty.call(entry, "xfmrSolveBy")) {
         rawSolveBy = entry.xfmrSolveBy;
+      }
+      if (Object.prototype.hasOwnProperty.call(entry, "vacAmplitude")) {
+        rawVacAmplitude = entry.vacAmplitude;
+      }
+      if (Object.prototype.hasOwnProperty.call(entry, "vacFrequency")) {
+        rawVacFrequency = entry.vacFrequency;
+      }
+      if (Object.prototype.hasOwnProperty.call(entry, "vacWaveform")) {
+        rawVacWaveform = entry.vacWaveform;
       }
     } else if (entry !== undefined) {
       rawValue = entry;
@@ -388,6 +567,16 @@
       normalized.xfmrSolveBy = rawSolveBy === undefined
         ? fallbackSolveBy
         : normalizeTransformerSolveBy(rawSolveBy);
+    } else if (normalizedType === "VAC") {
+      normalized.vacAmplitude = rawVacAmplitude === undefined
+        ? fallbackVacAmplitude
+        : normalizeAcSourceAmplitude(rawVacAmplitude);
+      normalized.vacFrequency = rawVacFrequency === undefined
+        ? fallbackVacFrequency
+        : normalizeAcSourceFrequency(rawVacFrequency);
+      normalized.vacWaveform = rawVacWaveform === undefined
+        ? fallbackVacWaveform
+        : normalizeAcSourceWaveform(rawVacWaveform);
     }
     return normalized;
   };
@@ -570,8 +759,6 @@
     let activeThrow = "A";
     let ron = "0";
     let roff = null;
-    let showRon = false;
-    let showRoff = false;
     for (const token of tokens) {
       const lowered = token.toLowerCase();
       if (lowered === "a") {
@@ -583,19 +770,15 @@
         continue;
       }
       if (lowered === "showron") {
-        showRon = true;
-        continue;
-      }
-      if (lowered === "hideron") {
-        showRon = false;
         continue;
       }
       if (lowered === "showroff") {
-        showRoff = true;
+        continue;
+      }
+      if (lowered === "hideron") {
         continue;
       }
       if (lowered === "hideroff") {
-        showRoff = false;
         continue;
       }
       const ronMatch = /^ron=(.*)$/i.exec(token);
@@ -618,24 +801,22 @@
       }
       const showRonMatch = /^showron=(.*)$/i.exec(token);
       if (showRonMatch) {
-        showRon = parseSwitchBooleanToken("showron", showRonMatch[1]);
+        parseSwitchBooleanToken("showron", showRonMatch[1]);
         continue;
       }
       const showRoffMatch = /^showroff=(.*)$/i.exec(token);
       if (showRoffMatch) {
-        showRoff = parseSwitchBooleanToken("showroff", showRoffMatch[1]);
+        parseSwitchBooleanToken("showroff", showRoffMatch[1]);
         continue;
       }
       throw new Error(
-        `Unknown switch token '${token}'. Allowed tokens: A, B, ron=<value>, roff=<value>, showron/showroff, hideron/hideroff.`
+        `Unknown switch token '${token}'. Allowed tokens: A, B, ron=<value>, roff=<value>.`
       );
     }
     return {
       activeThrow,
       ron,
-      roff,
-      showRon,
-      showRoff
+      roff
     };
   }
 
@@ -645,40 +826,11 @@
     if (!trimmed) {
       return "";
     }
-    if (String(component?.type ?? "").toUpperCase() === "SW") {
-      const formatSwitchResistanceDisplay = (value) => {
-        const unit = getComponentValueUnit("SW");
-        const trimmedValue = String(value ?? "").trim();
-        if (trimmedValue.toLowerCase() === "open") {
-          return "open";
-        }
-        const numeric = parseMetricValue(trimmedValue, unit);
-        if (numeric !== null) {
-          const formatted = formatMetricValue(numeric);
-          if (formatted) {
-            return formatWithUnit(formatted.number, unit, formatted.prefix);
-          }
-        }
-        const fallback = stripUnitSuffix(trimmedValue, unit);
-        if (!fallback) {
-          return unit;
-        }
-        return `${fallback} ${unit}`;
-      };
+    if (String(component?.type ?? "").toUpperCase() === "SW" || String(component?.type ?? "").toUpperCase() === "SPST") {
       const fallbackValue = trimmed.replace(/\s+/g, " ").trim();
       try {
         const parsed = parseSpdtSwitchValue(component?.value);
-        const parts = [String(parsed?.activeThrow ?? "A").toUpperCase() === "B" ? "B" : "A"];
-        if (parsed?.showRon === true) {
-          parts.push(`Ron=${formatSwitchResistanceDisplay(String(parsed?.ron ?? "0").trim() || "0")}`);
-        }
-        if (parsed?.showRoff === true) {
-          const roffValue = parsed?.roff === null || parsed?.roff === undefined
-            ? "open"
-            : formatSwitchResistanceDisplay(String(parsed.roff).trim() || "open");
-          parts.push(`Roff=${roffValue}`);
-        }
-        return parts.join(" ");
+        return String(parsed?.activeThrow ?? "A").toUpperCase() === "B" ? "B" : "A";
       } catch {
         return fallbackValue;
       }
@@ -703,6 +855,47 @@
       return unit;
     }
     return `${withoutUnit} ${unit}`;
+  };
+
+  const compactValueUnitSpacing = (value) =>
+    String(value ?? "").replace(
+      /([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s+([pnumkMGTµμ]?[A-Za-zΩΩ°]+)/g,
+      "$1$2"
+    );
+
+  const formatAcSourceDisplayToken = (token, unit) => {
+    const raw = String(token ?? "").trim();
+    const numeric = parseMetricValue(raw, unit);
+    if (numeric !== null) {
+      const formatted = formatMetricValue(numeric);
+      if (formatted) {
+        return formatWithUnit(formatted.number, unit, formatted.prefix);
+      }
+    }
+    const fallback = raw.replace(/\s+/g, " ").trim();
+    if (!unit) {
+      return fallback;
+    }
+    const withoutUnit = stripUnitSuffix(fallback, unit);
+    if (!withoutUnit) {
+      return unit;
+    }
+    return `${withoutUnit} ${unit}`;
+  };
+
+  const getAcVoltageSourceDisplayLines = (component, options) => {
+    const state = getAcSourceState(component);
+    const includeUnitSpace = options?.includeUnitSpace !== false;
+    const lines = [
+      formatAcSourceDisplayToken(state.amplitudeToken, "V"),
+      formatAcSourceDisplayToken(state.frequencyToken, "Hz")
+    ]
+      .map((entry) => String(entry ?? "").trim())
+      .filter(Boolean);
+    if (includeUnitSpace) {
+      return lines;
+    }
+    return lines.map((entry) => compactValueUnitSpacing(entry));
   };
 
   const getMeasurementTextWeight = () => DEFAULT_MEASUREMENT_TEXT_WEIGHT;
@@ -791,6 +984,11 @@
     normalizeTransformerWindingResistance,
     normalizeTransformerPolarity,
     normalizeTransformerSolveBy,
+    normalizeAcSourceWaveform,
+    normalizeAcSourceAmplitude,
+    normalizeAcSourceFrequency,
+    normalizeAcSourcePhase,
+    normalizeAcSourceDcOffset,
     normalizeTextOnly,
     normalizeTextFont,
     normalizeTextSize,
@@ -1234,6 +1432,14 @@
     computeTransformerSecondaryInductance,
     computeTransformerTurnsRatio,
     normalizeTransformerComponentState,
+    normalizeAcSourceWaveform,
+    listAcSourceWaveforms,
+    normalizeAcSourceAmplitude,
+    normalizeAcSourceFrequency,
+    normalizeAcSourcePhase,
+    normalizeAcSourceDcOffset,
+    buildAcVoltageSourceSpiceValue,
+    getAcVoltageSourceDisplayLines,
     normalizeTextOnly,
     resolveNetColors,
     getTextFontOptions: () => TEXT_FONT_OPTIONS.slice(),

@@ -197,6 +197,7 @@
   });
   const valueFormatApi = Object.freeze({
     formatComponentDisplayValue: requireSchematicMethod("formatComponentDisplayValue"),
+    getAcVoltageSourceDisplayLines: requireSchematicMethod("getAcVoltageSourceDisplayLines"),
     getMeasurementTextWeight: requireSchematicMethod("getMeasurementTextWeight")
   });
   const labelLayoutApi = Object.freeze({
@@ -466,6 +467,20 @@
       /([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s+([pnumkMGTµμ]?[A-Za-zΩΩ°]+)/g,
       "$1$2"
     );
+  };
+
+  const getDisplayValueLines = (component, options) => {
+    const type = String(component?.type ?? "").trim().toUpperCase();
+    if (type === "VAC") {
+      const includeUnitSpace = normalizeSchematicValueUnitSpacing(options?.includeSchematicValueUnitSpace);
+      const lines = valueFormatApi.getAcVoltageSourceDisplayLines(component, { includeUnitSpace });
+      if (Array.isArray(lines)) {
+        return lines.map((entry) => String(entry ?? "").trim()).filter(Boolean);
+      }
+      return [];
+    }
+    const displayValue = formatDisplayValue(component, options);
+    return displayValue ? [displayValue] : [];
   };
 
   const getDisplayName = (component) => {
@@ -765,6 +780,11 @@
   const getTransformerExtents = (component) =>
     renderPlanContracts.getTransformerExtents(component);
 
+  const isSwitchComponentType = (type) => {
+    const normalized = String(type ?? "").trim().toUpperCase();
+    return normalized === "SW" || normalized === "SPST";
+  };
+
   const normalizeSpdtThrow = (value) =>
     String(value ?? "").trim().toUpperCase() === "B" ? "B" : "A";
 
@@ -776,17 +796,13 @@
         ron: String(parsed?.ron ?? "0").trim() || "0",
         roff: parsed?.roff === null || parsed?.roff === undefined
           ? null
-          : (String(parsed.roff).trim() || null),
-        showRon: parsed?.showRon === true,
-        showRoff: parsed?.showRoff === true
+          : (String(parsed.roff).trim() || null)
       };
     } catch {
       return {
         activeThrow: "A",
         ron: "0",
-        roff: null,
-        showRon: false,
-        showRoff: false
+        roff: null
       };
     }
   };
@@ -796,20 +812,12 @@
     const activeThrow = normalizeSpdtThrow(stateValue.activeThrow);
     const ron = String(stateValue.ron ?? "").trim() || "0";
     const roff = String(stateValue.roff ?? "").trim();
-    const showRon = stateValue.showRon === true;
-    const showRoff = stateValue.showRoff === true;
     const tokens = [activeThrow];
     if (ron !== "0") {
       tokens.push(`ron=${ron}`);
     }
     if (roff) {
       tokens.push(`roff=${roff}`);
-    }
-    if (showRon) {
-      tokens.push("showron");
-    }
-    if (showRoff) {
-      tokens.push("showroff");
     }
     return tokens.join(" ");
   };
@@ -819,9 +827,7 @@
     return formatSpdtSwitchValue({
       activeThrow: parsed.activeThrow === "A" ? "B" : "A",
       ron: parsed.ron,
-      roff: parsed.roff,
-      showRon: parsed.showRon,
-      showRoff: parsed.showRoff
+      roff: parsed.roff
     });
   };
 
@@ -1497,6 +1503,42 @@
     svg.appendChild(group);
   };
 
+  const drawSpstSwitchSymbol = (svg, component, options) => {
+    const info = getTwoPinInfo(component);
+    if (!info) {
+      return;
+    }
+    const group = document.createElementNS(SVG_NS, "g");
+    group.setAttribute("data-component", component.id);
+    group.setAttribute("data-symbol", "SPST");
+    if (options?.className) {
+      group.setAttribute("class", options.className);
+    }
+    if (options?.dataHighlight) {
+      group.setAttribute("data-component-highlight", String(options.dataHighlight));
+    }
+    if (Number.isFinite(options?.opacity)) {
+      group.setAttribute("opacity", String(options.opacity));
+    }
+    group.setAttribute("transform", `translate(${info.start.x} ${info.start.y}) rotate(${info.angle})`);
+    const style = {
+      stroke: options?.stroke ?? STROKE,
+      width: options?.width ?? STROKE_WIDTH,
+      fill: options?.fill
+    };
+    const handled = typeof symbolApi?.drawShape === "function"
+      ? symbolApi.drawShape(symbolCtx, "SPST", group, {
+        style,
+        length: info.length,
+        value: component?.value
+      })
+      : false;
+    if (!handled) {
+      return;
+    }
+    svg.appendChild(group);
+  };
+
   const drawTransformerSymbol = (svg, component, options) => {
     const plan = getTransformerRenderPlan(component);
     const group = document.createElementNS(SVG_NS, "g");
@@ -1646,6 +1688,10 @@
       drawSpdtSwitchSymbol(svg, component, options);
       return;
     }
+    if (type === "SPST") {
+      drawSpstSwitchSymbol(svg, component, options);
+      return;
+    }
     if (type === "XFMR") {
       drawTransformerSymbol(svg, component, options);
       return;
@@ -1686,7 +1732,8 @@
         rotation: info.angle,
         style,
         resistorStyle: component?.resistorStyle,
-        diodeDisplayType: component?.diodeDisplayType
+        diodeDisplayType: component?.diodeDisplayType,
+        vacWaveform: component?.vacWaveform
       })
       : false;
     if (!handled) {
@@ -1732,13 +1779,13 @@
   const drawComponentLabel = (svg, component, options) => {
     const resolvedTextStyle = resolveSchematicTextStyle(options?.schematicTextStyle);
     const valueSize = getSchematicTextValueSize(resolvedTextStyle);
-    const displayValue = formatDisplayValue(component, {
+    const displayValueLines = getDisplayValueLines(component, {
       includeSchematicValueUnitSpace: options?.includeSchematicValueUnitSpace
     });
-    const hasValue = Boolean(displayValue);
     const displayName = getDisplayName(component);
     const labelRotation = Number(component?.labelRotation ?? 0);
-    const lineCount = (hasValue ? 2 : 1) + (options?.extraLines ?? 0);
+    const valueLineCount = displayValueLines.length;
+    const lineCount = 1 + valueLineCount + (options?.extraLines ?? 0);
     const resolvedLineHeight = getSchematicTextLineHeight(resolvedTextStyle, LABEL_LINE_HEIGHT);
     const layout = getLabelLayout(
       options?.midX ?? 0,
@@ -1778,8 +1825,8 @@
     if (options?.dataHighlight) {
       label.setAttribute("data-component-label-highlight", String(options.dataHighlight));
     }
-    if (hasValue) {
-      const valueLabel = appendText(svg, resolvedX, resolvedY + resolvedLineHeight, displayValue, {
+    displayValueLines.forEach((lineText, index) => {
+      const valueLabel = appendText(svg, resolvedX, resolvedY + (resolvedLineHeight * (index + 1)), lineText, {
         size: valueSize,
         fill: valueColor,
         anchor: layout.anchor,
@@ -1794,7 +1841,7 @@
       if (options?.dataHighlight) {
         valueLabel.setAttribute("data-component-label-highlight", String(options.dataHighlight));
       }
-    }
+    });
     return {
       layout: {
         ...layout,
@@ -2030,6 +2077,12 @@
       maxX = extents.maxX + pad;
       minY = extents.minY - pad;
       maxY = extents.maxY + pad;
+    } else if (type === "SPST") {
+      const pad = 6;
+      minX = Math.min(...xs) - pad;
+      maxX = Math.max(...xs) + pad;
+      minY = Math.min(...ys) - pad;
+      maxY = Math.max(...ys) + pad;
     } else if (type === "XFMR") {
       const extents = getTransformerExtents(component);
       const pad = 6;
@@ -2550,6 +2603,12 @@
             xfmrPolarity: String(entry?.xfmrPolarity ?? ""),
             xfmrSolveBy: String(entry?.xfmrSolveBy ?? "")
           }
+          : key === "VAC"
+            ? {
+              vacAmplitude: String(entry?.vacAmplitude ?? ""),
+              vacFrequency: String(entry?.vacFrequency ?? ""),
+              vacWaveform: String(entry?.vacWaveform ?? "")
+            }
           : {})
       };
     };
@@ -6103,7 +6162,7 @@
               handle.setAttribute("data-box-resize-component", String(component.id));
             });
           }
-          const suppressSelectionText = type === "ARR" || type === "BOX" || type === "SW";
+          const suppressSelectionText = type === "ARR" || type === "BOX" || type === "SW" || type === "SPST";
           const info = getTwoPinInfo(component);
           const labelGeometry = suppressSelectionText
             ? null
@@ -8185,6 +8244,26 @@
           component.xfmrSolveBy = String(typeDefaults?.xfmrSolveBy ?? "");
         }
       }
+      if (String(component?.type ?? "").toUpperCase() === "VAC") {
+        if (Object.prototype.hasOwnProperty.call(spec, "vacAmplitude")) {
+          component.vacAmplitude = String(spec.vacAmplitude ?? "");
+        } else if (useSymbolFactory) {
+          const typeDefaults = getComponentDefaultForType(component.type);
+          component.vacAmplitude = String(typeDefaults?.vacAmplitude ?? "");
+        }
+        if (Object.prototype.hasOwnProperty.call(spec, "vacFrequency")) {
+          component.vacFrequency = String(spec.vacFrequency ?? "");
+        } else if (useSymbolFactory) {
+          const typeDefaults = getComponentDefaultForType(component.type);
+          component.vacFrequency = String(typeDefaults?.vacFrequency ?? "");
+        }
+        if (Object.prototype.hasOwnProperty.call(spec, "vacWaveform")) {
+          component.vacWaveform = String(spec.vacWaveform ?? "");
+        } else if (useSymbolFactory) {
+          const typeDefaults = getComponentDefaultForType(component.type);
+          component.vacWaveform = String(typeDefaults?.vacWaveform ?? "");
+        }
+      }
       if (component && hasExplicitNetColor) {
         const normalizedColor = normalizeNetColorValue(spec.netColor);
         if (normalizedColor) {
@@ -9686,7 +9765,7 @@
         const primaryComponentId = state.drag.primaryComponentId;
         const primaryComponent = getComponent(primaryComponentId);
         const primaryType = String(primaryComponent?.type ?? "").toUpperCase();
-        if (primaryType === "SW" && state.drag.wasSelectedBeforePointerDown) {
+        if (isSwitchComponentType(primaryType) && state.drag.wasSelectedBeforePointerDown) {
           const nextValue = buildToggledSpdtSwitchValue(primaryComponent?.value);
           state.lastSelectClick = null;
           state.drag = null;

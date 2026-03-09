@@ -13,7 +13,7 @@
     }
     const sourceTypes = sourceComponentTypes instanceof Set
       ? sourceComponentTypes
-      : new Set(["V", "I"]);
+      : new Set(["V", "VAC", "I"]);
     const sourceIds = [];
     Object.values(componentLines).forEach((lineInfo) => {
       const type = String(lineInfo?.type ?? "").trim().toUpperCase();
@@ -77,7 +77,7 @@
       sourceGuidanceNote.hidden = sourceIds.length > 0;
       sourceGuidanceNote.textContent = sourceIds.length
         ? ""
-        : "No source components are available. Add a Voltage Source (V) or Current Source (I) from the Tools panel.";
+        : "No source components are available. Add a Voltage Source (V), AC Voltage Source (VAC), or Current Source (I) from the Tools panel.";
     }
     return configChanged;
   };

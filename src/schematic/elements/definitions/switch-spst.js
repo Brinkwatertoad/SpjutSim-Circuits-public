@@ -1,22 +1,22 @@
-(function registerThreeWaySwitchElement() {
+(function registerSpstSwitchElement() {
   const registry = typeof self !== "undefined" ? self.SpjutSimSchematicElementCatalog : null;
   if (!registry || typeof registry.registerElementDefinition !== "function") {
     throw new Error("Schematic element registry missing. Check src/schematic/elements/registry.js load order.");
   }
   registry.registerElementDefinition({
-    type: "SW",
-    label: "3-Way Switch",
-    toolLabel: "3W",
-    toolName: "3-Way Switch",
-    shortcut: "3",
+    type: "SPST",
+    label: "SPST Switch",
+    toolLabel: "SPST",
+    toolName: "SPST Switch",
+    shortcut: "4",
     showInToolbar: true,
-    toolbarOrder: 60,
-    catalogOrder: 60,
+    toolbarOrder: 61,
+    catalogOrder: 61,
     classification: "electrical",
     help: {
-      title: "3-Way Switch (3)",
-      summary: "3-way SPDT (Single Pole Double Throw) switch with inline throw/Ron/Roff controls.",
-      definition: "Default Ron is 0 (short); Default Roff is infinite (open)."
+      title: "SPST Switch (4)",
+      summary: "Single Pole Single Throw switch with inline position/Ron/Roff controls.",
+      definition: "Position A is connected (Ron). Position B is disconnected (Roff, or open if Roff is omitted)."
     },
     valueField: { label: "Position", unit: "", visible: true }
   });

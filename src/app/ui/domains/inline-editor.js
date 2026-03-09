@@ -5,6 +5,10 @@
   const PROBE_TYPE_UPDATES = new Set(["PV", "PI", "PP"]);
 
   const normalizeType = (type) => String(type ?? "").trim().toUpperCase();
+  const isSwitchComponentType = (type) => {
+    const normalized = normalizeType(type);
+    return normalized === "SW" || normalized === "SPST";
+  };
   const normalizeSpdtThrow = (value) => (String(value ?? "").trim().toUpperCase() === "B" ? "B" : "A");
 
   const toOptionalToken = (value) => {
@@ -15,9 +19,7 @@
   const getDefaultSwitchState = () => ({
     activeThrow: "A",
     ron: "0",
-    roff: null,
-    showRon: false,
-    showRoff: false
+    roff: null
   });
 
   const normalizeValueFieldMeta = (meta) => {
@@ -34,7 +36,7 @@
   const getInlineModeFlags = (input) => {
     const args = input && typeof input === "object" ? input : {};
     const type = normalizeType(args.type);
-    const isSwitchComponent = type === "SW";
+    const isSwitchComponent = isSwitchComponentType(type);
     const isProbeComponent = args.isProbe === true;
     const supportsValueField = args.supportsValueField === true;
     const isNamedNode = type === "NET";
@@ -86,9 +88,7 @@
       return {
         activeThrow: normalizeSpdtThrow(parsed?.activeThrow),
         ron: String(parsed?.ron ?? "0").trim() || "0",
-        roff: toOptionalToken(parsed?.roff),
-        showRon: parsed?.showRon === true,
-        showRoff: parsed?.showRoff === true
+        roff: toOptionalToken(parsed?.roff)
       };
     } catch {
       return getDefaultSwitchState();
@@ -100,20 +100,12 @@
     const activeThrow = normalizeSpdtThrow(next.activeThrow);
     const ron = String(next.ron ?? "").trim() || "0";
     const roff = String(next.roff ?? "").trim();
-    const showRon = next.showRon === true;
-    const showRoff = next.showRoff === true;
     const tokens = [activeThrow];
     if (ron !== "0") {
       tokens.push(`ron=${ron}`);
     }
     if (roff) {
       tokens.push(`roff=${roff}`);
-    }
-    if (showRon) {
-      tokens.push("showron");
-    }
-    if (showRoff) {
-      tokens.push("showroff");
     }
     return tokens.join(" ");
   };
@@ -123,24 +115,14 @@
     const baseState = args.baseState && typeof args.baseState === "object" ? args.baseState : getDefaultSwitchState();
     const overrides = args.overrides && typeof args.overrides === "object" ? args.overrides : {};
     const hasRoffOverride = Object.prototype.hasOwnProperty.call(overrides, "roff");
-    const hasShowRonOverride = Object.prototype.hasOwnProperty.call(overrides, "showRon");
-    const hasShowRoffOverride = Object.prototype.hasOwnProperty.call(overrides, "showRoff");
     const hasActiveThrowOverride = Object.prototype.hasOwnProperty.call(overrides, "activeThrow");
     const hasRonOverride = Object.prototype.hasOwnProperty.call(overrides, "ron");
-    const hasShowRonChecked = Object.prototype.hasOwnProperty.call(args, "showRonChecked");
-    const hasShowRoffChecked = Object.prototype.hasOwnProperty.call(args, "showRoffChecked");
     return {
       activeThrow: normalizeSpdtThrow(hasActiveThrowOverride ? overrides.activeThrow : baseState.activeThrow),
       ron: String(hasRonOverride ? overrides.ron : (args.ronInput ?? baseState.ron)).trim() || "0",
       roff: hasRoffOverride
         ? toOptionalToken(overrides.roff)
-        : toOptionalToken(args.roffInput ?? baseState.roff),
-      showRon: hasShowRonOverride
-        ? overrides.showRon === true
-        : ((hasShowRonChecked ? args.showRonChecked : baseState.showRon) === true),
-      showRoff: hasShowRoffOverride
-        ? overrides.showRoff === true
-        : ((hasShowRoffChecked ? args.showRoffChecked : baseState.showRoff) === true)
+        : toOptionalToken(args.roffInput ?? baseState.roff)
     };
   };
 
@@ -244,6 +226,7 @@
     normalizeValueFieldMeta,
     getInlineModeFlags,
     getInlineFocusTarget,
+    isSwitchComponentType,
     isCloseCommitKey,
     normalizeSpdtThrow,
     parseSpdtSwitchValueSafe,

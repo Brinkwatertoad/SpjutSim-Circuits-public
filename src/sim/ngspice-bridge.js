@@ -553,6 +553,76 @@ function collectVectorsWithFallback(plotHint) {
   return initial;
 }
 
+/** @param {string} signalName */
+function getVectorSignalLeaf(signalName) {
+  const token = String(signalName ?? "").trim().toLowerCase();
+  if (!token) {
+    return "";
+  }
+  if (!token.includes(".")) {
+    return token;
+  }
+  const parts = token.split(".");
+  return parts[parts.length - 1] || token;
+}
+
+/** @param {string} signalName */
+function normalizeCurrentVectorTarget(signalName) {
+  let target = getVectorSignalLeaf(signalName);
+  if (!target) {
+    return "";
+  }
+  if (target.endsWith("#branch")) {
+    target = target.slice(0, -7).trim();
+  }
+  const wrapped = target.match(/^i\((.+)\)$/i);
+  if (wrapped) {
+    return String(wrapped[1] ?? "").trim().toLowerCase();
+  }
+  const behavior = target.match(/^@(.+)\[(?:i|id)\]$/i);
+  if (behavior) {
+    return String(behavior[1] ?? "").trim().toLowerCase();
+  }
+  return target;
+}
+
+/** @param {string} signalName */
+function isCurrentVectorSignal(signalName) {
+  const leaf = getVectorSignalLeaf(signalName);
+  return Boolean(
+    leaf.endsWith("#branch")
+    || leaf.startsWith("i(")
+    || /^@.+\[(?:i|id)\]$/i.test(leaf)
+  );
+}
+
+/**
+ * Ngspice branch currents through voltage sources use opposite sign convention
+ * from passive elements. Flip them once at extraction so UI/CSV stay consistent.
+ * @param {string} signalName
+ */
+function shouldFlipCurrentSignalSign(signalName) {
+  if (!isCurrentVectorSignal(signalName)) {
+    return false;
+  }
+  const target = normalizeCurrentVectorTarget(signalName);
+  return target.startsWith("v");
+}
+
+/** @param {string} signalName */
+function getSignalSignScale(signalName) {
+  return shouldFlipCurrentSignalSign(signalName) ? -1 : 1;
+}
+
+/**
+ * @param {number} value
+ * @param {string} signalName
+ */
+function applySignalSign(value, signalName) {
+  const scale = getSignalSignScale(signalName);
+  return scale === -1 ? -value : value;
+}
+
 /** @param {unknown} entry */
 function getRealValue(entry) {
   if (Array.isArray(entry)) {
@@ -587,6 +657,9 @@ function normalizeTargetSignals(targetSignals, availableSignals) {
     }
     const lower = raw.toLowerCase();
     const candidates = [raw];
+    const isCurrentLike = lower.startsWith("i(")
+      || lower.endsWith("#branch")
+      || /^@.+\[(?:i|id)\]$/i.test(lower);
     const differentialMatch = lower.match(/^v\(\s*([^(),\s]+)\s*,\s*([^(),\s]+)\s*\)$/);
     if (differentialMatch) {
       const pos = differentialMatch[1];
@@ -606,7 +679,31 @@ function normalizeTargetSignals(targetSignals, availableSignals) {
         candidates.push(`v(${pos})`);
       }
     }
-    if (!lower.startsWith("v(") && !lower.startsWith("i(")) {
+    const currentMatch = lower.match(/^i\(\s*([^()\s]+)\s*\)$/);
+    if (currentMatch) {
+      const target = currentMatch[1];
+      candidates.push(`${target}#branch`);
+      candidates.push(`i(${target})#branch`);
+      candidates.push(`@${target}[i]`);
+      candidates.push(`@${target}[id]`);
+    }
+    const branchMatch = lower.match(/^(.+)#branch$/);
+    if (branchMatch) {
+      const target = branchMatch[1];
+      candidates.push(`i(${target})`);
+      candidates.push(`@${target}[i]`);
+      candidates.push(`@${target}[id]`);
+    }
+    const behaviorMatch = lower.match(/^@(.+)\[(?:i|id)\]$/i);
+    if (behaviorMatch) {
+      const target = String(behaviorMatch[1] ?? "").trim();
+      if (target) {
+        candidates.push(`i(${target})`);
+        candidates.push(`${target}#branch`);
+        candidates.push(`i(${target})#branch`);
+      }
+    }
+    if (!lower.startsWith("v(") && !isCurrentLike) {
       candidates.push(`v(${raw})`);
     } else if (lower.startsWith("v(") && lower.endsWith(")")) {
       candidates.push(raw.slice(2, -1));
@@ -859,7 +956,12 @@ function extractTranResults(payload, netlist, targetSignals) {
 
   traceNames.forEach((name) => {
     const info = vectorMap[name];
-    const rawY = Array.isArray(info?.data) ? info.data.map(getRealValue).filter((val) => val !== null) : [];
+    const rawY = Array.isArray(info?.data)
+      ? info.data
+        .map(getRealValue)
+        .filter((val) => val !== null)
+        .map((val) => applySignalSign(val, name))
+      : [];
     if (!rawY.length) {
       return;
     }
@@ -1019,18 +1121,20 @@ function extractAcResults(payload, netlist, targetSignals) {
     if (!info || !Array.isArray(info.data)) {
       return;
     }
+    const signScale = getSignalSignScale(name);
     const magValues = [];
     const phaseValues = [];
     for (const val of info.data) {
       if (Array.isArray(val) && val.length >= 2) {
-        const re = val[0];
-        const im = val[1];
+        const re = Number(val[0]) * signScale;
+        const im = Number(val[1]) * signScale;
         const mag = Math.sqrt(re * re + im * im);
         magValues.push(mag > 0 ? 20 * Math.log10(mag) : -Infinity);
         phaseValues.push(Math.atan2(im, re) * (180 / Math.PI));
       } else if (typeof val === "number") {
-        magValues.push(val > 0 ? 20 * Math.log10(Math.abs(val)) : -Infinity);
-        phaseValues.push(0);
+        const scaled = val * signScale;
+        magValues.push(scaled > 0 ? 20 * Math.log10(Math.abs(scaled)) : -Infinity);
+        phaseValues.push(scaled >= 0 ? 0 : 180);
       }
     }
     if (!magValues.length) {
@@ -1309,7 +1413,12 @@ function extractDcResults(payload, netlist, targetSignals) {
 
   traceNames.forEach((name) => {
     const info = vectorMap[name];
-    const rawY = Array.isArray(info?.data) ? info.data.map(getRealValue).filter((val) => val !== null) : [];
+    const rawY = Array.isArray(info?.data)
+      ? info.data
+        .map(getRealValue)
+        .filter((val) => val !== null)
+        .map((val) => applySignalSign(val, name))
+      : [];
     if (!rawY.length) {
       return;
     }
@@ -1406,7 +1515,7 @@ function extractOpResults(payload) {
     if (info && Array.isArray(info.data) && info.data.length > 0) {
       const first = info.data[0];
       if (Array.isArray(first)) {
-        value = { real: first[0], imag: first[1] };
+        value = { real: Number(first[0]), imag: Number(first[1]) };
       } else if (Number.isFinite(first)) {
         value = first;
       }
@@ -1417,6 +1526,15 @@ function extractOpResults(payload) {
     const isVoltage = label.startsWith("v(")
       || (!isCurrent && !label.startsWith("@") && !label.includes("[") && !label.includes("#"));
     if (isCurrent) {
+      const signScale = getSignalSignScale(shortName || name);
+      if (value && typeof value === "object" && Number.isFinite(value.real) && Number.isFinite(value.imag)) {
+        value = {
+          real: value.real * signScale,
+          imag: value.imag * signScale
+        };
+      } else if (Number.isFinite(value)) {
+        value = value * signScale;
+      }
       currents.push({ name: shortName || name, value });
     } else if (isVoltage) {
       nodes.push({ name: shortName || name, value });

@@ -59,8 +59,6 @@
     const inlineSwitchPositionB = args.inlineSwitchPositionB;
     const inlineSwitchRonInput = args.inlineSwitchRonInput;
     const inlineSwitchRoffInput = args.inlineSwitchRoffInput;
-    const inlineSwitchShowRonInput = args.inlineSwitchShowRonInput;
-    const inlineSwitchShowRoffInput = args.inlineSwitchShowRoffInput;
     const canEditSwitchThrow = typeof args.canEditSwitchThrow === "function" ? args.canEditSwitchThrow : () => true;
     const onSetActiveThrow = typeof args.onSetActiveThrow === "function" ? args.onSetActiveThrow : () => { };
     const onCommitSwitchState = typeof args.onCommitSwitchState === "function" ? args.onCommitSwitchState : () => { };
@@ -100,18 +98,6 @@
       const onRoffInput = () => onCommitSwitchState({ roff: inlineSwitchRoffInput.value });
       inlineSwitchRoffInput.addEventListener("input", onRoffInput);
       cleanups.push(() => inlineSwitchRoffInput.removeEventListener("input", onRoffInput));
-    }
-
-    if (inlineSwitchShowRonInput && typeof inlineSwitchShowRonInput.addEventListener === "function") {
-      const onShowRonChange = () => onCommitSwitchState({ showRon: inlineSwitchShowRonInput.checked });
-      inlineSwitchShowRonInput.addEventListener("change", onShowRonChange);
-      cleanups.push(() => inlineSwitchShowRonInput.removeEventListener("change", onShowRonChange));
-    }
-
-    if (inlineSwitchShowRoffInput && typeof inlineSwitchShowRoffInput.addEventListener === "function") {
-      const onShowRoffChange = () => onCommitSwitchState({ showRoff: inlineSwitchShowRoffInput.checked });
-      inlineSwitchShowRoffInput.addEventListener("change", onShowRoffChange);
-      cleanups.push(() => inlineSwitchShowRoffInput.removeEventListener("change", onShowRoffChange));
     }
 
     return () => cleanups.forEach((cleanup) => cleanup());
