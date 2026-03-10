@@ -6623,6 +6623,32 @@
       }
     };
 
+    const cloneRegisteredElementProperties = (component) => {
+      const type = String(component?.type ?? "").toUpperCase();
+      if (!type) return {};
+      const specs = getElementPropertySpecs(type);
+      if (!specs.length) return {};
+      const result = {};
+      specs.forEach((spec) => {
+        if (!spec) return;
+        // Skip keys that have hardcoded clone handling in cloneModel
+        const key = spec.key;
+        if (key === "id" || key === "name" || key === "type" || key === "value"
+          || key === "rotation" || key === "labelRotation" || key === "pins"
+          || key === "netColor" || key === "probeDiffRotations") return;
+        if (!Object.prototype.hasOwnProperty.call(component, spec.key)) return;
+        const raw = component[spec.key];
+        if (spec.preserveRawInput === true) {
+          result[spec.key] = raw;
+        } else {
+          result[spec.key] = typeof spec.normalizeValue === "function"
+            ? spec.normalizeValue(raw)
+            : raw;
+        }
+      });
+      return result;
+    };
+
     const cloneModel = (source) => ({
       components: (source?.components ?? []).map((component) => ({
         id: component.id,
@@ -6634,30 +6660,6 @@
         ...(Object.prototype.hasOwnProperty.call(component, "netColor")
           ? { netColor: component.netColor ?? "" }
           : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "textOnly")
-          ? { textOnly: component.textOnly === true }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "textFont")
-          ? { textFont: String(component.textFont ?? "") }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "textSize")
-          ? { textSize: Number(component.textSize) }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "textBold")
-          ? { textBold: component.textBold === true }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "textItalic")
-          ? { textItalic: component.textItalic === true }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "textUnderline")
-          ? { textUnderline: component.textUnderline === true }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "groundVariant")
-          ? { groundVariant: normalizeGroundVariantValue(component.groundVariant) }
-          : {}),
-        ...(Object.prototype.hasOwnProperty.call(component, "resistorStyle")
-          ? { resistorStyle: normalizeResistorStyleValue(component.resistorStyle) }
-          : {}),
         ...(Object.prototype.hasOwnProperty.call(component, "probeDiffRotations")
           ? {
             probeDiffRotations: {
@@ -6666,6 +6668,7 @@
             }
           }
           : {}),
+        ...cloneRegisteredElementProperties(component),
         rotation: component.rotation,
         labelRotation: component.labelRotation,
         pins: (component.pins ?? []).map((pin) => ({

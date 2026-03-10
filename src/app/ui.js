@@ -196,6 +196,44 @@ const requireUINetlistPanelModule = () => {
   }
   return api;
 };
+const getUIDialogsApi = () => (typeof self !== "undefined" ? (self.SpjutSimUIDialogs ?? null) : null);
+const requireUIDialogsModule = () => {
+  const api = getUIDialogsApi();
+  if (!api
+    || typeof api.buildAboutDialog !== "function"
+    || typeof api.buildHotkeysDialog !== "function"
+    || typeof api.buildSettingsDialog !== "function"
+    || typeof api.setDialogOpen !== "function") {
+    throw new Error("UI dialogs module missing. Check src/app/ui/dialogs.js load order.");
+  }
+  return api;
+};
+const getUITraceColorsApi = () => (typeof self !== "undefined" ? (self.SpjutSimUITraceColors ?? null) : null);
+const requireUITraceColorsModule = () => {
+  const api = getUITraceColorsApi();
+  if (!api || typeof api.createTraceColorManager !== "function") {
+    throw new Error("UI trace-colors module missing. Check src/app/ui/trace-colors.js load order.");
+  }
+  return api;
+};
+const getUIPlotTooltipApi = () => (typeof self !== "undefined" ? (self.SpjutSimUIPlotTooltip ?? null) : null);
+const requireUIPlotTooltipModule = () => {
+  const api = getUIPlotTooltipApi();
+  if (!api
+    || typeof api.findNearestIndex !== "function"
+    || typeof api.attachPlotTooltip !== "function") {
+    throw new Error("UI plot-tooltip module missing. Check src/app/ui/plot-tooltip.js load order.");
+  }
+  return api;
+};
+const getUIInlinePropertyContractsApi = () => (typeof self !== "undefined" ? (self.SpjutSimUIInlinePropertyContracts ?? null) : null);
+const requireUIInlinePropertyContractsModule = () => {
+  const api = getUIInlinePropertyContractsApi();
+  if (!api || typeof api.createInlinePropertyContracts !== "function") {
+    throw new Error("UI inline-property-contracts module missing. Check src/app/ui/inline-property-contracts.js load order.");
+  }
+  return api;
+};
 
 const uiToolsDomain = requireUIDomain("tools");
 const uiInlineEditorDomain = requireUIDomain("inlineEditor");
@@ -215,6 +253,10 @@ const uiSimulationConfigModule = requireUISimulationConfigModule();
 const uiPlotControlsModule = requireUIPlotControlsModule();
 const uiResultsTableModule = requireUIResultsTableModule();
 const uiNetlistPanelModule = requireUINetlistPanelModule();
+const uiDialogsModule = requireUIDialogsModule();
+const uiTraceColorsModule = requireUITraceColorsModule();
+const uiPlotTooltipModule = requireUIPlotTooltipModule();
+const uiInlinePropertyContractsModule = requireUIInlinePropertyContractsModule();
 
 let showGrid = uiPlotDomain.getDefaultShowGrid();
 const ALLOWED_GRID_SIZES = Object.freeze(
@@ -305,1224 +347,6 @@ let simulationConfig = createSimulationConfig();
 let latestSchematicCompile = null;
 const persistenceApi = typeof self !== "undefined" ? self.SpjutSimPersistence : null;
 
-const ABOUT_DIALOG_CONTENT = Object.freeze([
-  {
-    kind: "text",
-    text: "SpjutSim Circuits is a web-based electrical circuit schematic editor and simulator, aimed at students. This is an early version, so expect bugs, rough edges, and missing features."
-  },
-  {
-    kind: "text",
-    text: "I'm trying to make this program good, but it may be bad. Verify results independently; you're responsible for your designs and outcomes. Provided \"AS IS\" without warranties; no liability for damages. You use it at your own risk. Abandon hope, all ye who enter here."
-  },
-  {
-    kind: "link-line",
-    prefix: "",
-    linkText: "Copyright (c) 2026 Jakob Spjut.",
-    url: "https://github.com/Brinkwatertoad/SpjutSim-Circuits-public/blob/main/LICENSE.md",
-    suffix: " All rights reserved."
-  },
-  {
-    kind: "text",
-    text: "No license is granted to use, copy, modify, or distribute this repository's contents, except as necessary to access and use the accompanying website via a web browser."
-  },
-  {
-    kind: "link-line",
-    prefix: "Circuit simulation uses ngspice, which is available under the ",
-    linkText: "BSD-3-clause license",
-    url: "https://github.com/Brinkwatertoad/SpjutSim-Circuits-public/blob/main/THIRD_PARTY_NOTICES.md",
-    suffix: "."
-  }
-]);
-
-const HOTKEY_SHORTCUTS = Object.freeze({
-  open: "Ctrl+O",
-  save: "Ctrl+S",
-  saveAs: "Ctrl+Shift+S",
-  settings: "Ctrl+,",
-  toggleHelp: "H",
-  runSimulation: "F5",
-  edit: "Ctrl+E",
-  selectAll: "Ctrl+A",
-  delete: "Del",
-  copy: "Ctrl+C",
-  cut: "Ctrl+X",
-  paste: "Ctrl+V",
-  rotateCw: "Space",
-  rotateCcw: "Shift+Space",
-  flipH: "X",
-  flipV: "Y",
-  undo: "Ctrl+Z",
-  redo: "Ctrl+Y",
-  redoAlt: "Ctrl+Shift+Z",
-  escape: "Escape"
-});
-
-const setDialogOpen = (dialog, isOpen) => {
-  if (!(dialog instanceof HTMLElement)) {
-    return;
-  }
-  const shouldOpen = Boolean(isOpen);
-  dialog.hidden = !shouldOpen;
-  dialog.classList.toggle("hidden", !shouldOpen);
-};
-
-const buildAboutDialog = (container) => {
-  const aboutDialog = document.createElement("div");
-  aboutDialog.className = "modal-backdrop hidden";
-  aboutDialog.dataset.aboutDialog = "1";
-  aboutDialog.setAttribute("role", "dialog");
-  aboutDialog.setAttribute("aria-modal", "true");
-  aboutDialog.hidden = true;
-  const aboutPanel = document.createElement("div");
-  aboutPanel.className = "modal-dialog about-modal-dialog";
-  aboutPanel.dataset.aboutPanel = "1";
-  const aboutTitle = document.createElement("div");
-  aboutTitle.className = "modal-title";
-  aboutTitle.dataset.aboutTitle = "1";
-  aboutTitle.textContent = "About SpjutSim Circuits";
-  const aboutBody = document.createElement("div");
-  aboutBody.className = "modal-body about-modal-body";
-  aboutBody.dataset.aboutBody = "1";
-  ABOUT_DIALOG_CONTENT.forEach((entry) => {
-    const paragraph = document.createElement("p");
-    if (entry.kind === "link-line") {
-      if (entry.prefix) {
-        paragraph.append(document.createTextNode(entry.prefix));
-      }
-      const link = document.createElement("a");
-      link.href = entry.url;
-      link.textContent = entry.linkText;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      paragraph.append(link);
-      if (entry.suffix) {
-        paragraph.append(document.createTextNode(entry.suffix));
-      }
-    } else {
-      paragraph.textContent = entry.text;
-    }
-    aboutBody.appendChild(paragraph);
-  });
-  const aboutActions = document.createElement("div");
-  aboutActions.className = "modal-actions";
-  const aboutClose = document.createElement("button");
-  aboutClose.type = "button";
-  aboutClose.textContent = "Close";
-  aboutClose.dataset.aboutClose = "1";
-  aboutActions.append(aboutClose);
-  aboutPanel.append(aboutTitle, aboutBody, aboutActions);
-  aboutDialog.append(aboutPanel);
-  container.appendChild(aboutDialog);
-
-  const openAboutDialog = () => setDialogOpen(aboutDialog, true);
-  const closeAboutDialog = () => setDialogOpen(aboutDialog, false);
-
-  aboutDialog.addEventListener("click", (event) => {
-    if (event.target === aboutDialog) {
-      closeAboutDialog();
-    }
-  });
-  aboutClose.addEventListener("click", closeAboutDialog);
-
-  return { aboutDialog, openAboutDialog, closeAboutDialog };
-};
-
-const buildHotkeysDialog = (container, config = {}) => {
-  const listHotkeys = typeof config.listHotkeys === "function" ? config.listHotkeys : () => [];
-  const hotkeysDialog = document.createElement("div");
-  hotkeysDialog.className = "modal-backdrop hidden";
-  hotkeysDialog.dataset.hotkeysDialog = "1";
-  hotkeysDialog.setAttribute("role", "dialog");
-  hotkeysDialog.setAttribute("aria-modal", "true");
-  hotkeysDialog.hidden = true;
-
-  const hotkeysPanel = document.createElement("div");
-  hotkeysPanel.className = "modal-dialog hotkeys-modal-dialog";
-  hotkeysPanel.dataset.hotkeysPanel = "1";
-  const hotkeysTitle = document.createElement("div");
-  hotkeysTitle.className = "modal-title";
-  hotkeysTitle.textContent = "Hotkeys";
-  hotkeysTitle.dataset.hotkeysTitle = "1";
-  const hotkeysBody = document.createElement("div");
-  hotkeysBody.className = "modal-body hotkeys-modal-body";
-  hotkeysBody.dataset.hotkeysBody = "1";
-  const hotkeysActions = document.createElement("div");
-  hotkeysActions.className = "modal-actions";
-  const hotkeysClose = document.createElement("button");
-  hotkeysClose.type = "button";
-  hotkeysClose.textContent = "Close";
-  hotkeysClose.dataset.hotkeysClose = "1";
-  hotkeysActions.append(hotkeysClose);
-  hotkeysPanel.append(hotkeysTitle, hotkeysBody, hotkeysActions);
-  hotkeysDialog.append(hotkeysPanel);
-  container.appendChild(hotkeysDialog);
-
-  const renderHotkeys = () => {
-    hotkeysBody.innerHTML = "";
-    const sectionsRaw = listHotkeys();
-    const sections = Array.isArray(sectionsRaw) ? sectionsRaw : [];
-    let entryCount = 0;
-    sections.forEach((section, index) => {
-      const label = String(section?.label ?? "").trim();
-      const entriesRaw = Array.isArray(section?.entries) ? section.entries : [];
-      const entries = entriesRaw.filter((entry) => {
-        const shortcut = String(entry?.shortcut ?? "").trim();
-        const description = String(entry?.description ?? "").trim();
-        return shortcut.length > 0 && description.length > 0;
-      });
-      if (!entries.length) {
-        return;
-      }
-      const sectionEl = document.createElement("section");
-      sectionEl.className = "hotkeys-section";
-      sectionEl.dataset.hotkeysSection = String(section?.id ?? label ?? index);
-      if (label) {
-        const heading = document.createElement("h3");
-        heading.className = "hotkeys-section-title";
-        heading.textContent = label;
-        sectionEl.appendChild(heading);
-      }
-      const listEl = document.createElement("div");
-      listEl.className = "hotkeys-list";
-      entries.forEach((entry) => {
-        const shortcut = String(entry.shortcut).trim();
-        const description = String(entry.description).trim();
-        const row = document.createElement("div");
-        row.className = "hotkeys-entry";
-        row.dataset.hotkeysEntry = "1";
-        row.dataset.hotkeysEntryShortcut = shortcut;
-        row.dataset.hotkeysEntryDescription = description;
-        const shortcutEl = document.createElement("kbd");
-        shortcutEl.className = "hotkeys-entry-shortcut";
-        shortcutEl.textContent = shortcut;
-        const descriptionEl = document.createElement("span");
-        descriptionEl.className = "hotkeys-entry-description";
-        descriptionEl.textContent = description;
-        row.append(shortcutEl, descriptionEl);
-        listEl.appendChild(row);
-        entryCount += 1;
-      });
-      sectionEl.appendChild(listEl);
-      hotkeysBody.appendChild(sectionEl);
-    });
-    if (!entryCount) {
-      const empty = document.createElement("p");
-      empty.className = "hotkeys-empty";
-      empty.textContent = "No hotkeys available.";
-      hotkeysBody.appendChild(empty);
-    }
-  };
-
-  const openHotkeysDialog = () => {
-    renderHotkeys();
-    setDialogOpen(hotkeysDialog, true);
-  };
-  const closeHotkeysDialog = () => setDialogOpen(hotkeysDialog, false);
-
-  hotkeysDialog.addEventListener("click", (event) => {
-    if (event.target === hotkeysDialog) {
-      closeHotkeysDialog();
-    }
-  });
-  hotkeysClose.addEventListener("click", closeHotkeysDialog);
-
-  return { hotkeysDialog, openHotkeysDialog, closeHotkeysDialog };
-};
-
-const buildSettingsDialog = (container, config = {}) => {
-  const getAutoSwitchToSelectAfterToolUse = typeof config.getAutoSwitchToSelectAfterToolUse === "function"
-    ? config.getAutoSwitchToSelectAfterToolUse
-    : () => false;
-  const onAutoSwitchToSelectAfterToolUseChange = typeof config.onAutoSwitchToSelectAfterToolUseChange === "function"
-    ? config.onAutoSwitchToSelectAfterToolUseChange
-    : () => { };
-  const getAutoSwitchToSelectAfterWireUse = typeof config.getAutoSwitchToSelectAfterWireUse === "function"
-    ? config.getAutoSwitchToSelectAfterWireUse
-    : () => false;
-  const onAutoSwitchToSelectAfterWireUseChange = typeof config.onAutoSwitchToSelectAfterWireUseChange === "function"
-    ? config.onAutoSwitchToSelectAfterWireUseChange
-    : () => { };
-  const getSchematicTextStyle = typeof config.getSchematicTextStyle === "function"
-    ? config.getSchematicTextStyle
-    : () => ({ ...DEFAULT_SCHEMATIC_TEXT_STYLE });
-  const getSchematicTextFontOptions = typeof config.getSchematicTextFontOptions === "function"
-    ? config.getSchematicTextFontOptions
-    : () => [DEFAULT_SCHEMATIC_TEXT_STYLE.font];
-  const onSchematicTextStyleChange = typeof config.onSchematicTextStyleChange === "function"
-    ? config.onSchematicTextStyleChange
-    : () => { };
-  const getSchematicValueUnitSpacing = typeof config.getSchematicValueUnitSpacing === "function"
-    ? config.getSchematicValueUnitSpacing
-    : () => DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE;
-  const onSchematicValueUnitSpacingChange = typeof config.onSchematicValueUnitSpacingChange === "function"
-    ? config.onSchematicValueUnitSpacingChange
-    : () => { };
-  const getComponentDefaultSpecs = typeof config.getComponentDefaultSpecs === "function"
-    ? config.getComponentDefaultSpecs
-    : () => [];
-  const getComponentDefaults = typeof config.getComponentDefaults === "function"
-    ? config.getComponentDefaults
-    : () => ({});
-  const onComponentDefaultChange = typeof config.onComponentDefaultChange === "function"
-    ? config.onComponentDefaultChange
-    : () => { };
-  const onApplyComponentDefaultsToExisting = typeof config.onApplyComponentDefaultsToExisting === "function"
-    ? config.onApplyComponentDefaultsToExisting
-    : () => { };
-  const onResetSettings = typeof config.onResetSettings === "function"
-    ? config.onResetSettings
-    : () => { };
-  const getToolDisplayDefaults = typeof config.getToolDisplayDefaults === "function"
-    ? config.getToolDisplayDefaults
-    : () => ({ resistorStyle: "zigzag", groundVariant: "earth", groundColor: null, probeColor: null });
-  const getResistorDisplayTypeOptions = typeof config.getResistorDisplayTypeOptions === "function"
-    ? config.getResistorDisplayTypeOptions
-    : () => [];
-  const getGroundDisplayTypeOptions = typeof config.getGroundDisplayTypeOptions === "function"
-    ? config.getGroundDisplayTypeOptions
-    : () => [];
-  const getWireDefaultColor = typeof config.getWireDefaultColor === "function"
-    ? config.getWireDefaultColor
-    : () => null;
-  const onToolDisplayDefaultChange = typeof config.onToolDisplayDefaultChange === "function"
-    ? config.onToolDisplayDefaultChange
-    : () => { };
-  const onWireDefaultColorChange = typeof config.onWireDefaultColorChange === "function"
-    ? config.onWireDefaultColorChange
-    : () => { };
-  const parseSwitchComponentDefaultValue = typeof config.parseSwitchComponentDefaultValue === "function"
-    ? config.parseSwitchComponentDefaultValue
-    : () => ({ ron: "0", roff: "" });
-  const onResetComponentTypeDefaults = typeof config.onResetComponentTypeDefaults === "function"
-    ? config.onResetComponentTypeDefaults
-    : () => { };
-  const getToolSettingsCatalog = typeof config.getToolSettingsCatalog === "function"
-    ? config.getToolSettingsCatalog
-    : () => ({ scopes: [], toolToScope: {} });
-  const createNetColorPicker = typeof config.createNetColorPicker === "function"
-    ? config.createNetColorPicker
-    : null;
-  const settingsDialog = document.createElement("div");
-  settingsDialog.className = "modal-backdrop hidden";
-  settingsDialog.dataset.settingsDialog = "1";
-  settingsDialog.dataset.settingsScopeType = "";
-  settingsDialog.setAttribute("role", "dialog");
-  settingsDialog.setAttribute("aria-modal", "true");
-  settingsDialog.hidden = true;
-  const settingsPanel = document.createElement("div");
-  settingsPanel.className = "modal-dialog settings-modal-dialog";
-  settingsPanel.dataset.settingsPanel = "1";
-  const settingsTitle = document.createElement("div");
-  settingsTitle.className = "modal-title";
-  settingsTitle.dataset.settingsTitle = "1";
-  settingsTitle.textContent = "Settings";
-  const settingsBody = document.createElement("div");
-  settingsBody.className = "modal-body settings-modal-body";
-  settingsBody.dataset.settingsBody = "1";
-  const autoSwitchToolUseRow = document.createElement("label");
-  autoSwitchToolUseRow.className = "modal-field";
-  const autoSwitchToolUseToggle = document.createElement("input");
-  autoSwitchToolUseToggle.type = "checkbox";
-  autoSwitchToolUseToggle.dataset.settingsSetting = "autoswitch-select-tool-use";
-  const autoSwitchToolUseLabel = document.createElement("span");
-  autoSwitchToolUseLabel.textContent = "Autoswitch to Select after tool use";
-  autoSwitchToolUseRow.append(autoSwitchToolUseToggle, autoSwitchToolUseLabel);
-  const autoSwitchWireUseRow = document.createElement("label");
-  autoSwitchWireUseRow.className = "modal-field";
-  const autoSwitchWireUseToggle = document.createElement("input");
-  autoSwitchWireUseToggle.type = "checkbox";
-  autoSwitchWireUseToggle.dataset.settingsSetting = "autoswitch-select-wire-use";
-  const autoSwitchWireUseLabel = document.createElement("span");
-  autoSwitchWireUseLabel.textContent = "Autoswitch to Select after Wire use";
-  autoSwitchWireUseRow.append(autoSwitchWireUseToggle, autoSwitchWireUseLabel);
-  const schematicTextFontRow = document.createElement("label");
-  schematicTextFontRow.className = "modal-field";
-  const schematicTextFontLabel = document.createElement("span");
-  schematicTextFontLabel.textContent = "Schematic text font";
-  const schematicTextFontSelect = document.createElement("select");
-  schematicTextFontSelect.dataset.settingsSetting = "schematic-text-font";
-  const textFontOptionsRaw = getSchematicTextFontOptions();
-  const textFontOptions = Array.isArray(textFontOptionsRaw)
-    ? textFontOptionsRaw
-    : [];
-  textFontOptions.forEach((entry) => {
-    const fontName = String(entry ?? "").trim();
-    if (!fontName) {
-      return;
-    }
-    const option = document.createElement("option");
-    option.value = fontName;
-    option.textContent = fontName;
-    schematicTextFontSelect.appendChild(option);
-  });
-  if (!schematicTextFontSelect.options.length) {
-    const fallbackOption = document.createElement("option");
-    fallbackOption.value = DEFAULT_SCHEMATIC_TEXT_STYLE.font;
-    fallbackOption.textContent = DEFAULT_SCHEMATIC_TEXT_STYLE.font;
-    schematicTextFontSelect.appendChild(fallbackOption);
-  }
-  schematicTextFontRow.append(schematicTextFontLabel, schematicTextFontSelect);
-  const schematicTextSizeRow = document.createElement("label");
-  schematicTextSizeRow.className = "modal-field";
-  const schematicTextSizeLabel = document.createElement("span");
-  schematicTextSizeLabel.textContent = "Schematic text size";
-  const schematicTextSizeInput = document.createElement("input");
-  schematicTextSizeInput.type = "number";
-  schematicTextSizeInput.min = "8";
-  schematicTextSizeInput.max = "72";
-  schematicTextSizeInput.step = "1";
-  schematicTextSizeInput.dataset.settingsSetting = "schematic-text-size";
-  schematicTextSizeRow.append(schematicTextSizeLabel, schematicTextSizeInput);
-  const schematicTextBoldRow = document.createElement("label");
-  schematicTextBoldRow.className = "modal-field";
-  const schematicTextBoldToggle = document.createElement("input");
-  schematicTextBoldToggle.type = "checkbox";
-  schematicTextBoldToggle.dataset.settingsSetting = "schematic-text-bold";
-  const schematicTextBoldLabel = document.createElement("span");
-  schematicTextBoldLabel.textContent = "Schematic text bold";
-  schematicTextBoldRow.append(schematicTextBoldToggle, schematicTextBoldLabel);
-  const schematicTextItalicRow = document.createElement("label");
-  schematicTextItalicRow.className = "modal-field";
-  const schematicTextItalicToggle = document.createElement("input");
-  schematicTextItalicToggle.type = "checkbox";
-  schematicTextItalicToggle.dataset.settingsSetting = "schematic-text-italic";
-  const schematicTextItalicLabel = document.createElement("span");
-  schematicTextItalicLabel.textContent = "Schematic text italic";
-  schematicTextItalicRow.append(schematicTextItalicToggle, schematicTextItalicLabel);
-  const schematicValueUnitSpacingRow = document.createElement("label");
-  schematicValueUnitSpacingRow.className = "modal-field";
-  const schematicValueUnitSpacingToggle = document.createElement("input");
-  schematicValueUnitSpacingToggle.type = "checkbox";
-  schematicValueUnitSpacingToggle.dataset.settingsSetting = "schematic-value-unit-spacing";
-  const schematicValueUnitSpacingLabel = document.createElement("span");
-  schematicValueUnitSpacingLabel.textContent = "Include space between value and unit on schematic";
-  schematicValueUnitSpacingRow.append(schematicValueUnitSpacingToggle, schematicValueUnitSpacingLabel);
-  const componentDefaultSpecsRaw = getComponentDefaultSpecs();
-  const componentDefaultSpecs = Array.isArray(componentDefaultSpecsRaw)
-    ? componentDefaultSpecsRaw
-      .map((entry) => ({
-        type: String(entry?.type ?? "").trim().toUpperCase(),
-        label: String(entry?.label ?? "").trim(),
-        valueLabel: String(entry?.valueLabel ?? "").trim(),
-        unit: String(entry?.unit ?? "").trim(),
-        valueControl: String(entry?.valueControl ?? "").trim().toLowerCase() === "select" ? "select" : "text",
-        valueOptions: Array.isArray(entry?.valueOptions)
-          ? entry.valueOptions
-            .map((option) => ({
-              value: String(option?.value ?? "").trim(),
-              label: String(option?.label ?? "").trim()
-            }))
-            .filter((option) => option.value)
-          : [],
-        xfmrPolarityControl: entry?.xfmrPolarityControl === true,
-        xfmrPolarityOptions: Array.isArray(entry?.xfmrPolarityOptions)
-          ? entry.xfmrPolarityOptions
-            .map((option) => ({
-              value: String(option?.value ?? "").trim(),
-              label: String(option?.label ?? "").trim()
-            }))
-            .filter((option) => option.value)
-          : [],
-        xfmrSolveByControl: entry?.xfmrSolveByControl === true,
-        xfmrSolveByOptions: Array.isArray(entry?.xfmrSolveByOptions)
-          ? entry.xfmrSolveByOptions
-            .map((option) => ({
-              value: String(option?.value ?? "").trim(),
-              label: String(option?.label ?? "").trim()
-            }))
-            .filter((option) => option.value)
-          : [],
-        vacAmplitudeControl: entry?.vacAmplitudeControl === true,
-        vacAmplitudeLabel: String(entry?.vacAmplitudeLabel ?? "").trim(),
-        vacAmplitudeUnit: String(entry?.vacAmplitudeUnit ?? "").trim(),
-        vacFrequencyControl: entry?.vacFrequencyControl === true,
-        vacFrequencyLabel: String(entry?.vacFrequencyLabel ?? "").trim(),
-        vacFrequencyUnit: String(entry?.vacFrequencyUnit ?? "").trim(),
-        vacWaveformControl: entry?.vacWaveformControl === true,
-        vacWaveformLabel: String(entry?.vacWaveformLabel ?? "").trim(),
-        vacWaveformOptions: Array.isArray(entry?.vacWaveformOptions)
-          ? entry.vacWaveformOptions
-            .map((option) => ({
-              value: String(option?.value ?? "").trim(),
-              label: String(option?.label ?? "").trim()
-            }))
-            .filter((option) => option.value)
-          : []
-      }))
-      .filter((entry) => entry.type)
-    : [];
-  const toolSettingsCatalogRaw = getToolSettingsCatalog();
-  const toolSettingsCatalog = toolSettingsCatalogRaw && typeof toolSettingsCatalogRaw === "object"
-    ? toolSettingsCatalogRaw
-    : { scopes: [], toolToScope: {} };
-  const toolSettingsScopes = Array.isArray(toolSettingsCatalog.scopes)
-    ? toolSettingsCatalog.scopes
-      .map((entry) => ({
-        scopeType: String(entry?.scopeType ?? "").trim().toUpperCase(),
-        label: String(entry?.label ?? "").trim(),
-        supportsApply: entry?.supportsApply !== false,
-        supportsReset: entry?.supportsReset !== false
-      }))
-      .filter((entry) => entry.scopeType)
-    : [];
-  const toolSettingsScopeByType = new Map(
-    toolSettingsScopes.map((entry) => [entry.scopeType, entry])
-  );
-  const toolSettingsScopeByToolType = (() => {
-    const map = new Map();
-    const source = toolSettingsCatalog.toolToScope && typeof toolSettingsCatalog.toolToScope === "object"
-      ? toolSettingsCatalog.toolToScope
-      : {};
-    Object.entries(source).forEach(([toolTypeRaw, scopeTypeRaw]) => {
-      const toolType = String(toolTypeRaw ?? "").trim().toUpperCase();
-      const scopeType = String(scopeTypeRaw ?? "").trim().toUpperCase();
-      if (!toolType || !scopeType) {
-        return;
-      }
-      if (!toolSettingsScopeByType.has(scopeType)) {
-        return;
-      }
-      map.set(toolType, scopeType);
-    });
-    return map;
-  })();
-  const componentDefaultsTitle = document.createElement("div");
-  componentDefaultsTitle.className = "modal-subtitle";
-  componentDefaultsTitle.textContent = "Component defaults (new placements)";
-  const resistorDisplayTypeSelect = document.createElement("select");
-  resistorDisplayTypeSelect.dataset.settingsToolDisplayResistorStyle = "1";
-  const resistorDisplayTypeOptions = Array.isArray(getResistorDisplayTypeOptions())
-    ? getResistorDisplayTypeOptions()
-    : [];
-  resistorDisplayTypeOptions.forEach((entry) => {
-    const value = String(entry?.value ?? "").trim().toLowerCase();
-    if (!value) {
-      return;
-    }
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = String(entry?.label ?? value).trim() || value;
-    resistorDisplayTypeSelect.appendChild(option);
-  });
-  const componentDefaultRows = componentDefaultSpecs.map((spec) => {
-    const row = document.createElement("div");
-    row.className = "modal-field settings-component-default-row";
-    row.dataset.settingsComponentDefaultRow = spec.type;
-    const typeLabel = document.createElement("span");
-    typeLabel.dataset.settingsComponentDefaultLabel = spec.type;
-    typeLabel.textContent = spec.label || spec.type;
-    const valueInput = spec.valueControl === "select"
-      ? document.createElement("select")
-      : document.createElement("input");
-    valueInput.className = "settings-short-value-input";
-    valueInput.dataset.settingsComponentDefaultValue = spec.type;
-    if (valueInput instanceof HTMLInputElement) {
-      valueInput.type = "text";
-      valueInput.placeholder = spec.valueLabel || "Value";
-    } else if (valueInput instanceof HTMLSelectElement) {
-      spec.valueOptions.forEach((optionEntry) => {
-        const option = document.createElement("option");
-        option.value = optionEntry.value;
-        option.textContent = optionEntry.label || optionEntry.value;
-        valueInput.appendChild(option);
-      });
-    }
-    const valueLabel = document.createElement("span");
-    valueLabel.textContent = `${spec.valueLabel || "Value"}:`;
-    const valueUnit = document.createElement("span");
-    valueUnit.className = "inline-edit-unit";
-    valueUnit.dataset.settingsComponentDefaultUnit = spec.type;
-    valueUnit.textContent = spec.unit || "";
-    valueUnit.hidden = !spec.unit;
-    const switchRonLabel = document.createElement("span");
-    switchRonLabel.textContent = "Ron:";
-    const switchRonInput = document.createElement("input");
-    switchRonInput.type = "text";
-    switchRonInput.className = "settings-short-value-input";
-    switchRonInput.dataset.settingsComponentDefaultSwitchRon = spec.type;
-    switchRonInput.placeholder = "0";
-    const switchRonUnit = document.createElement("span");
-    switchRonUnit.className = "inline-edit-unit";
-    switchRonUnit.textContent = spec.unit || "\u03a9";
-    const switchRoffLabel = document.createElement("span");
-    switchRoffLabel.textContent = "Roff:";
-    const switchRoffInput = document.createElement("input");
-    switchRoffInput.type = "text";
-    switchRoffInput.className = "settings-short-value-input";
-    switchRoffInput.dataset.settingsComponentDefaultSwitchRoff = spec.type;
-    switchRoffInput.placeholder = "open";
-    const switchRoffUnit = document.createElement("span");
-    switchRoffUnit.className = "inline-edit-unit";
-    switchRoffUnit.textContent = spec.unit || "\u03a9";
-    const isSwitchDefaults = uiInlineEditorDomain.isSwitchComponentType(spec.type);
-    const isTransformerDefaults = spec.type === "XFMR"
-      && (spec.xfmrPolarityControl === true || spec.xfmrSolveByControl === true);
-    const isVacDefaults = spec.type === "VAC";
-    const xfmrPolarityLabel = document.createElement("span");
-    xfmrPolarityLabel.textContent = "Polarity:";
-    const xfmrPolaritySelect = document.createElement("select");
-    xfmrPolaritySelect.className = "settings-short-value-input";
-    xfmrPolaritySelect.dataset.settingsComponentDefaultXfmrPolarity = spec.type;
-    (Array.isArray(spec.xfmrPolarityOptions) ? spec.xfmrPolarityOptions : []).forEach((optionEntry) => {
-      const option = document.createElement("option");
-      option.value = optionEntry.value;
-      option.textContent = optionEntry.label || optionEntry.value;
-      xfmrPolaritySelect.appendChild(option);
-    });
-    const xfmrSolveByLabel = document.createElement("span");
-    xfmrSolveByLabel.textContent = "Solve for:";
-    const xfmrSolveBySelect = document.createElement("select");
-    xfmrSolveBySelect.className = "settings-short-value-input";
-    xfmrSolveBySelect.dataset.settingsComponentDefaultXfmrSolveBy = spec.type;
-    (Array.isArray(spec.xfmrSolveByOptions) ? spec.xfmrSolveByOptions : []).forEach((optionEntry) => {
-      const option = document.createElement("option");
-      option.value = optionEntry.value;
-      option.textContent = optionEntry.label || optionEntry.value;
-      xfmrSolveBySelect.appendChild(option);
-    });
-    const vacAmplitudeLabel = document.createElement("span");
-    vacAmplitudeLabel.textContent = `${spec.vacAmplitudeLabel || "Amplitude"}:`;
-    const vacAmplitudeInput = document.createElement("input");
-    vacAmplitudeInput.type = "text";
-    vacAmplitudeInput.className = "settings-short-value-input";
-    vacAmplitudeInput.dataset.settingsComponentDefaultVacAmplitude = spec.type;
-    vacAmplitudeInput.placeholder = spec.vacAmplitudeLabel || "Amplitude";
-    const vacAmplitudeUnit = document.createElement("span");
-    vacAmplitudeUnit.className = "inline-edit-unit";
-    vacAmplitudeUnit.textContent = spec.vacAmplitudeUnit || "V";
-    const vacFrequencyLabel = document.createElement("span");
-    vacFrequencyLabel.textContent = `${spec.vacFrequencyLabel || "Frequency"}:`;
-    const vacFrequencyInput = document.createElement("input");
-    vacFrequencyInput.type = "text";
-    vacFrequencyInput.className = "settings-short-value-input";
-    vacFrequencyInput.dataset.settingsComponentDefaultVacFrequency = spec.type;
-    vacFrequencyInput.placeholder = spec.vacFrequencyLabel || "Frequency";
-    const vacFrequencyUnit = document.createElement("span");
-    vacFrequencyUnit.className = "inline-edit-unit";
-    vacFrequencyUnit.textContent = spec.vacFrequencyUnit || "Hz";
-    const vacWaveformLabel = document.createElement("span");
-    vacWaveformLabel.textContent = `${spec.vacWaveformLabel || "Waveform"}:`;
-    const vacWaveformSelect = document.createElement("select");
-    vacWaveformSelect.className = "settings-short-value-input";
-    vacWaveformSelect.dataset.settingsComponentDefaultVacWaveform = spec.type;
-    (Array.isArray(spec.vacWaveformOptions) ? spec.vacWaveformOptions : []).forEach((optionEntry) => {
-      const option = document.createElement("option");
-      option.value = optionEntry.value;
-      option.textContent = optionEntry.label || optionEntry.value;
-      vacWaveformSelect.appendChild(option);
-    });
-    let colorPicker = null;
-    if (typeof createNetColorPicker === "function") {
-      colorPicker = createNetColorPicker({
-        rowClassName: "schematic-net-color-row settings-component-default-color-picker",
-        swatchAttribute: "data-settings-component-default-color-swatch",
-        labelText: "Color:",
-        decorateSwatch: (button) => {
-          button.dataset.settingsComponentDefaultColorType = spec.type;
-        },
-        onPick: (color) => {
-          const currentColor = String(colorClear.dataset.settingsComponentDefaultCurrentColor ?? "").trim().toLowerCase();
-          const normalizedPick = String(color ?? "").trim().toLowerCase();
-          const nextColor = currentColor === normalizedPick ? null : normalizedPick;
-          onComponentDefaultChange(spec.type, { netColor: nextColor });
-          colorClear.dataset.settingsComponentDefaultCurrentColor = nextColor ?? "";
-          colorPicker?.setSelected(nextColor);
-        }
-      });
-      colorPicker.row.dataset.settingsComponentDefaultColorRow = spec.type;
-    }
-    const colorClear = document.createElement("button");
-    colorClear.type = "button";
-    colorClear.className = "secondary settings-component-default-color-clear";
-    colorClear.textContent = "Default";
-    colorClear.dataset.settingsComponentDefaultColorClear = spec.type;
-    colorClear.dataset.settingsComponentDefaultCurrentColor = "";
-    colorClear.addEventListener("click", () => {
-      onComponentDefaultChange(spec.type, { netColor: null });
-      colorClear.dataset.settingsComponentDefaultCurrentColor = "";
-      colorPicker?.setSelected(null);
-    });
-    row.append(typeLabel);
-    if (isSwitchDefaults) {
-      row.append(
-        switchRonLabel,
-        switchRonInput,
-        switchRonUnit,
-        switchRoffLabel,
-        switchRoffInput,
-        switchRoffUnit
-      );
-    } else if (isVacDefaults) {
-      if (spec.vacAmplitudeControl === true) {
-        row.append(vacAmplitudeLabel, vacAmplitudeInput, vacAmplitudeUnit);
-      }
-      if (spec.vacFrequencyControl === true) {
-        row.append(vacFrequencyLabel, vacFrequencyInput, vacFrequencyUnit);
-      }
-      if (spec.vacWaveformControl === true) {
-        row.append(vacWaveformLabel, vacWaveformSelect);
-      }
-    } else {
-      row.append(valueLabel, valueInput, valueUnit);
-      if (isTransformerDefaults) {
-        if (spec.xfmrPolarityControl === true) {
-          row.append(xfmrPolarityLabel, xfmrPolaritySelect);
-        }
-        if (spec.xfmrSolveByControl === true) {
-          row.append(xfmrSolveByLabel, xfmrSolveBySelect);
-        }
-      }
-      if (spec.type === "R") {
-        const resistorDisplayTypeLabel = document.createElement("span");
-        resistorDisplayTypeLabel.textContent = "Type:";
-        row.append(resistorDisplayTypeLabel, resistorDisplayTypeSelect);
-      }
-    }
-    if (colorPicker?.row) {
-      row.append(colorPicker.row);
-    }
-    row.append(colorClear);
-    return {
-      ...spec,
-      row,
-      valueInput,
-      valueUnit,
-      vacAmplitudeInput,
-      vacFrequencyInput,
-      vacWaveformSelect,
-      xfmrPolaritySelect,
-      xfmrSolveBySelect,
-      switchRonInput,
-      switchRoffInput,
-      colorPicker,
-      colorClear
-    };
-  });
-  const groundDefaultsRow = document.createElement("div");
-  groundDefaultsRow.className = "modal-field settings-component-default-row";
-  groundDefaultsRow.dataset.settingsComponentDefaultRow = "GND";
-  const groundDefaultsLabel = document.createElement("span");
-  groundDefaultsLabel.dataset.settingsComponentDefaultLabel = "GND";
-  groundDefaultsLabel.textContent = "Ground";
-  const groundDisplayTypeLabel = document.createElement("span");
-  groundDisplayTypeLabel.textContent = "Type:";
-  const groundDisplayTypeSelect = document.createElement("select");
-  groundDisplayTypeSelect.dataset.settingsToolDisplayGroundVariant = "1";
-  const groundDisplayTypeOptions = Array.isArray(getGroundDisplayTypeOptions())
-    ? getGroundDisplayTypeOptions()
-    : [];
-  groundDisplayTypeOptions.forEach((entry) => {
-    const value = String(entry?.value ?? "").trim().toLowerCase();
-    if (!value) {
-      return;
-    }
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = String(entry?.label ?? value).trim() || value;
-    groundDisplayTypeSelect.appendChild(option);
-  });
-  let groundColorPicker = null;
-  if (typeof createNetColorPicker === "function") {
-    groundColorPicker = createNetColorPicker({
-      rowClassName: "schematic-net-color-row settings-component-default-color-picker",
-      swatchAttribute: "data-settings-tool-display-ground-color-swatch",
-      labelText: "Color:",
-      onPick: (color) => {
-        const currentColor = String(groundColorClear.dataset.settingsToolDisplayGroundColorCurrentColor ?? "").trim().toLowerCase();
-        const normalizedPick = String(color ?? "").trim().toLowerCase();
-        const nextColor = currentColor === normalizedPick ? null : normalizedPick;
-        onToolDisplayDefaultChange("groundColor", nextColor);
-        groundColorClear.dataset.settingsToolDisplayGroundColorCurrentColor = nextColor ?? "";
-        groundColorPicker?.setSelected(nextColor);
-      }
-    });
-  }
-  if (groundColorPicker?.row) {
-    groundColorPicker.row.dataset.settingsToolDisplayGroundColorRow = "1";
-  }
-  const groundColorClear = document.createElement("button");
-  groundColorClear.type = "button";
-  groundColorClear.className = "secondary settings-component-default-color-clear";
-  groundColorClear.textContent = "Default";
-  groundColorClear.dataset.settingsToolDisplayGroundColorClear = "1";
-  groundColorClear.dataset.settingsToolDisplayGroundColorCurrentColor = "";
-  groundColorClear.addEventListener("click", () => {
-    onToolDisplayDefaultChange("groundColor", null);
-    groundColorClear.dataset.settingsToolDisplayGroundColorCurrentColor = "";
-    groundColorPicker?.setSelected(null);
-  });
-  let wireDefaultColorPicker = null;
-  if (typeof createNetColorPicker === "function") {
-    wireDefaultColorPicker = createNetColorPicker({
-      rowClassName: "schematic-net-color-row settings-component-default-color-picker",
-      swatchAttribute: "data-settings-wire-default-color-swatch",
-      labelText: "Color:",
-      onPick: (color) => {
-        const currentColor = String(wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor ?? "").trim().toLowerCase();
-        const normalizedPick = String(color ?? "").trim().toLowerCase();
-        const nextColor = currentColor === normalizedPick ? null : normalizedPick;
-        onWireDefaultColorChange(nextColor);
-        wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor = nextColor ?? "";
-        wireDefaultColorPicker?.setSelected(nextColor);
-      }
-    });
-  }
-  const wireDefaultColorClear = document.createElement("button");
-  wireDefaultColorClear.type = "button";
-  wireDefaultColorClear.className = "secondary settings-component-default-color-clear";
-  wireDefaultColorClear.textContent = "Default";
-  wireDefaultColorClear.dataset.settingsWireDefaultColorClear = "1";
-  wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor = "";
-  wireDefaultColorClear.addEventListener("click", () => {
-    onWireDefaultColorChange(null);
-    wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor = "";
-    wireDefaultColorPicker?.setSelected(null);
-  });
-  let probeDefaultColorPicker = null;
-  if (typeof createNetColorPicker === "function") {
-    probeDefaultColorPicker = createNetColorPicker({
-      rowClassName: "schematic-net-color-row settings-component-default-color-picker",
-      swatchAttribute: "data-settings-tool-display-probe-color-swatch",
-      labelText: "Color:",
-      onPick: (color) => {
-        const currentColor = String(probeDefaultColorClear.dataset.settingsToolDisplayProbeColorCurrentColor ?? "").trim().toLowerCase();
-        const normalizedPick = String(color ?? "").trim().toLowerCase();
-        const nextColor = currentColor === normalizedPick ? null : normalizedPick;
-        onToolDisplayDefaultChange("probeColor", nextColor);
-        probeDefaultColorClear.dataset.settingsToolDisplayProbeColorCurrentColor = nextColor ?? "";
-        probeDefaultColorPicker?.setSelected(nextColor);
-      }
-    });
-  }
-  if (probeDefaultColorPicker?.row) {
-    probeDefaultColorPicker.row.dataset.settingsToolDisplayProbeColorRow = "1";
-  }
-  const probeDefaultColorClear = document.createElement("button");
-  probeDefaultColorClear.type = "button";
-  probeDefaultColorClear.className = "secondary settings-component-default-color-clear";
-  probeDefaultColorClear.textContent = "Default";
-  probeDefaultColorClear.dataset.settingsToolDisplayProbeColorClear = "1";
-  probeDefaultColorClear.dataset.settingsToolDisplayProbeColorCurrentColor = "";
-  probeDefaultColorClear.addEventListener("click", () => {
-    onToolDisplayDefaultChange("probeColor", null);
-    probeDefaultColorClear.dataset.settingsToolDisplayProbeColorCurrentColor = "";
-    probeDefaultColorPicker?.setSelected(null);
-  });
-  const wireDefaultsRow = document.createElement("div");
-  wireDefaultsRow.className = "modal-field settings-component-default-row";
-  wireDefaultsRow.dataset.settingsComponentDefaultRow = "WIRE";
-  wireDefaultsRow.dataset.settingsWireDefaultColorRow = "1";
-  const wireDefaultsLabel = document.createElement("span");
-  wireDefaultsLabel.dataset.settingsComponentDefaultLabel = "WIRE";
-  wireDefaultsLabel.textContent = "Wire";
-  const probeDefaultsRow = document.createElement("div");
-  probeDefaultsRow.className = "modal-field settings-component-default-row";
-  probeDefaultsRow.dataset.settingsComponentDefaultRow = "PROBE";
-  probeDefaultsRow.dataset.settingsToolDisplayProbeColorRow = "1";
-  const probeDefaultsLabel = document.createElement("span");
-  probeDefaultsLabel.dataset.settingsComponentDefaultLabel = "PROBE";
-  probeDefaultsLabel.textContent = "Probe";
-  const selectDefaultsRow = document.createElement("div");
-  selectDefaultsRow.className = "modal-field settings-component-default-row";
-  selectDefaultsRow.dataset.settingsComponentDefaultRow = "SELECT";
-  const selectDefaultsLabel = document.createElement("span");
-  selectDefaultsLabel.dataset.settingsComponentDefaultLabel = "SELECT";
-  selectDefaultsLabel.textContent = "Select";
-  const selectDefaultsDescription = document.createElement("span");
-  selectDefaultsDescription.textContent = "No configurable defaults";
-  selectDefaultsRow.append(selectDefaultsLabel, selectDefaultsDescription);
-  groundDefaultsRow.append(groundDefaultsLabel, groundDisplayTypeLabel, groundDisplayTypeSelect);
-  if (groundColorPicker?.row) {
-    groundDefaultsRow.append(groundColorPicker.row);
-  }
-  groundDefaultsRow.append(groundColorClear);
-  wireDefaultsRow.append(wireDefaultsLabel);
-  if (wireDefaultColorPicker?.row) {
-    wireDefaultsRow.append(wireDefaultColorPicker.row);
-  }
-  wireDefaultsRow.append(wireDefaultColorClear);
-  probeDefaultsRow.append(probeDefaultsLabel);
-  if (probeDefaultColorPicker?.row) {
-    probeDefaultsRow.append(probeDefaultColorPicker.row);
-  }
-  probeDefaultsRow.append(probeDefaultColorClear);
-  const settingsRowByScopeType = new Map(
-    componentDefaultRows.map((entry) => [entry.type, entry.row])
-  );
-  settingsRowByScopeType.set("SELECT", selectDefaultsRow);
-  settingsRowByScopeType.set("GND", groundDefaultsRow);
-  settingsRowByScopeType.set("WIRE", wireDefaultsRow);
-  settingsRowByScopeType.set("PROBE", probeDefaultsRow);
-  const settingsRowsOrdered = [];
-  const seenRows = new Set();
-  const appendSettingsRow = (row) => {
-    if (!(row instanceof HTMLElement) || seenRows.has(row)) {
-      return;
-    }
-    seenRows.add(row);
-    settingsRowsOrdered.push(row);
-  };
-  toolSettingsScopes.forEach((entry) => {
-    appendSettingsRow(settingsRowByScopeType.get(entry.scopeType));
-  });
-  componentDefaultRows.forEach((entry) => appendSettingsRow(entry.row));
-  appendSettingsRow(selectDefaultsRow);
-  appendSettingsRow(groundDefaultsRow);
-  appendSettingsRow(wireDefaultsRow);
-  appendSettingsRow(probeDefaultsRow);
-  settingsBody.append(
-    autoSwitchToolUseRow,
-    autoSwitchWireUseRow,
-    schematicTextFontRow,
-    schematicTextSizeRow,
-    schematicTextBoldRow,
-    schematicTextItalicRow,
-    schematicValueUnitSpacingRow,
-    componentDefaultsTitle,
-    ...settingsRowsOrdered
-  );
-  const settingsActions = document.createElement("div");
-  settingsActions.className = "modal-actions";
-  const settingsApplyComponentDefaults = document.createElement("button");
-  settingsApplyComponentDefaults.type = "button";
-  settingsApplyComponentDefaults.className = "secondary";
-  settingsApplyComponentDefaults.textContent = "Apply display settings to existing";
-  settingsApplyComponentDefaults.dataset.settingsApplyComponentDefaults = "1";
-  settingsApplyComponentDefaults.hidden = componentDefaultRows.length < 1;
-  const settingsDefaultComponentType = document.createElement("button");
-  settingsDefaultComponentType.type = "button";
-  settingsDefaultComponentType.className = "secondary";
-  settingsDefaultComponentType.textContent = "Default";
-  settingsDefaultComponentType.dataset.settingsDefaultComponentType = "1";
-  settingsDefaultComponentType.hidden = true;
-  const settingsReset = document.createElement("button");
-  settingsReset.type = "button";
-  settingsReset.className = "secondary";
-  settingsReset.textContent = "Reset Settings";
-  settingsReset.dataset.settingsReset = "1";
-  const settingsClose = document.createElement("button");
-  settingsClose.type = "button";
-  settingsClose.textContent = "Close";
-  settingsClose.dataset.settingsClose = "1";
-  settingsActions.append(settingsApplyComponentDefaults, settingsDefaultComponentType, settingsReset, settingsClose);
-  settingsPanel.append(settingsTitle, settingsBody, settingsActions);
-  settingsDialog.append(settingsPanel);
-  container.appendChild(settingsDialog);
-
-  const componentDefaultRowByType = new Map(
-    componentDefaultRows.map((entry) => [entry.type, entry])
-  );
-  const normalizeScopedSettingsType = (value) => {
-    const type = String(value ?? "").trim().toUpperCase();
-    if (!type) {
-      return "";
-    }
-    const mappedScopeType = toolSettingsScopeByToolType.get(type);
-    if (mappedScopeType) {
-      return mappedScopeType;
-    }
-    if (toolSettingsScopeByType.has(type)) {
-      return type;
-    }
-    return "";
-  };
-  const getScopedSettingsLabel = (type) => {
-    if (!type) {
-      return "Settings";
-    }
-    const settingsScope = toolSettingsScopeByType.get(String(type ?? "").trim().toUpperCase());
-    if (settingsScope && settingsScope.label) {
-      return settingsScope.label;
-    }
-    const componentDefaultRow = componentDefaultRowByType.get(type);
-    if (componentDefaultRow) {
-      return componentDefaultRow.label || componentDefaultRow.type;
-    }
-    return type;
-  };
-  let activeScopedSettingsType = "";
-  let activeScopedSourceType = "";
-  const syncDialogScopeState = () => {
-    const scopedType = activeScopedSettingsType;
-    const scoped = Boolean(scopedType);
-    const scopedSettings = scoped
-      ? (toolSettingsScopeByType.get(scopedType) ?? null)
-      : null;
-    const supportsScopedApply = scopedSettings?.supportsApply === true;
-    const supportsScopedReset = scopedSettings?.supportsReset === true;
-    settingsDialog.dataset.settingsScopeType = scopedType;
-    settingsTitle.textContent = scoped
-      ? `${getScopedSettingsLabel(scopedType)} Defaults`
-      : "Settings";
-    autoSwitchToolUseRow.hidden = scoped;
-    autoSwitchWireUseRow.hidden = scoped;
-    schematicTextFontRow.hidden = scoped;
-    schematicTextSizeRow.hidden = scoped;
-    schematicTextBoldRow.hidden = scoped;
-    schematicTextItalicRow.hidden = scoped;
-    schematicValueUnitSpacingRow.hidden = scoped;
-    componentDefaultsTitle.hidden = scoped;
-    componentDefaultRows.forEach((entry) => {
-      entry.row.hidden = scoped && entry.type !== scopedType;
-    });
-    groundDefaultsRow.hidden = scoped && scopedType !== "GND";
-    wireDefaultsRow.hidden = scoped && scopedType !== "WIRE";
-    probeDefaultsRow.hidden = scoped && scopedType !== "PROBE";
-    selectDefaultsRow.hidden = scoped && scopedType !== "SELECT";
-    settingsDefaultComponentType.hidden = !scoped || !supportsScopedReset;
-    settingsReset.hidden = scoped;
-    settingsApplyComponentDefaults.hidden = scoped
-      ? !supportsScopedApply
-      : componentDefaultRows.length < 1;
-  };
-  const buildScopedApplyOptions = () => {
-    if (!activeScopedSettingsType) {
-      return null;
-    }
-    const scopedSettings = toolSettingsScopeByType.get(activeScopedSettingsType) ?? null;
-    if (scopedSettings?.supportsApply !== true) {
-      return null;
-    }
-    const options = {
-      types: [],
-      applyGroundDefaults: false,
-      applyProbeDefaults: false,
-      applyWireDefaults: false
-    };
-    if (activeScopedSettingsType === "GND") {
-      options.applyGroundDefaults = true;
-    } else if (activeScopedSettingsType === "PROBE") {
-      options.applyProbeDefaults = true;
-    } else if (activeScopedSettingsType === "WIRE") {
-      options.applyWireDefaults = true;
-    } else {
-      options.types = [activeScopedSettingsType];
-    }
-    return options;
-  };
-  const syncSettingsState = () => {
-    autoSwitchToolUseToggle.checked = Boolean(getAutoSwitchToSelectAfterToolUse());
-    autoSwitchWireUseToggle.checked = Boolean(getAutoSwitchToSelectAfterWireUse());
-    const textSettings = getSchematicTextStyle();
-    const normalizedFont = String(textSettings?.font ?? "").trim();
-    const hasMatchingOption = Array.from(schematicTextFontSelect.options).some((option) => option.value === normalizedFont);
-    schematicTextFontSelect.value = hasMatchingOption
-      ? normalizedFont
-      : schematicTextFontSelect.options[0].value;
-    const parsedSize = Number(textSettings?.size);
-    schematicTextSizeInput.value = Number.isFinite(parsedSize)
-      ? String(Math.round(parsedSize))
-      : String(DEFAULT_SCHEMATIC_TEXT_STYLE.size);
-    schematicTextBoldToggle.checked = textSettings?.bold === true;
-    schematicTextItalicToggle.checked = textSettings?.italic === true;
-    schematicValueUnitSpacingToggle.checked = getSchematicValueUnitSpacing() !== false;
-    const componentDefaults = getComponentDefaults();
-    componentDefaultRows.forEach((entry) => {
-      const typeDefaults = componentDefaults && typeof componentDefaults === "object"
-        ? componentDefaults[entry.type]
-        : null;
-      const normalizedValue = String(typeDefaults?.value ?? "");
-      if (uiInlineEditorDomain.isSwitchComponentType(entry.type)) {
-        const parsedSwitchDefaults = parseSwitchComponentDefaultValue(normalizedValue);
-        entry.switchRonInput.value = String(parsedSwitchDefaults?.ron ?? "0");
-        entry.switchRoffInput.value = String(parsedSwitchDefaults?.roff ?? "");
-      } else if (entry.type === "VAC") {
-        if (entry.vacAmplitudeInput instanceof HTMLInputElement) {
-          entry.vacAmplitudeInput.value = String(typeDefaults?.vacAmplitude ?? "1");
-        }
-        if (entry.vacFrequencyInput instanceof HTMLInputElement) {
-          entry.vacFrequencyInput.value = String(typeDefaults?.vacFrequency ?? "1k");
-        }
-        if (entry.vacWaveformSelect instanceof HTMLSelectElement) {
-          const normalizedWaveform = String(typeDefaults?.vacWaveform ?? "sine").trim().toLowerCase();
-          const hasWaveformOption = Array.from(entry.vacWaveformSelect.options)
-            .some((option) => option.value === normalizedWaveform);
-          if (hasWaveformOption) {
-            entry.vacWaveformSelect.value = normalizedWaveform;
-          } else if (entry.vacWaveformSelect.options.length > 0) {
-            entry.vacWaveformSelect.value = entry.vacWaveformSelect.options[0].value;
-          }
-        }
-      } else {
-        if (entry.valueInput instanceof HTMLSelectElement) {
-          const customOption = entry.valueInput.querySelector("option[data-settings-component-default-custom='1']");
-          if (customOption) {
-            customOption.remove();
-          }
-          const hasOption = Array.from(entry.valueInput.options).some((option) => option.value === normalizedValue);
-          if (!hasOption && normalizedValue) {
-            const option = document.createElement("option");
-            option.value = normalizedValue;
-            option.textContent = normalizedValue;
-            option.dataset.settingsComponentDefaultCustom = "1";
-            entry.valueInput.appendChild(option);
-          }
-        }
-        entry.valueInput.value = normalizedValue;
-        if (entry.type === "XFMR" && entry.xfmrPolaritySelect instanceof HTMLSelectElement) {
-          const normalizedPolarity = String(typeDefaults?.xfmrPolarity ?? "subtractive").trim().toLowerCase();
-          entry.xfmrPolaritySelect.value = normalizedPolarity === "additive" ? "additive" : "subtractive";
-        }
-        if (entry.type === "XFMR" && entry.xfmrSolveBySelect instanceof HTMLSelectElement) {
-          const normalizedSolveBy = String(typeDefaults?.xfmrSolveBy ?? "ratio").trim().toLowerCase();
-          entry.xfmrSolveBySelect.value = normalizedSolveBy === "secondary" ? "secondary" : "ratio";
-        }
-      }
-      const normalizedColor = String(typeDefaults?.netColor ?? "").trim().toLowerCase();
-      entry.colorClear.dataset.settingsComponentDefaultCurrentColor = normalizedColor;
-      entry.colorPicker?.setSelected(normalizedColor);
-    });
-    const displayDefaults = getToolDisplayDefaults();
-    const normalizedResistorStyle = String(displayDefaults?.resistorStyle ?? "").trim().toLowerCase();
-    const normalizedGroundVariant = String(displayDefaults?.groundVariant ?? "").trim().toLowerCase();
-    const hasResistorStyleOption = Array.from(resistorDisplayTypeSelect.options)
-      .some((option) => option.value === normalizedResistorStyle);
-    const hasGroundVariantOption = Array.from(groundDisplayTypeSelect.options)
-      .some((option) => option.value === normalizedGroundVariant);
-    if (hasResistorStyleOption) {
-      resistorDisplayTypeSelect.value = normalizedResistorStyle;
-    }
-    if (hasGroundVariantOption) {
-      groundDisplayTypeSelect.value = normalizedGroundVariant;
-    }
-    const normalizedGroundColor = String(displayDefaults?.groundColor ?? "").trim().toLowerCase();
-    groundColorClear.dataset.settingsToolDisplayGroundColorCurrentColor = normalizedGroundColor;
-    groundColorPicker?.setSelected(normalizedGroundColor);
-    const normalizedWireDefaultColor = String(getWireDefaultColor() ?? "").trim().toLowerCase();
-    wireDefaultColorClear.dataset.settingsWireDefaultCurrentColor = normalizedWireDefaultColor;
-    wireDefaultColorPicker?.setSelected(normalizedWireDefaultColor);
-    const normalizedProbeDefaultColor = String(displayDefaults?.probeColor ?? "").trim().toLowerCase();
-    probeDefaultColorClear.dataset.settingsToolDisplayProbeColorCurrentColor = normalizedProbeDefaultColor;
-    probeDefaultColorPicker?.setSelected(normalizedProbeDefaultColor);
-  };
-  const openSettingsDialog = () => {
-    activeScopedSettingsType = "";
-    activeScopedSourceType = "";
-    syncDialogScopeState();
-    syncSettingsState();
-    setDialogOpen(settingsDialog, true);
-  };
-  const openSettingsDialogForType = (type) => {
-    const normalizedScopeType = normalizeScopedSettingsType(type);
-    if (!normalizedScopeType) {
-      return false;
-    }
-    activeScopedSettingsType = normalizedScopeType;
-    activeScopedSourceType = String(type ?? "").trim().toUpperCase();
-    syncDialogScopeState();
-    syncSettingsState();
-    setDialogOpen(settingsDialog, true);
-    return true;
-  };
-  const closeSettingsDialog = () => setDialogOpen(settingsDialog, false);
-
-  settingsDialog.addEventListener("click", (event) => {
-    if (event.target === settingsDialog) {
-      closeSettingsDialog();
-    }
-  });
-  autoSwitchToolUseToggle.addEventListener("change", () => {
-    onAutoSwitchToSelectAfterToolUseChange(autoSwitchToolUseToggle.checked);
-  });
-  autoSwitchWireUseToggle.addEventListener("change", () => {
-    onAutoSwitchToSelectAfterWireUseChange(autoSwitchWireUseToggle.checked);
-  });
-  schematicTextFontSelect.addEventListener("change", () => {
-    onSchematicTextStyleChange({ font: schematicTextFontSelect.value });
-  });
-  schematicTextSizeInput.addEventListener("change", () => {
-    onSchematicTextStyleChange({ size: Number(schematicTextSizeInput.value) });
-  });
-  schematicTextBoldToggle.addEventListener("change", () => {
-    onSchematicTextStyleChange({ bold: schematicTextBoldToggle.checked });
-  });
-  schematicTextItalicToggle.addEventListener("change", () => {
-    onSchematicTextStyleChange({ italic: schematicTextItalicToggle.checked });
-  });
-  schematicValueUnitSpacingToggle.addEventListener("change", () => {
-    onSchematicValueUnitSpacingChange(schematicValueUnitSpacingToggle.checked);
-  });
-  resistorDisplayTypeSelect.addEventListener("change", () => {
-    onToolDisplayDefaultChange("resistorStyle", resistorDisplayTypeSelect.value);
-  });
-  groundDisplayTypeSelect.addEventListener("change", () => {
-    onToolDisplayDefaultChange("groundVariant", groundDisplayTypeSelect.value);
-  });
-  componentDefaultRows.forEach((entry) => {
-    if (uiInlineEditorDomain.isSwitchComponentType(entry.type)) {
-      entry.switchRonInput.addEventListener("change", () => {
-        onComponentDefaultChange(entry.type, { switchRon: entry.switchRonInput.value });
-      });
-      entry.switchRoffInput.addEventListener("change", () => {
-        onComponentDefaultChange(entry.type, { switchRoff: entry.switchRoffInput.value });
-      });
-      return;
-    }
-    if (entry.type === "VAC") {
-      if (entry.vacAmplitudeInput instanceof HTMLInputElement) {
-        entry.vacAmplitudeInput.addEventListener("change", () => {
-          onComponentDefaultChange(entry.type, { vacAmplitude: entry.vacAmplitudeInput.value });
-        });
-      }
-      if (entry.vacFrequencyInput instanceof HTMLInputElement) {
-        entry.vacFrequencyInput.addEventListener("change", () => {
-          onComponentDefaultChange(entry.type, { vacFrequency: entry.vacFrequencyInput.value });
-        });
-      }
-      if (entry.vacWaveformSelect instanceof HTMLSelectElement) {
-        entry.vacWaveformSelect.addEventListener("change", () => {
-          onComponentDefaultChange(entry.type, { vacWaveform: entry.vacWaveformSelect.value });
-        });
-      }
-      return;
-    }
-    entry.valueInput.addEventListener("change", () => {
-      onComponentDefaultChange(entry.type, { value: entry.valueInput.value });
-    });
-    if (entry.type === "XFMR" && entry.xfmrPolaritySelect instanceof HTMLSelectElement) {
-      entry.xfmrPolaritySelect.addEventListener("change", () => {
-        onComponentDefaultChange(entry.type, { xfmrPolarity: entry.xfmrPolaritySelect.value });
-      });
-    }
-    if (entry.type === "XFMR" && entry.xfmrSolveBySelect instanceof HTMLSelectElement) {
-      entry.xfmrSolveBySelect.addEventListener("change", () => {
-        onComponentDefaultChange(entry.type, { xfmrSolveBy: entry.xfmrSolveBySelect.value });
-      });
-    }
-  });
-  settingsApplyComponentDefaults.addEventListener("click", () => {
-    if (activeScopedSettingsType) {
-      const scopedOptions = buildScopedApplyOptions();
-      if (!scopedOptions) {
-        return;
-      }
-      onApplyComponentDefaultsToExisting(scopedOptions ?? undefined);
-      return;
-    }
-    onApplyComponentDefaultsToExisting(undefined);
-  });
-  settingsDefaultComponentType.addEventListener("click", () => {
-    if (!activeScopedSettingsType) {
-      return;
-    }
-    const scopedSettings = toolSettingsScopeByType.get(activeScopedSettingsType) ?? null;
-    if (scopedSettings?.supportsReset !== true) {
-      return;
-    }
-    onResetComponentTypeDefaults(activeScopedSourceType || activeScopedSettingsType);
-    syncSettingsState();
-  });
-  settingsReset.addEventListener("click", () => {
-    onResetSettings();
-    syncSettingsState();
-  });
-  settingsClose.addEventListener("click", closeSettingsDialog);
-  syncDialogScopeState();
-  syncSettingsState();
-
-  return { settingsDialog, openSettingsDialog, openSettingsDialogForType, closeSettingsDialog };
-};
-
 /**
  * @param {HTMLElement} container
  * @param {AppState} state
@@ -1610,23 +434,23 @@ function createUI(container, state, actions) {
   let schematicProbeLabels = new Map();
   const schematicGrid = { size: DEFAULT_GRID_SIZE, snap: true, visible: true };
   const selectionMenuActions = [
-    { id: "edit", label: "Edit Properties", shortcut: HOTKEY_SHORTCUTS.edit },
-    { id: "select-all", label: "Select All", shortcut: HOTKEY_SHORTCUTS.selectAll },
-    { id: "delete", label: "Delete", shortcut: HOTKEY_SHORTCUTS.delete },
-    { id: "copy", label: "Copy", shortcut: HOTKEY_SHORTCUTS.copy },
-    { id: "cut", label: "Cut", shortcut: HOTKEY_SHORTCUTS.cut },
-    { id: "paste", label: "Paste", shortcut: HOTKEY_SHORTCUTS.paste },
+    { id: "edit", label: "Edit Properties", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.edit },
+    { id: "select-all", label: "Select All", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.selectAll },
+    { id: "delete", label: "Delete", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.delete },
+    { id: "copy", label: "Copy", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.copy },
+    { id: "cut", label: "Cut", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.cut },
+    { id: "paste", label: "Paste", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.paste },
     { divider: true, id: "edit-after-paste" },
-    { id: "rotate-cw", label: "Rotate CW", shortcut: HOTKEY_SHORTCUTS.rotateCw },
-    { id: "rotate-ccw", label: "Rotate CCW", shortcut: HOTKEY_SHORTCUTS.rotateCcw },
-    { id: "flip-h", label: "Flip Horizontal", shortcut: HOTKEY_SHORTCUTS.flipH },
-    { id: "flip-v", label: "Flip Vertical", shortcut: HOTKEY_SHORTCUTS.flipV },
+    { id: "rotate-cw", label: "Rotate CW", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.rotateCw },
+    { id: "rotate-ccw", label: "Rotate CCW", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.rotateCcw },
+    { id: "flip-h", label: "Flip Horizontal", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.flipH },
+    { id: "flip-v", label: "Flip Vertical", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.flipV },
     { divider: true, id: "edit-after-flip-v" },
     { id: "simplify-wires", label: "Simplify Wires" },
     { id: "regrid-current-grid", label: "Regrid to Current Grid" },
     { divider: true, id: "edit-after-simplify" },
-    { id: "undo", label: "Undo", shortcut: HOTKEY_SHORTCUTS.undo },
-    { id: "redo", label: "Redo", shortcut: HOTKEY_SHORTCUTS.redo }
+    { id: "undo", label: "Undo", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.undo },
+    { id: "redo", label: "Redo", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.redo }
   ];
   const clipboard = { componentIds: [], wireIds: [] };
 
@@ -1730,465 +554,19 @@ function createUI(container, state, actions) {
   const parseSpdtSwitchValue = requireSchematicMethod("parseSpdtSwitchValue");
   const buildAnalysisDirectivesForConfig = requireSchematicMethod("buildAnalysisDirectivesForConfig");
 
-  const getSelectPropertyContract = ({
-    type: rawType,
-    key: rawKey,
-    property: sourceProperty,
-    propertyFieldPath: rawPropertyFieldPath,
-    normalizeMethodName: rawNormalizeMethodName,
-    normalizeValue
-  } = {}) => {
-    const source = {
-      type: rawType,
-      key: rawKey,
-      property: sourceProperty,
-      propertyFieldPath: rawPropertyFieldPath,
-      normalizeMethodName: rawNormalizeMethodName,
-      normalizeValue
-    };
-    const type = String(source.type ?? "").trim().toUpperCase();
-    const key = String(source.key ?? "").trim();
-    const normalizeMethodName = String(source.normalizeMethodName ?? "").trim();
-    const propertyFieldPath = String(source.propertyFieldPath ?? `${type}.${key}`).trim();
-    const property = source.property;
-    if (!type || !key) {
-      throw new Error(`Inline select property contract '${propertyFieldPath || "?"}' requires non-empty type/key.`);
-    }
-    if (!property) {
-      throw new Error(`Missing property contract '${propertyFieldPath}' in element catalog definition list.`);
-    }
-    const control = String(property?.control ?? "").trim().toLowerCase();
-    if (control !== "select") {
-      throw new Error(`Property contract '${propertyFieldPath}' must use select control.`);
-    }
-    const normalizeMethod = String(property?.normalizeMethod ?? "").trim();
-    if (normalizeMethod !== normalizeMethodName) {
-      throw new Error(
-        `Property contract '${propertyFieldPath}' normalize owner mismatch. Expected '${normalizeMethodName}', got '${normalizeMethod || "?"}'.`
-      );
-    }
-    const label = String(property?.label ?? "").trim();
-    if (!label) {
-      throw new Error(`Property contract '${propertyFieldPath}' requires a non-empty label.`);
-    }
-    const optionsRaw = Array.isArray(property?.options) ? property.options : [];
-    if (!optionsRaw.length) {
-      throw new Error(`Property contract '${propertyFieldPath}' requires one or more options.`);
-    }
-    const seenValues = new Set();
-    const options = optionsRaw.map((entry, index) => {
-      const value = normalizeValue(entry?.value);
-      const optionLabel = String(entry?.label ?? "").trim();
-      if (typeof value !== "string" || !value.trim()) {
-        throw new Error(`Property contract '${propertyFieldPath}' has invalid option value at index ${index}.`);
-      }
-      if (!optionLabel) {
-        throw new Error(`Property contract '${propertyFieldPath}' has invalid option label at index ${index}.`);
-      }
-      if (seenValues.has(value)) {
-        throw new Error(`Property contract '${propertyFieldPath}' contains duplicate option value '${value}'.`);
-      }
-      seenValues.add(value);
-      return { value, label: optionLabel };
-    });
-    return Object.freeze({
-      key,
-      label,
-      help: normalizePropertyHelpContract(propertyFieldPath, property?.help),
-      options: Object.freeze(options)
-    });
-  };
-  const normalizePropertyHelpContract = (propertyFieldPath, help) => {
-    if (help === null || help === undefined) {
-      return null;
-    }
-    if (!help || typeof help !== "object" || Array.isArray(help)) {
-      throw new Error(`Property contract '${propertyFieldPath}.help' requires an object when provided.`);
-    }
-    const title = String(help.title ?? "").trim();
-    const summary = String(help.summary ?? "").trim();
-    const definition = String(help.definition ?? "").trim();
-    if (!title || !summary || !definition) {
-      throw new Error(`Property contract '${propertyFieldPath}.help' requires non-empty title, summary, and definition.`);
-    }
-    return Object.freeze({ title, summary, definition });
-  };
-  const arePropertyHelpContractsEqual = (left, right) => {
-    if (left === null && right === null) {
-      return true;
-    }
-    if (!left || !right) {
-      return false;
-    }
-    return left.title === right.title
-      && left.summary === right.summary
-      && left.definition === right.definition;
-  };
-  const areInlineSelectContractsEqual = (left, right) => {
-    if (!left || !right) {
-      return false;
-    }
-    if (left.label !== right.label) {
-      return false;
-    }
-    if (!arePropertyHelpContractsEqual(left.help ?? null, right.help ?? null)) {
-      return false;
-    }
-    if (!Array.isArray(left.options) || !Array.isArray(right.options) || left.options.length !== right.options.length) {
-      return false;
-    }
-    for (let index = 0; index < left.options.length; index += 1) {
-      const leftOption = left.options[index];
-      const rightOption = right.options[index];
-      if (leftOption?.value !== rightOption?.value || leftOption?.label !== rightOption?.label) {
-        return false;
-      }
-    }
-    return true;
-  };
-
-  const inlineSelectNormalizeMethodCache = new Map();
-  const resolveInlineSelectNormalizeValue = (normalizeMethod) => {
-    const methodName = String(normalizeMethod ?? "").trim();
-    if (!methodName) {
-      throw new Error("Inline select property contract requires a non-empty normalize owner.");
-    }
-    const cachedNormalizeValue = inlineSelectNormalizeMethodCache.get(methodName);
-    if (typeof cachedNormalizeValue === "function") {
-      return cachedNormalizeValue;
-    }
-    const normalizeValue = requireSchematicMethod(methodName);
-    inlineSelectNormalizeMethodCache.set(methodName, normalizeValue);
-    return normalizeValue;
-  };
-  const buildInlineSelectPropertySpecs = () => {
-    const definitions = elementCatalogApi.listElementDefinitions();
-    if (!Array.isArray(definitions) || !definitions.length) {
-      throw new Error("Schematic API listElementDefinitions() returned invalid data.");
-    }
-    const specsByKey = new Map();
-    definitions.forEach((definition, definitionIndex) => {
-      const type = String(definition?.type ?? "").trim().toUpperCase();
-      if (!type) {
-        throw new Error(`Schematic API listElementDefinitions() returned invalid type at index ${definitionIndex}.`);
-      }
-      const properties = Array.isArray(definition?.properties) ? definition.properties : [];
-      properties.forEach((property, propertyIndex) => {
-        const key = String(property?.key ?? "").trim();
-        const control = String(property?.control ?? "").trim().toLowerCase();
-        if (control !== "select" || property?.inlineEditVisible === false) {
-          return;
-        }
-        if (!key) {
-          throw new Error(
-            `Inline select property contract '${type}' missing key at property index ${propertyIndex}.`
-          );
-        }
-        const normalizeMethod = String(property?.normalizeMethod ?? "").trim();
-        const normalizeValue = resolveInlineSelectNormalizeValue(normalizeMethod);
-        const propertyFieldPath = `${type}.${key}`;
-        const nextContract = getSelectPropertyContract({
-          type,
-          key,
-          property,
-          propertyFieldPath,
-          normalizeMethodName: normalizeMethod,
-          normalizeValue
-        });
-        const existingSpec = specsByKey.get(key);
-        if (!existingSpec) {
-          specsByKey.set(key, {
-            key,
-            normalizeMethod,
-            normalizeValue,
-            contract: nextContract,
-            componentTypes: [type]
-          });
-          return;
-        }
-        if (existingSpec.normalizeMethod !== normalizeMethod) {
-          throw new Error(
-            `Inline select property '${key}' normalize owner mismatch across element definitions.`
-          );
-        }
-        if (!areInlineSelectContractsEqual(existingSpec.contract, nextContract)) {
-          throw new Error(`Inline select property '${key}' contract mismatch across element definitions.`);
-        }
-        if (!existingSpec.componentTypes.includes(type)) {
-          existingSpec.componentTypes.push(type);
-        }
-      });
-    });
-    const specs = [];
-    specsByKey.forEach((existingSpec) => {
-      specs.push(Object.freeze({
-        key: existingSpec.key,
-        componentTypes: Object.freeze(existingSpec.componentTypes.slice()),
-        normalizeMethod: existingSpec.normalizeMethod,
-        normalizeValue: existingSpec.normalizeValue,
-        contract: existingSpec.contract
-      }));
-    });
-    if (!specs.length) {
-      throw new Error("Inline select property contracts missing from element definitions.");
-    }
-    return Object.freeze(specs);
-  };
-  const INLINE_SELECT_PROPERTY_SPECS = buildInlineSelectPropertySpecs();
-  const getInlineSelectPropertySpec = (key) => {
-    const normalizedKey = String(key ?? "").trim();
-    const spec = INLINE_SELECT_PROPERTY_SPECS.find((entry) => entry.key === normalizedKey) ?? null;
-    if (!spec) {
-      throw new Error(`Unsupported inline select property contract '${normalizedKey || "?"}'.`);
-    }
-    return spec;
-  };
-  const getInlineSelectPropertyContract = (key) => {
-    const spec = getInlineSelectPropertySpec(key);
-    return spec.contract;
-  };
-  const getTogglePropertyContract = ({
-    type,
-    key,
-    source,
-    propertyFieldPath,
-    normalizeMethodName
-  }) => {
-    const property = source && typeof source === "object" && source.property
-      ? source.property
-      : null;
-    if (!type || !key || typeof type !== "string" || typeof key !== "string") {
-      throw new Error(`Inline toggle property contract '${propertyFieldPath || "?"}' requires non-empty type/key.`);
-    }
-    if (!property) {
-      throw new Error(`Missing property contract '${propertyFieldPath}' in element catalog definition list.`);
-    }
-    const control = String(property?.control ?? "").trim().toLowerCase();
-    if (control !== "toggle") {
-      throw new Error(`Property contract '${propertyFieldPath}' must use toggle control.`);
-    }
-    const normalizeMethod = String(property?.normalizeMethod ?? "").trim();
-    if (normalizeMethod !== normalizeMethodName) {
-      throw new Error(
-        `Property contract '${propertyFieldPath}' normalize owner mismatch. Expected '${normalizeMethodName}', got '${normalizeMethod || "?"}'.`
-      );
-    }
-    const label = String(property?.label ?? "").trim();
-    if (!label) {
-      throw new Error(`Property contract '${propertyFieldPath}' requires a non-empty label.`);
-    }
-    return Object.freeze({
-      key,
-      label,
-      help: normalizePropertyHelpContract(propertyFieldPath, property?.help)
-    });
-  };
-  const areInlineToggleContractsEqual = (left, right) => {
-    if (!left || !right) {
-      return false;
-    }
-    if (left.label !== right.label) {
-      return false;
-    }
-    return arePropertyHelpContractsEqual(left.help ?? null, right.help ?? null);
-  };
-  const buildInlineTogglePropertySpecs = () => {
-    const definitions = elementCatalogApi.listElementDefinitions();
-    if (!Array.isArray(definitions) || !definitions.length) {
-      throw new Error("Schematic API listElementDefinitions() returned invalid data.");
-    }
-    const specsByKey = new Map();
-    definitions.forEach((definition, definitionIndex) => {
-      const type = String(definition?.type ?? "").trim().toUpperCase();
-      if (!type) {
-        throw new Error(`Schematic API listElementDefinitions() returned invalid type at index ${definitionIndex}.`);
-      }
-      const properties = Array.isArray(definition?.properties) ? definition.properties : [];
-      properties.forEach((property, propertyIndex) => {
-        const key = String(property?.key ?? "").trim();
-        const control = String(property?.control ?? "").trim().toLowerCase();
-        if (control !== "toggle" || property?.inlineEditVisible === false) {
-          return;
-        }
-        if (!key) {
-          throw new Error(
-            `Inline toggle property contract '${type}' missing key at property index ${propertyIndex}.`
-          );
-        }
-        const normalizeMethod = String(property?.normalizeMethod ?? "").trim();
-        const normalizeValue = resolveInlineSelectNormalizeValue(normalizeMethod);
-        const propertyFieldPath = `${type}.${key}`;
-        const nextContract = getTogglePropertyContract({
-          type,
-          key,
-          source: { property },
-          propertyFieldPath,
-          normalizeMethodName: normalizeMethod
-        });
-        const existingSpec = specsByKey.get(key);
-        if (!existingSpec) {
-          specsByKey.set(key, {
-            key,
-            normalizeMethod,
-            normalizeValue,
-            contract: nextContract,
-            componentTypes: [type]
-          });
-          return;
-        }
-        if (existingSpec.normalizeMethod !== normalizeMethod) {
-          throw new Error(
-            `Inline toggle property '${key}' normalize owner mismatch across element definitions.`
-          );
-        }
-        if (!areInlineToggleContractsEqual(existingSpec.contract, nextContract)) {
-          throw new Error(`Inline toggle property '${key}' contract mismatch across element definitions.`);
-        }
-        if (!existingSpec.componentTypes.includes(type)) {
-          existingSpec.componentTypes.push(type);
-        }
-      });
-    });
-    const specs = [];
-    specsByKey.forEach((existingSpec) => {
-      specs.push(Object.freeze({
-        key: existingSpec.key,
-        componentTypes: Object.freeze(existingSpec.componentTypes.slice()),
-        normalizeMethod: existingSpec.normalizeMethod,
-        normalizeValue: existingSpec.normalizeValue,
-        contract: existingSpec.contract
-      }));
-    });
-    return Object.freeze(specs);
-  };
-  const INLINE_TOGGLE_PROPERTY_SPECS = buildInlineTogglePropertySpecs();
-  const getInlineTogglePropertySpec = (key) => {
-    const normalizedKey = String(key ?? "").trim();
-    const spec = INLINE_TOGGLE_PROPERTY_SPECS.find((entry) => entry.key === normalizedKey) ?? null;
-    if (!spec) {
-      throw new Error(`Unsupported inline toggle property contract '${normalizedKey || "?"}'.`);
-    }
-    return spec;
-  };
-  const getInlineTogglePropertyContract = (key) => {
-    const spec = getInlineTogglePropertySpec(key);
-    return spec.contract;
-  };
-  const INLINE_INPUT_CONTROL_TYPES = new Set(["text", "number", "color"]);
-  const normalizeInputContractMetadata = (propertyFieldPath, control, input) => {
-    const normalizedInput = {};
-    if (typeof input?.placeholder === "string") {
-      normalizedInput.placeholder = input.placeholder;
-    }
-    if (Object.prototype.hasOwnProperty.call(input, "unit")) {
-      normalizedInput.unit = String(input.unit ?? "").trim();
-    }
-    if (Object.prototype.hasOwnProperty.call(input, "readOnly")) {
-      normalizedInput.readOnly = input.readOnly === true;
-    }
-    if (control === "number") {
-      ["min", "max", "step"].forEach((name) => {
-        if (!Object.prototype.hasOwnProperty.call(input, name)) return;
-        const value = Number(input[name]);
-        if (!Number.isFinite(value)) {
-          throw new Error(`Property contract '${propertyFieldPath}.input.${name}' requires a finite number.`);
-        }
-        normalizedInput[name] = value;
-      });
-    }
-    return normalizedInput;
-  };
-  const getInputPropertyContract = ({
-    type, key, source, propertyFieldPath, normalizeMethodName
-  }) => {
-    const property = source && typeof source === "object" ? source.property : null;
-    if (!type || !key || typeof type !== "string" || typeof key !== "string") {
-      throw new Error(`Inline input property contract '${propertyFieldPath || "?"}' requires non-empty type/key.`);
-    }
-    if (!property) throw new Error(`Missing property contract '${propertyFieldPath}' in element catalog definition list.`);
-    const control = String(property?.control ?? "").trim().toLowerCase();
-    if (!INLINE_INPUT_CONTROL_TYPES.has(control)) {
-      throw new Error(`Property contract '${propertyFieldPath}' must use text/number/color control.`);
-    }
-    const normalizeMethod = String(property?.normalizeMethod ?? "").trim();
-    if (normalizeMethod !== normalizeMethodName) {
-      throw new Error(`Property contract '${propertyFieldPath}' normalize owner mismatch. Expected '${normalizeMethodName}', got '${normalizeMethod || "?"}'.`);
-    }
-    const label = String(property?.label ?? "").trim();
-    if (!label) throw new Error(`Property contract '${propertyFieldPath}' requires a non-empty label.`);
-    const input = property?.input && typeof property.input === "object" && !Array.isArray(property.input) ? property.input : {};
-    return Object.freeze({
-      key,
-      label,
-      help: normalizePropertyHelpContract(propertyFieldPath, property?.help),
-      control,
-      input: Object.freeze(normalizeInputContractMetadata(propertyFieldPath, control, input))
-    });
-  };
-  const areInlineInputContractsEqual = (left, right) => {
-    if (!left || !right || left.label !== right.label || left.control !== right.control) return false;
-    if (!arePropertyHelpContractsEqual(left.help ?? null, right.help ?? null)) {
-      return false;
-    }
-    const leftInput = left.input && typeof left.input === "object" ? left.input : {};
-    const rightInput = right.input && typeof right.input === "object" ? right.input : {};
-    return !Array.from(new Set([...Object.keys(leftInput), ...Object.keys(rightInput)])).some((entryKey) => leftInput[entryKey] !== rightInput[entryKey]);
-  };
-  const buildInlineInputPropertySpecs = () => {
-    const definitions = elementCatalogApi.listElementDefinitions();
-    if (!Array.isArray(definitions) || !definitions.length) {
-      throw new Error("Schematic API listElementDefinitions() returned invalid data.");
-    }
-    const specsByKey = new Map();
-    definitions.forEach((definition, definitionIndex) => {
-      const type = String(definition?.type ?? "").trim().toUpperCase();
-      if (!type) {
-        throw new Error(`Schematic API listElementDefinitions() returned invalid type at index ${definitionIndex}.`);
-      }
-      const properties = Array.isArray(definition?.properties) ? definition.properties : [];
-      properties.forEach((property, propertyIndex) => {
-        const key = String(property?.key ?? "").trim();
-        const control = String(property?.control ?? "").trim().toLowerCase();
-        if (!INLINE_INPUT_CONTROL_TYPES.has(control) || property?.inlineEditVisible === false) return;
-        if (!key) {
-          throw new Error(`Inline input property contract '${type}' missing key at property index ${propertyIndex}.`);
-        }
-        const normalizeMethod = String(property?.normalizeMethod ?? "").trim();
-        const normalizeValue = resolveInlineSelectNormalizeValue(normalizeMethod);
-        const propertyFieldPath = `${type}.${key}`;
-        const nextContract = getInputPropertyContract({ type, key, source: { property }, propertyFieldPath, normalizeMethodName: normalizeMethod });
-        const existingSpec = specsByKey.get(key);
-        if (!existingSpec) {
-          specsByKey.set(key, { key, normalizeMethod, normalizeValue, contract: nextContract, componentTypes: [type] });
-          return;
-        }
-        if (existingSpec.normalizeMethod !== normalizeMethod) {
-          throw new Error(`Inline input property '${key}' normalize owner mismatch across element definitions.`);
-        }
-        if (!areInlineInputContractsEqual(existingSpec.contract, nextContract)) {
-          throw new Error(`Inline input property '${key}' contract mismatch across element definitions.`);
-        }
-        if (!existingSpec.componentTypes.includes(type)) existingSpec.componentTypes.push(type);
-      });
-    });
-    const specs = [];
-    specsByKey.forEach((existingSpec) => specs.push(Object.freeze({
-      key: existingSpec.key,
-      componentTypes: Object.freeze(existingSpec.componentTypes.slice()),
-      normalizeMethod: existingSpec.normalizeMethod,
-      normalizeValue: existingSpec.normalizeValue,
-      contract: existingSpec.contract
-    })));
-    return Object.freeze(specs);
-  };
-  const INLINE_INPUT_PROPERTY_SPECS = buildInlineInputPropertySpecs();
-  const getInlineInputPropertySpec = (key) => {
-    const normalizedKey = String(key ?? "").trim();
-    const spec = INLINE_INPUT_PROPERTY_SPECS.find((entry) => entry.key === normalizedKey) ?? null;
-    if (!spec) throw new Error(`Unsupported inline input property contract '${normalizedKey || "?"}'.`);
-    return spec;
-  };
-  const getInlineInputPropertyContract = (key) => { const spec = getInlineInputPropertySpec(key); return spec.contract; };
+  const inlineContracts = uiInlinePropertyContractsModule.createInlinePropertyContracts({
+    listElementDefinitions: () => elementCatalogApi.listElementDefinitions(),
+    resolveNormalizeValue: (normalizeMethod) => requireSchematicMethod(normalizeMethod)
+  });
+  const INLINE_SELECT_PROPERTY_SPECS = inlineContracts.INLINE_SELECT_PROPERTY_SPECS;
+  const INLINE_TOGGLE_PROPERTY_SPECS = inlineContracts.INLINE_TOGGLE_PROPERTY_SPECS;
+  const INLINE_INPUT_PROPERTY_SPECS = inlineContracts.INLINE_INPUT_PROPERTY_SPECS;
+  const getInlineSelectPropertySpec = inlineContracts.getInlineSelectPropertySpec;
+  const getInlineSelectPropertyContract = inlineContracts.getInlineSelectPropertyContract;
+  const getInlineTogglePropertySpec = inlineContracts.getInlineTogglePropertySpec;
+  const getInlineTogglePropertyContract = inlineContracts.getInlineTogglePropertyContract;
+  const getInlineInputPropertySpec = inlineContracts.getInlineInputPropertySpec;
+  const getInlineInputPropertyContract = inlineContracts.getInlineInputPropertyContract;
 
   const getDefaultTextStyle = () => {
     const style = textStyleApi.getDefaultTextStyle();
@@ -2978,37 +1356,37 @@ function createUI(container, state, actions) {
         id: "file",
         label: "File",
         entries: mapEntries([
-          { shortcut: HOTKEY_SHORTCUTS.open, description: "Open schematic" },
-          { shortcut: HOTKEY_SHORTCUTS.save, description: "Save schematic" },
-          { shortcut: HOTKEY_SHORTCUTS.saveAs, description: "Save schematic as..." },
-          { shortcut: HOTKEY_SHORTCUTS.settings, description: "Open settings" }
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.open, description: "Open schematic" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.save, description: "Save schematic" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.saveAs, description: "Save schematic as..." },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.settings, description: "Open settings" }
         ])
       },
       {
         id: "edit",
         label: "Edit",
         entries: mapEntries([
-          { shortcut: HOTKEY_SHORTCUTS.edit, description: "Edit selected component" },
-          { shortcut: HOTKEY_SHORTCUTS.selectAll, description: "Select all components and wires" },
-          { shortcut: HOTKEY_SHORTCUTS.delete, description: "Delete selection" },
-          { shortcut: HOTKEY_SHORTCUTS.copy, description: "Copy selection" },
-          { shortcut: HOTKEY_SHORTCUTS.cut, description: "Cut selection" },
-          { shortcut: HOTKEY_SHORTCUTS.paste, description: "Paste selection" },
-          { shortcut: HOTKEY_SHORTCUTS.rotateCw, description: "Rotate selection clockwise" },
-          { shortcut: HOTKEY_SHORTCUTS.rotateCcw, description: "Rotate selection counter-clockwise" },
-          { shortcut: HOTKEY_SHORTCUTS.flipH, description: "Flip selection horizontally" },
-          { shortcut: HOTKEY_SHORTCUTS.flipV, description: "Flip selection vertically" },
-          { shortcut: HOTKEY_SHORTCUTS.undo, description: "Undo" },
-          { shortcut: HOTKEY_SHORTCUTS.redo, description: "Redo" },
-          { shortcut: HOTKEY_SHORTCUTS.redoAlt, description: "Redo (alternate)" }
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.edit, description: "Edit selected component" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.selectAll, description: "Select all components and wires" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.delete, description: "Delete selection" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.copy, description: "Copy selection" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.cut, description: "Cut selection" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.paste, description: "Paste selection" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.rotateCw, description: "Rotate selection clockwise" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.rotateCcw, description: "Rotate selection counter-clockwise" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.flipH, description: "Flip selection horizontally" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.flipV, description: "Flip selection vertically" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.undo, description: "Undo" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.redo, description: "Redo" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.redoAlt, description: "Redo (alternate)" }
         ])
       },
       {
         id: "schematic",
         label: "Schematic",
         entries: mapEntries([
-          { shortcut: HOTKEY_SHORTCUTS.runSimulation, description: "Run simulation" },
-          { shortcut: HOTKEY_SHORTCUTS.escape, description: "Cancel wire step or return to Select tool" }
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.runSimulation, description: "Run simulation" },
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.escape, description: "Cancel wire step or return to Select tool" }
         ])
       },
       {
@@ -3025,7 +1403,7 @@ function createUI(container, state, actions) {
         id: "help",
         label: "Help",
         entries: mapEntries([
-          { shortcut: HOTKEY_SHORTCUTS.toggleHelp, description: "Toggle hover info" }
+          { shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.toggleHelp, description: "Toggle hover info" }
         ])
       }
     ];
@@ -3162,14 +1540,14 @@ function createUI(container, state, actions) {
     }
     applyCustomTooltip(button, tooltipText);
   };
-  applyActionButtonIcon(undoActionButton, "undo", `Undo (${HOTKEY_SHORTCUTS.undo})`);
-  applyActionButtonIcon(redoActionButton, "redo", `Redo (${HOTKEY_SHORTCUTS.redo})`);
-  applyActionButtonIcon(runActionButton, "run", `Run Simulation (${HOTKEY_SHORTCUTS.runSimulation})`);
+  applyActionButtonIcon(undoActionButton, "undo", `Undo (${uiDialogsModule.HOTKEY_SHORTCUTS.undo})`);
+  applyActionButtonIcon(redoActionButton, "redo", `Redo (${uiDialogsModule.HOTKEY_SHORTCUTS.redo})`);
+  applyActionButtonIcon(runActionButton, "run", `Run Simulation (${uiDialogsModule.HOTKEY_SHORTCUTS.runSimulation})`);
   applyActionButtonIcon(exportActionButton, "export", "Export Diagram");
-  applyActionButtonIcon(rotateCwButton, "rotate-cw", `Rotate CW (${HOTKEY_SHORTCUTS.rotateCw})`);
-  applyActionButtonIcon(rotateCcwButton, "rotate-ccw", `Rotate CCW (${HOTKEY_SHORTCUTS.rotateCcw})`);
-  applyActionButtonIcon(flipHButton, "flip-h", `Flip H (${HOTKEY_SHORTCUTS.flipH})`);
-  applyActionButtonIcon(flipVButton, "flip-v", `Flip V (${HOTKEY_SHORTCUTS.flipV})`);
+  applyActionButtonIcon(rotateCwButton, "rotate-cw", `Rotate CW (${uiDialogsModule.HOTKEY_SHORTCUTS.rotateCw})`);
+  applyActionButtonIcon(rotateCcwButton, "rotate-ccw", `Rotate CCW (${uiDialogsModule.HOTKEY_SHORTCUTS.rotateCcw})`);
+  applyActionButtonIcon(flipHButton, "flip-h", `Flip H (${uiDialogsModule.HOTKEY_SHORTCUTS.flipH})`);
+  applyActionButtonIcon(flipVButton, "flip-v", `Flip V (${uiDialogsModule.HOTKEY_SHORTCUTS.flipV})`);
   applyActionButtonIcon(duplicateActionButton, "duplicate", "Duplicate");
   applyActionButtonIcon(deleteActionButton, "delete", "Delete (Del)");
   applyActionButtonIcon(clearProbesActionButton, "clear-probes", "Clear Probes");
@@ -4006,7 +2384,7 @@ function createUI(container, state, actions) {
   workspaceHelpToggleButton.type = "button";
   workspaceHelpToggleButton.className = "secondary icon-button workspace-help-toggle";
   workspaceHelpToggleButton.dataset.workspaceHelpToggle = "1";
-  applyActionButtonIcon(workspaceHelpToggleButton, "info-view", `Hover Info (${HOTKEY_SHORTCUTS.toggleHelp})`);
+  applyActionButtonIcon(workspaceHelpToggleButton, "info-view", `Hover Info (${uiDialogsModule.HOTKEY_SHORTCUTS.toggleHelp})`);
   workspaceHelpToggleButton.addEventListener("click", () => {
     toggleHelpEnabled();
   });
@@ -7194,242 +5572,23 @@ function createUI(container, state, actions) {
   });
   updateConfigSectionVisibility();
 
-  const palette = ["#0f62fe", "#da1e28", "#198038", "#8a3ffc", "#ff832b", "#007d79"];
-  const colorMaps = {
-    op: new Map(),
-    dc: new Map(),
-    tran: new Map(),
-    ac: new Map()
-  };
-  const sharedTraceColorMap = new Map();
-  let nextSharedPaletteColorIndex = 0;
-  const TRACE_COLOR_MODE_AUTO = "auto";
-  const TRACE_COLOR_MODE_PALETTE = "palette";
-  const TRACE_COLOR_MODE_FORCE_NET = "force-net";
-  let traceColorMode = TRACE_COLOR_MODE_AUTO;
-  let netSignalColorMap = new Map();
-
-  const resolveNetColorForTraceToken = (traceToken) => {
-    const token = normalizeTraceTokenValue(traceToken);
-    if (!token) {
-      return "";
-    }
-    if (traceColorMode === TRACE_COLOR_MODE_PALETTE) {
-      return "";
-    }
-    if (token.startsWith("v:")) {
-      return netSignalColorMap.get(token) ?? "";
-    }
-    if (traceColorMode === TRACE_COLOR_MODE_FORCE_NET && token.startsWith("vd:")) {
-      const [pos, neg] = token.slice(3).split(",");
-      const posColor = pos ? netSignalColorMap.get(`v:${pos}`) : "";
-      const negColor = neg ? netSignalColorMap.get(`v:${neg}`) : "";
-      return posColor || negColor || "";
-    }
-    return "";
-  };
-
-  const syncTokenColorAcrossAnalysisMaps = (token, color) => {
-    const normalizedToken = normalizeTraceTokenValue(token);
-    const normalizedColor = normalizeHexColor(color);
-    if (!normalizedToken || !normalizedColor) {
-      return;
-    }
-    [colorMaps.op, colorMaps.dc, colorMaps.tran, colorMaps.ac].forEach((map) => {
-      if (!(map instanceof Map)) {
-        return;
-      }
-      for (const [signal] of map.entries()) {
-        if (normalizeTraceTokenValue(signal) !== normalizedToken) {
-          continue;
-        }
-        map.set(signal, normalizedColor);
-      }
-    });
-  };
-
-  const assignSharedTraceColor = (signal, preferredColor = "") => {
-    const token = normalizeTraceTokenValue(signal);
-    const preferred = normalizeHexColor(preferredColor);
-    if (!token) {
-      return preferred;
-    }
-    if (preferred) {
-      const current = normalizeHexColor(sharedTraceColorMap.get(token));
-      if (current !== preferred) {
-        sharedTraceColorMap.set(token, preferred);
-        syncTokenColorAcrossAnalysisMaps(token, preferred);
-      }
-      return preferred;
-    }
-    const existing = normalizeHexColor(sharedTraceColorMap.get(token));
-    if (existing) {
-      return existing;
-    }
-    const fallback = normalizeHexColor(palette[nextSharedPaletteColorIndex % palette.length]);
-    nextSharedPaletteColorIndex += 1;
-    if (fallback) {
-      sharedTraceColorMap.set(token, fallback);
-      return fallback;
-    }
-    return "";
-  };
-
-  const ensureColorMap = (map, signals) => {
-    if (!map || !Array.isArray(signals)) {
-      return;
-    }
-    signals.forEach((signal, index) => {
-      const preferred = normalizeHexColor(resolveNetColorForTraceToken(signal));
-      const sharedColor = assignSharedTraceColor(signal, preferred);
-      if (sharedColor) {
-        map.set(signal, sharedColor);
-        return;
-      }
-      if (!map.has(signal)) {
-        map.set(signal, palette[index % palette.length]);
-      }
-    });
-  };
-
-  const normalizeHexColor = (value) => {
-    const text = String(value ?? "").trim().toLowerCase();
-    if (!text) {
-      return "";
-    }
-    if (/^#[0-9a-f]{3}$/i.test(text)) {
-      return `#${text[1]}${text[1]}${text[2]}${text[2]}${text[3]}${text[3]}`;
-    }
-    if (/^#[0-9a-f]{6}$/i.test(text)) {
-      return text;
-    }
-    const rgb = text.match(/^rgb\(\s*(\d+),\s*(\d+),\s*(\d+)\s*\)$/i);
-    if (!rgb) {
-      return text.replace(/\s+/g, "");
-    }
-    const toHex = (channel) => Number(channel).toString(16).padStart(2, "0");
-    return `#${toHex(rgb[1])}${toHex(rgb[2])}${toHex(rgb[3])}`;
-  };
-
-  const resolveTraceColorForSignalToken = (signalToken) => {
-    const normalizedToken = normalizeTraceTokenValue(signalToken);
-    if (!normalizedToken) {
-      return "";
-    }
-    const sharedColor = normalizeHexColor(sharedTraceColorMap.get(normalizedToken));
-    if (sharedColor) {
-      return sharedColor;
-    }
-    const maps = [colorMaps.op, colorMaps.dc, colorMaps.tran, colorMaps.ac];
-    for (const map of maps) {
-      if (!(map instanceof Map)) {
-        continue;
-      }
-      for (const [signal, color] of map.entries()) {
-        if (normalizeTraceTokenValue(signal) !== normalizedToken) {
-          continue;
-        }
-        const normalizedColor = normalizeHexColor(color);
-        if (normalizedColor) {
-          return normalizedColor;
-        }
-      }
-    }
-    return "";
-  };
-
-  const SCHEMATIC_HOVER_FALLBACK_COLOR = "#1d1d1f";
-
-  const resolveHoverColorForSignalToken = (signalToken) => {
-    const traceColor = resolveTraceColorForSignalToken(signalToken);
-    if (traceColor) {
-      return traceColor;
-    }
-    const netColor = normalizeHexColor(resolveNetColorForTraceToken(signalToken));
-    if (netColor) {
-      return netColor;
-    }
-    return SCHEMATIC_HOVER_FALLBACK_COLOR;
-  };
-
-  const resolveHoverColorForSignals = (signals) => {
-    const tokens = normalizeSignalTokenSet(signals);
-    for (const token of tokens) {
-      const color = resolveHoverColorForSignalToken(token);
-      if (color) {
-        return color;
-      }
-    }
-    return SCHEMATIC_HOVER_FALLBACK_COLOR;
-  };
-
-  const resolveTraceColorForSignals = (signals) => {
-    const tokens = normalizeSignalTokenSet(signals);
-    for (const token of tokens) {
-      const color = resolveTraceColorForSignalToken(token);
-      if (color) {
-        return color;
-      }
-    }
-    return "";
-  };
-
-  function rebuildTraceNetColorMap() {
-    const api = getSchematicApi();
-    const model = schematicEditor?.getModel?.() ?? schematicModel ?? null;
-    if (!api || typeof api.resolveNetColors !== "function" || !model) {
-      netSignalColorMap = new Map();
-      return;
-    }
-    let resolvedColors = null;
-    try {
-      resolvedColors = api.resolveNetColors(model);
-    } catch {
-      resolvedColors = null;
-    }
-    const wireColors = resolvedColors && typeof resolvedColors.wireColors === "object"
-      ? resolvedColors.wireColors
-      : {};
-    const netLabelColors = resolvedColors && typeof resolvedColors.netColors === "object"
-      ? resolvedColors.netColors
-      : {};
-    const traceIndex = getTraceLinkIndex();
-    const nextMap = new Map();
-    Object.entries(wireColors).forEach(([wireIdRaw, colorRaw]) => {
-      const wireId = String(wireIdRaw ?? "").trim();
-      if (!wireId) {
-        return;
-      }
-      const netName = normalizeNodeName(traceIndex.wireToNet.get(wireId));
-      const color = normalizeHexColor(colorRaw);
-      if (!netName || !color) {
-        return;
-      }
-      const key = `v:${netName}`;
-      if (!nextMap.has(key)) {
-        nextMap.set(key, color);
-      }
-    });
-    Object.entries(netLabelColors).forEach(([componentIdRaw, colorRaw]) => {
-      const componentId = String(componentIdRaw ?? "").trim();
-      const color = normalizeHexColor(colorRaw);
-      if (!componentId || !color) {
-        return;
-      }
-      const nets = traceIndex.componentToNets.get(componentId);
-      nets?.forEach((netNameRaw) => {
-        const netName = normalizeNodeName(netNameRaw);
-        if (!netName) {
-          return;
-        }
-        const key = `v:${netName}`;
-        if (!nextMap.has(key)) {
-          nextMap.set(key, color);
-        }
-      });
-    });
-    netSignalColorMap = nextMap;
-  }
+  const traceColorManager = uiTraceColorsModule.createTraceColorManager({
+    normalizeTraceTokenValue: normalizeTraceTokenValue,
+    normalizeSignalTokenSet: normalizeSignalTokenSet
+  });
+  const palette = traceColorManager.palette;
+  const normalizeHexColor = traceColorManager.normalizeHexColor;
+  const ensureColorMap = traceColorManager.ensureColorMap;
+  const resolveTraceColorForSignalToken = traceColorManager.resolveTraceColorForSignalToken;
+  const resolveHoverColorForSignalToken = traceColorManager.resolveHoverColorForSignalToken;
+  const resolveHoverColorForSignals = traceColorManager.resolveHoverColorForSignals;
+  const resolveTraceColorForSignals = traceColorManager.resolveTraceColorForSignals;
+  const rebuildTraceNetColorMap = () => traceColorManager.rebuildTraceNetColorMap({
+    getSchematicApi,
+    getModel: () => schematicEditor?.getModel?.() ?? schematicModel ?? null,
+    normalizeNodeName,
+    getTraceLinkIndex
+  });
 
   const buildSeries = (xValues, traces, colorMap, selectedSignals) => {
     const classifySeriesHighlight = (signal) => {
@@ -7510,434 +5669,7 @@ function createUI(container, state, actions) {
     return series;
   };
 
-  const formatHoverNumber = (value) => {
-    return formatResultsDisplayNumber(value);
-  };
-
-  const findNearestIndex = (values, target) => {
-    if (!Array.isArray(values) || !values.length || !Number.isFinite(target)) {
-      return -1;
-    }
-    let low = 0;
-    let high = values.length - 1;
-    const ascending = values[low] <= values[high];
-    while (high - low > 1) {
-      const mid = Math.floor((low + high) / 2);
-      const midValue = values[mid];
-      if (ascending) {
-        if (midValue < target) {
-          low = mid;
-        } else {
-          high = mid;
-        }
-      } else {
-        if (midValue > target) {
-          low = mid;
-        } else {
-          high = mid;
-        }
-      }
-    }
-    const lowDelta = Math.abs(values[low] - target);
-    const highDelta = Math.abs(values[high] - target);
-    return lowDelta <= highDelta ? low : high;
-  };
-
-  const attachPlotTooltip = (canvas, overlay, tooltip, options) => {
-    if (!canvas || !tooltip) {
-      return;
-    }
-    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-    canvas._hoverSignals = [];
-    const clearOverlay = () => {
-      if (!overlay) {
-        return;
-      }
-      const ctx = overlay.getContext("2d");
-      if (!ctx) {
-        return;
-      }
-      ctx.clearRect(0, 0, overlay.width, overlay.height);
-      overlay._overlayState = { points: [], crosshairX: null };
-    };
-    const resolveHoverSignals = (matchedLegendItem, points, cssY) => {
-      if (matchedLegendItem?.signal) {
-        return [String(matchedLegendItem.signal).trim()].filter(Boolean);
-      }
-      if (!Array.isArray(points) || !points.length) {
-        return [];
-      }
-      let nearestPoint = null;
-      let nearestDist = Infinity;
-      points.forEach((point) => {
-        const y = Number(point?.screenY);
-        if (!Number.isFinite(y)) {
-          return;
-        }
-        const dist = Math.abs(y - cssY);
-        if (dist < nearestDist) {
-          nearestDist = dist;
-          nearestPoint = point;
-        }
-      });
-      if (!nearestPoint) {
-        return [];
-      }
-      const signal = String(nearestPoint.signal ?? nearestPoint.label ?? "").trim();
-      return signal ? [signal] : [];
-    };
-    const hide = () => {
-      tooltip.style.opacity = "0";
-      tooltip.textContent = "";
-      canvas._hoverSignals = [];
-      clearOverlay();
-      if (typeof options?.onLeave === "function") {
-        options.onLeave();
-      }
-    };
-    const findLegendItemAtPoint = (plotState, cssX, cssY) => {
-      if (!plotState?.legend?.items?.length) {
-        return null;
-      }
-      return plotState.legend.items.find((item) => {
-        const bounds = item?.bounds;
-        if (!bounds) {
-          return false;
-        }
-        return cssX >= bounds.x
-          && cssX <= bounds.x + bounds.width
-          && cssY >= bounds.y
-          && cssY <= bounds.y + bounds.height;
-      }) ?? null;
-    };
-    const show = (event) => {
-      const state = canvas._plotState;
-      if (!state || !Array.isArray(state.series) || !state.series.length) {
-        hide();
-        return;
-      }
-      const rect = canvas.getBoundingClientRect();
-      const cssX = event.clientX - rect.left;
-      const cssY = event.clientY - rect.top;
-      const matchedLegendItem = findLegendItemAtPoint(state, cssX, cssY);
-      if (cssX < state.plotLeft || cssX > state.plotRight || cssY < state.plotTop || cssY > state.plotBottom) {
-        hide();
-        return;
-      }
-      const xNorm = (cssX - state.plotLeft) / (state.plotRight - state.plotLeft);
-      let xValue = 0;
-      if (state.xScaleType === "log") {
-        const logMin = Number.isFinite(state.xLogMin) ? state.xLogMin : Math.log10(Math.max(state.xMin, 1e-12));
-        const logMax = Number.isFinite(state.xLogMax) ? state.xLogMax : Math.log10(Math.max(state.xMax, 1e-12));
-        xValue = Math.pow(10, logMin + xNorm * (logMax - logMin));
-      } else {
-        xValue = state.xMin + xNorm * (state.xMax - state.xMin);
-      }
-
-      let snappedX = xValue;
-      let bestDelta = Infinity;
-      const allHoverSeries = state.series.slice();
-      if (Array.isArray(state.rightAxes)) {
-        state.rightAxes.forEach((ra) => {
-          if (Array.isArray(ra?.series)) ra.series.forEach((s) => allHoverSeries.push(s));
-        });
-      }
-      allHoverSeries.forEach((entry) => {
-        const idx = findNearestIndex(entry.x, xValue);
-        if (idx < 0 || idx >= entry.x.length) {
-          return;
-        }
-        const candidate = entry.x[idx];
-        const delta = Math.abs(candidate - xValue);
-        if (delta < bestDelta) {
-          bestDelta = delta;
-          snappedX = candidate;
-        }
-      });
-
-      const lines = [];
-      let xLabel = options?.xLabel ?? "x";
-      let xDisplay = snappedX;
-      if (state.xTickUnit && Number.isFinite(state.xTickScale)) {
-        xLabel = xLabel.replace(/\s*\([^)]*\)\s*$/, "");
-        xLabel = `${xLabel} (${state.xTickUnit})`;
-        xDisplay = snappedX / state.xTickScale;
-      }
-      lines.push(`${xLabel}: ${formatHoverNumber(xDisplay)}`);
-      const points = [];
-      const mapSeriesY = (value) => {
-        if (!Number.isFinite(value)) {
-          return null;
-        }
-        if (state.yScaleType === "log") {
-          if (value <= 0 || !Number.isFinite(state.yLogMin) || !Number.isFinite(state.yLogMax)) {
-            return null;
-          }
-          const t = (Math.log10(value) - state.yLogMin) / (state.yLogMax - state.yLogMin);
-          return state.plotBottom - t * (state.plotBottom - state.plotTop);
-        }
-        const denom = state.yMax - state.yMin;
-        const t = denom === 0 ? 0 : (value - state.yMin) / denom;
-        return state.plotBottom - t * (state.plotBottom - state.plotTop);
-      };
-      state.series.forEach((entry, index) => {
-        const idx = findNearestIndex(entry.x, snappedX);
-        if (idx < 0 || idx >= entry.y.length) {
-          return;
-        }
-        const label = entry.label ?? `Trace ${index + 1}`;
-        const signal = entry.signal ?? label;
-        const value = entry.y[idx];
-        lines.push(`${label}: ${formatHoverNumber(value)}`);
-        points.push({
-          x: entry.x[idx],
-          y: value,
-          screenY: mapSeriesY(value),
-          color: entry.color,
-          label,
-          signal
-        });
-      });
-      if (Array.isArray(state.rightAxes)) {
-        state.rightAxes.forEach((rightAxis) => {
-          if (!Array.isArray(rightAxis?.series)) return;
-          const raYMin = rightAxis.yMin;
-          const raYMax = rightAxis.yMax;
-          const mapRaY = (value) => {
-            if (!Number.isFinite(value)) return null;
-            const denom = raYMax - raYMin;
-            const t = denom === 0 ? 0 : (value - raYMin) / denom;
-            return state.plotBottom - t * (state.plotBottom - state.plotTop);
-          };
-          rightAxis.series.forEach((entry, index) => {
-            const idx = findNearestIndex(entry.x, snappedX);
-            if (idx < 0 || idx >= entry.y.length) return;
-            const label = entry.label ?? `Trace ${index + 1}`;
-            const signal = entry.signal ?? label;
-            const value = entry.y[idx];
-            lines.push(`${label}: ${formatHoverNumber(value)}`);
-            points.push({
-              x: entry.x[idx],
-              y: value,
-              screenY: mapRaY(value),
-              color: entry.color,
-              label,
-              signal
-            });
-          });
-        });
-      }
-      tooltip.textContent = lines.join("\n");
-
-      const plotLeftCss = state.plotLeft;
-      const plotRightCss = state.plotRight;
-      const plotTopCss = state.plotTop;
-      const plotBottomCss = state.plotBottom;
-      const tooltipRect = tooltip.getBoundingClientRect();
-      const tooltipWidth = tooltipRect.width || tooltip.offsetWidth || 0;
-      const tooltipHeight = tooltipRect.height || tooltip.offsetHeight || 0;
-      const tooltipHost = tooltip.offsetParent instanceof HTMLElement
-        ? tooltip.offsetParent
-        : (tooltip.parentElement instanceof HTMLElement ? tooltip.parentElement : null);
-      const hostRect = tooltipHost?.getBoundingClientRect?.() ?? rect;
-      const hostWidth = hostRect.width || rect.width || 0;
-      const hostHeight = hostRect.height || rect.height || 0;
-      const inset = 6;
-
-      const plotMinLeft = plotLeftCss + inset;
-      const plotMaxLeft = Math.max(plotMinLeft, plotRightCss - tooltipWidth - inset);
-      const plotMinTop = plotTopCss + inset;
-      const plotMaxTop = Math.max(plotMinTop, plotBottomCss - tooltipHeight - inset);
-      let left = clamp(cssX + 12, plotMinLeft, plotMaxLeft);
-      let top = clamp(cssY + 12, plotMinTop, plotMaxTop);
-
-      const hostMinLeft = inset;
-      const hostMaxLeft = Math.max(hostMinLeft, hostWidth - tooltipWidth - inset);
-      const hostMinTop = inset;
-      const hostMaxTop = Math.max(hostMinTop, hostHeight - tooltipHeight - inset);
-      left = clamp(left, hostMinLeft, hostMaxLeft);
-
-      const panelElement = canvas.closest(".tab-panel");
-      let panelMinLeft = null;
-      let panelMaxLeft = null;
-      let panelMinTop = null;
-      let panelMaxTop = null;
-      if (panelElement instanceof HTMLElement) {
-        const panelRect = panelElement.getBoundingClientRect();
-        panelMinLeft = panelRect.left - hostRect.left + inset;
-        panelMaxLeft = panelRect.right - hostRect.left - tooltipWidth - inset;
-        panelMinTop = panelRect.top - hostRect.top + inset;
-        panelMaxTop = panelRect.bottom - hostRect.top - tooltipHeight - inset;
-
-        const boundedMinLeft = Math.max(hostMinLeft, panelMinLeft);
-        const boundedMaxLeft = Math.max(
-          boundedMinLeft,
-          Math.min(hostMaxLeft, panelMaxLeft)
-        );
-        const boundedMinTop = panelMinTop;
-        const boundedMaxTop = Math.max(boundedMinTop, panelMaxTop);
-        left = clamp(left, boundedMinLeft, boundedMaxLeft);
-        top = clamp(top, boundedMinTop, boundedMaxTop);
-      } else {
-        top = clamp(top, hostMinTop, hostMaxTop);
-      }
-
-      tooltip.style.left = `${left}px`;
-      tooltip.style.top = `${top}px`;
-      const placedRect = tooltip.getBoundingClientRect();
-      const panelRect = panelElement instanceof HTMLElement
-        ? panelElement.getBoundingClientRect()
-        : null;
-      const visibleRect = panelRect
-        ? {
-          left: Math.max(hostRect.left + inset, panelRect.left + inset),
-          right: Math.min(hostRect.right - inset, panelRect.right - inset),
-          top: Math.max(hostRect.top + inset, panelRect.top + inset),
-          bottom: Math.min(hostRect.bottom - inset, panelRect.bottom - inset)
-        }
-        : {
-          left: hostRect.left + inset,
-          right: hostRect.right - inset,
-          top: hostRect.top + inset,
-          bottom: hostRect.bottom - inset
-        };
-      if (Number.isFinite(placedRect.right) && placedRect.right > visibleRect.right) {
-        left -= placedRect.right - visibleRect.right;
-      }
-      if (Number.isFinite(placedRect.left) && placedRect.left < visibleRect.left) {
-        left += visibleRect.left - placedRect.left;
-      }
-      if (Number.isFinite(placedRect.bottom) && placedRect.bottom > visibleRect.bottom) {
-        top -= placedRect.bottom - visibleRect.bottom;
-      }
-      if (Number.isFinite(placedRect.top) && placedRect.top < visibleRect.top) {
-        top += visibleRect.top - placedRect.top;
-      }
-      left = clamp(left, hostMinLeft, hostMaxLeft);
-      if (panelElement instanceof HTMLElement
-        && Number.isFinite(panelMinTop)
-        && Number.isFinite(panelMaxTop)) {
-        top = clamp(top, panelMinTop, Math.max(panelMinTop, panelMaxTop));
-        if (Number.isFinite(panelMinLeft) && Number.isFinite(panelMaxLeft)) {
-          const boundedMinLeft = Math.max(hostMinLeft, panelMinLeft);
-          const boundedMaxLeft = Math.max(
-            boundedMinLeft,
-            Math.min(hostMaxLeft, panelMaxLeft)
-          );
-          left = clamp(left, boundedMinLeft, boundedMaxLeft);
-        }
-      } else {
-        top = clamp(top, hostMinTop, hostMaxTop);
-      }
-      tooltip.style.left = `${left}px`;
-      tooltip.style.top = `${top}px`;
-      tooltip.style.opacity = "1";
-
-      if (overlay) {
-        if (overlay.width !== canvas.width || overlay.height !== canvas.height) {
-          overlay.width = canvas.width;
-          overlay.height = canvas.height;
-        }
-        const ctx = overlay.getContext("2d");
-        if (ctx) {
-          const scaleX = rect.width ? overlay.width / rect.width : 1;
-          const scaleY = rect.height ? overlay.height / rect.height : 1;
-          ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
-          ctx.clearRect(0, 0, rect.width, rect.height);
-          const mapX = (value) => {
-            if (!Number.isFinite(value)) {
-              return null;
-            }
-            if (state.xScaleType === "log") {
-              if (value <= 0 || !Number.isFinite(state.xLogMin) || !Number.isFinite(state.xLogMax)) {
-                return null;
-              }
-              const t = (Math.log10(value) - state.xLogMin) / (state.xLogMax - state.xLogMin);
-              return state.plotLeft + t * (state.plotRight - state.plotLeft);
-            }
-            const denom = state.xMax - state.xMin;
-            const t = denom === 0 ? 0 : (value - state.xMin) / denom;
-            return state.plotLeft + t * (state.plotRight - state.plotLeft);
-          };
-          const mapY = (value) => {
-            if (!Number.isFinite(value)) {
-              return null;
-            }
-            if (state.yScaleType === "log") {
-              if (value <= 0 || !Number.isFinite(state.yLogMin) || !Number.isFinite(state.yLogMax)) {
-                return null;
-              }
-              const t = (Math.log10(value) - state.yLogMin) / (state.yLogMax - state.yLogMin);
-              return state.plotBottom - t * (state.plotBottom - state.plotTop);
-            }
-            const denom = state.yMax - state.yMin;
-            const t = denom === 0 ? 0 : (value - state.yMin) / denom;
-            return state.plotBottom - t * (state.plotBottom - state.plotTop);
-          };
-          ctx.lineWidth = 2;
-          const crossValue = points.length ? points[0].x : snappedX;
-          const crosshairX = mapX(crossValue);
-          if (crosshairX !== null) {
-            ctx.strokeStyle = "rgba(29, 29, 31, 0.35)";
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(crosshairX, state.plotTop);
-            ctx.lineTo(crosshairX, state.plotBottom);
-            ctx.stroke();
-          }
-
-          ctx.lineWidth = 2;
-          points.forEach((point, index) => {
-            const x = mapX(point.x);
-            const y = Number.isFinite(point.screenY) ? point.screenY : mapY(point.y);
-            if (x === null || y === null) {
-              return;
-            }
-            ctx.fillStyle = point.color ?? palette[index % palette.length];
-            ctx.strokeStyle = "#f6f4ef";
-            ctx.beginPath();
-            ctx.arc(x, y, 4, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-          });
-          overlay._overlayState = { points, crosshairX };
-        }
-      }
-      const normalizedSignals = resolveHoverSignals(matchedLegendItem, points, cssY)
-        .map((entry) => String(entry ?? "").trim())
-        .filter(Boolean);
-      canvas._hoverSignals = normalizedSignals;
-      if (typeof options?.onHover === "function") {
-        options.onHover(normalizedSignals);
-      }
-    };
-
-    const handleClick = (event) => {
-      if (typeof options?.onClick !== "function") {
-        return;
-      }
-      const plotState = canvas._plotState;
-      const rect = canvas.getBoundingClientRect();
-      if (plotState?.legend?.items?.length && rect.width > 0 && rect.height > 0) {
-        const cssX = event.clientX - rect.left;
-        const cssY = event.clientY - rect.top;
-        const matchedLegendItem = findLegendItemAtPoint(plotState, cssX, cssY);
-        if (matchedLegendItem?.signal) {
-          options.onClick([matchedLegendItem.signal], event);
-          return;
-        }
-      }
-      show(event);
-      const signals = Array.isArray(canvas._hoverSignals)
-        ? canvas._hoverSignals.slice()
-        : [];
-      options.onClick(signals, event);
-    };
-
-    canvas.addEventListener("mousemove", show);
-    canvas.addEventListener("mouseleave", hide);
-    canvas.addEventListener("click", handleClick);
-  };
+  const { attachPlotTooltip } = uiPlotTooltipModule;
 
   const getPlotExportApi = () => {
     const api = typeof self !== "undefined" ? self.SpjutSimPlotExport : null;
@@ -8320,6 +6052,8 @@ function createUI(container, state, actions) {
 
   attachPlotTooltip(dcCanvas, dcOverlay, dcTooltip, {
     xLabel: "Sweep (V)",
+    formatNumber: formatResultsDisplayNumber,
+    palette: palette,
     onHover: handlePlotHoverSignals,
     onLeave: handlePlotLeave,
     onClick: handlePlotClickSignals
@@ -8327,6 +6061,8 @@ function createUI(container, state, actions) {
   if (dcCurrentCanvas && dcCurrentOverlay && dcCurrentTooltip) {
     attachPlotTooltip(dcCurrentCanvas, dcCurrentOverlay, dcCurrentTooltip, {
       xLabel: "Sweep (V)",
+      formatNumber: formatResultsDisplayNumber,
+      palette: palette,
       onHover: handlePlotHoverSignals,
       onLeave: handlePlotLeave,
       onClick: handlePlotClickSignals
@@ -8335,6 +6071,8 @@ function createUI(container, state, actions) {
   if (dcPowerCanvas && dcPowerOverlay && dcPowerTooltip) {
     attachPlotTooltip(dcPowerCanvas, dcPowerOverlay, dcPowerTooltip, {
       xLabel: "Sweep (V)",
+      formatNumber: formatResultsDisplayNumber,
+      palette: palette,
       onHover: handlePlotHoverSignals,
       onLeave: handlePlotLeave,
       onClick: handlePlotClickSignals
@@ -8342,6 +6080,8 @@ function createUI(container, state, actions) {
   }
   attachPlotTooltip(tranCanvas, tranOverlay, tranTooltip, {
     xLabel: "Time",
+    formatNumber: formatResultsDisplayNumber,
+    palette: palette,
     onHover: handlePlotHoverSignals,
     onLeave: handlePlotLeave,
     onClick: handlePlotClickSignals
@@ -8349,6 +6089,8 @@ function createUI(container, state, actions) {
   if (tranCurrentCanvas && tranCurrentOverlay && tranCurrentTooltip) {
     attachPlotTooltip(tranCurrentCanvas, tranCurrentOverlay, tranCurrentTooltip, {
       xLabel: "Time",
+      formatNumber: formatResultsDisplayNumber,
+      palette: palette,
       onHover: handlePlotHoverSignals,
       onLeave: handlePlotLeave,
       onClick: handlePlotClickSignals
@@ -8357,6 +6099,8 @@ function createUI(container, state, actions) {
   if (tranPowerCanvas && tranPowerOverlay && tranPowerTooltip) {
     attachPlotTooltip(tranPowerCanvas, tranPowerOverlay, tranPowerTooltip, {
       xLabel: "Time",
+      formatNumber: formatResultsDisplayNumber,
+      palette: palette,
       onHover: handlePlotHoverSignals,
       onLeave: handlePlotLeave,
       onClick: handlePlotClickSignals
@@ -8364,12 +6108,16 @@ function createUI(container, state, actions) {
   }
   attachPlotTooltip(acMagCanvas, acMagOverlay, acTooltip, {
     xLabel: "Frequency (Hz)",
+    formatNumber: formatResultsDisplayNumber,
+    palette: palette,
     onHover: handlePlotHoverSignals,
     onLeave: handlePlotLeave,
     onClick: handlePlotClickSignals
   });
   attachPlotTooltip(acPhaseCanvas, acPhaseOverlay, acPhaseTooltip, {
     xLabel: "Frequency (Hz)",
+    formatNumber: formatResultsDisplayNumber,
+    palette: palette,
     onHover: handlePlotHoverSignals,
     onLeave: handlePlotLeave,
     onClick: handlePlotClickSignals
@@ -9131,14 +6879,14 @@ function createUI(container, state, actions) {
       label: "File",
       items: [
         { id: "new", label: "New" },
-        { id: "open", label: "Open...", shortcut: HOTKEY_SHORTCUTS.open },
-        { id: "save", label: "Save", shortcut: HOTKEY_SHORTCUTS.save },
-        { id: "save-as", label: "Save As...", shortcut: HOTKEY_SHORTCUTS.saveAs },
+        { id: "open", label: "Open...", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.open },
+        { id: "save", label: "Save", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.save },
+        { id: "save-as", label: "Save As...", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.saveAs },
         { divider: true, id: "exports" },
         { id: "export-diagram", label: "Export Diagram..." },
         { id: "export-results", label: "Export Results..." },
         { divider: true, id: "settings" },
-        { id: "settings", label: "Settings...", shortcut: HOTKEY_SHORTCUTS.settings }
+        { id: "settings", label: "Settings...", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.settings }
       ],
       actionAttribute: "menuAction",
       showShortcuts: true
@@ -9161,7 +6909,7 @@ function createUI(container, state, actions) {
       id: "help",
       label: "Help",
       items: [
-        { id: "toggle-help", label: "Hover Info: On", shortcut: HOTKEY_SHORTCUTS.toggleHelp },
+        { id: "toggle-help", label: "Hover Info: On", shortcut: uiDialogsModule.HOTKEY_SHORTCUTS.toggleHelp },
         { id: "hotkeys", label: "Hotkeys..." },
         { id: "about", label: "About" }
       ],
@@ -9952,14 +7700,16 @@ function createUI(container, state, actions) {
   exportDialog.append(exportPanel);
   container.appendChild(exportDialog);
 
-  const { openAboutDialog } = buildAboutDialog(container);
-  const { openHotkeysDialog } = buildHotkeysDialog(container, {
+  const { openAboutDialog } = uiDialogsModule.buildAboutDialog(container);
+  const { openHotkeysDialog } = uiDialogsModule.buildHotkeysDialog(container, {
     listHotkeys: () => listImplementedHotkeys()
   });
   ({
     openSettingsDialog,
     openSettingsDialogForType
-  } = buildSettingsDialog(container, {
+  } = uiDialogsModule.buildSettingsDialog(container, {
+    defaultTextStyle: DEFAULT_SCHEMATIC_TEXT_STYLE,
+    defaultIncludeValueUnitSpace: DEFAULT_INCLUDE_SCHEMATIC_VALUE_UNIT_SPACE,
     getAutoSwitchToSelectAfterToolUse: () => autoSwitchToSelectOnPlace,
     onAutoSwitchToSelectAfterToolUseChange: (value) => {
       autoSwitchToSelectOnPlace = Boolean(value);
@@ -10373,11 +8123,11 @@ function createUI(container, state, actions) {
   const openJsonExportDialog = () => {
     filenameInput.value = getDefaultJsonName();
     includeCheck.checked = false;
-    setDialogOpen(saveDialog, true);
+    uiDialogsModule.setDialogOpen(saveDialog, true);
   };
 
   const closeJsonExportDialog = () => {
-    setDialogOpen(saveDialog, false);
+    uiDialogsModule.setDialogOpen(saveDialog, false);
   };
 
   const confirmJsonExportDialog = async () => {
@@ -10501,11 +8251,11 @@ function createUI(container, state, actions) {
     transparentCheck.checked = Boolean(exportDiagramPrefs.transparent);
     exportFilenameInput.value = buildSchematicFilename(exportDiagramPrefs.format);
     updateExportDialogFieldVisibility();
-    setDialogOpen(exportDialog, true);
+    uiDialogsModule.setDialogOpen(exportDialog, true);
   };
 
   const closeExportDialog = () => {
-    setDialogOpen(exportDialog, false);
+    uiDialogsModule.setDialogOpen(exportDialog, false);
   };
 
   const closeActiveDialogs = () => {
@@ -10513,7 +8263,7 @@ function createUI(container, state, actions) {
     document.querySelectorAll(".modal-backdrop").forEach((dialog) => {
       const isHidden = dialog.hidden || dialog.classList.contains("hidden");
       if (!isHidden) {
-        setDialogOpen(dialog, false);
+        uiDialogsModule.setDialogOpen(dialog, false);
         closed = true;
       }
     });
@@ -10829,15 +8579,15 @@ function createUI(container, state, actions) {
       .map((row) => String(row?.name ?? "").trim())
       .concat(currentRows.map((row) => String(row?.name ?? "").trim()))
       .filter(Boolean);
-    ensureColorMap(colorMaps.op, signalNames);
+    ensureColorMap(traceColorManager.getColorMap("op"), signalNames);
     const nodes = formatRows(nodeRows, {
       rowKind: "op-node",
-      colorMap: colorMaps.op,
+      colorMap: traceColorManager.getColorMap("op"),
       signalCaseMap: preferredSignalCaseMap
     });
     const currents = formatRows(currentRows, {
       rowKind: "op-current",
-      colorMap: colorMaps.op,
+      colorMap: traceColorManager.getColorMap("op"),
       signalCaseMap: preferredSignalCaseMap
     });
     renderTable(nodesTable, nodes, ["Node", "Voltage (V)"]);
@@ -11040,7 +8790,7 @@ function createUI(container, state, actions) {
     renderSingleAxisPlotResults({
       results,
       signalSelectEl: signalSelect,
-      colorMap: colorMaps.dc,
+      colorMap: traceColorManager.getColorMap("dc"),
       metaEl: dcMeta,
       canvasEl: dcCanvas,
       currentCanvasEl: dcCurrentCanvas,
@@ -11058,7 +8808,7 @@ function createUI(container, state, actions) {
     renderSingleAxisPlotResults({
       results,
       signalSelectEl: signalSelectT,
-      colorMap: colorMaps.tran,
+      colorMap: traceColorManager.getColorMap("tran"),
       metaEl: tranMeta,
       canvasEl: tranCanvas,
       currentCanvasEl: tranCurrentCanvas,
@@ -11107,9 +8857,9 @@ function createUI(container, state, actions) {
     if (results && typeof results === "object") {
       results.selected = dedupeSignalList(selected);
     }
-    ensureColorMap(colorMaps.ac, results?.signals);
-    const magSeries = buildSeries(freq, magnitude, colorMaps.ac, selected);
-    const phaseSeries = buildSeries(freq, phase, colorMaps.ac, selected);
+    ensureColorMap(traceColorManager.getColorMap("ac"), results?.signals);
+    const magSeries = buildSeries(freq, magnitude, traceColorManager.getColorMap("ac"), selected);
+    const phaseSeries = buildSeries(freq, phase, traceColorManager.getColorMap("ac"), selected);
 
     acMeta.textContent = selected.length ? `Traces: ${selected.map((signal) => formatSignalLabel(signal)).join(", ")}` : "";
     if (!plot || typeof plot.renderPlot !== "function") {
