@@ -552,6 +552,7 @@ function createUI(container, state, actions) {
     formatTextAnnotationStyle: requireSchematicMethod("formatTextAnnotationStyle")
   });
   const parseSpdtSwitchValue = requireSchematicMethod("parseSpdtSwitchValue");
+  const formatComputedMetricTokenForDisplay = requireSchematicMethod("formatComputedMetricTokenForDisplay");
   const buildAnalysisDirectivesForConfig = requireSchematicMethod("buildAnalysisDirectivesForConfig");
 
   const inlineContracts = uiInlinePropertyContractsModule.createInlinePropertyContracts({
@@ -7292,6 +7293,18 @@ function createUI(container, state, actions) {
     parseArrowAnnotationStyle: (value, options) => parseArrowAnnotationStyleValue(value, options),
     parseTextAnnotationStyle: (value, options) => parseTextAnnotationStyleValue(value, options),
     applyValueFieldMeta,
+    formatComputedFieldDisplayValue: ({ componentType, propertyKey, rawValue, readOnly }) => {
+      const normalizedType = String(componentType ?? "").trim().toUpperCase();
+      const rawToken = String(rawValue ?? "");
+      if (readOnly !== true) {
+        return rawToken;
+      }
+      // Shared computed-field display policy: compact to 4 significant digits while preserving source precision.
+      if (normalizedType === "XFMR" && (propertyKey === "value" || propertyKey === "xfmrLs")) {
+        return formatComputedMetricTokenForDisplay(rawToken, 4, { microSymbol: "u" });
+      }
+      return rawToken;
+    },
     setInlineSwitchActiveThrowState: (activeThrow) => {
       uiInlineEditorBindingsModule.setInlineSwitchActiveThrowState({
         inlineSwitchPositionA,

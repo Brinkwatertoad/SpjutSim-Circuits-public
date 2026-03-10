@@ -322,6 +322,9 @@
     const getInlineModeFlags = typeof args.getInlineModeFlags === "function" ? args.getInlineModeFlags : () => ({ supportsValueField: false });
     const isProbeType = typeof args.isProbeType === "function" ? args.isProbeType : () => false;
     const supportsComponentValueField = typeof args.supportsComponentValueField === "function" ? args.supportsComponentValueField : () => false;
+    const formatComputedFieldDisplayValue = typeof args.formatComputedFieldDisplayValue === "function"
+      ? args.formatComputedFieldDisplayValue
+      : (entry) => String(entry?.rawValue ?? "");
     const parseBoxAnnotationStyle = requireFunction(args.parseBoxAnnotationStyle, "parseBoxAnnotationStyle");
     const parseArrowAnnotationStyle = requireFunction(args.parseArrowAnnotationStyle, "parseArrowAnnotationStyle");
     const parseTextAnnotationStyle = requireFunction(args.parseTextAnnotationStyle, "parseTextAnnotationStyle");
@@ -412,7 +415,16 @@
       ? String(component?.xfmrSolveBy ?? "").trim().toLowerCase()
       : "";
     const transformerSolveBySecondary = transformerSolveBy === "secondary";
-    panel.inlineValueInput.value = inlineModeFlags.supportsValueField ? String(component.value ?? "") : "";
+    const valueReadOnly = type === "XFMR" && !transformerSolveBySecondary;
+    const rawValueToken = String(component?.value ?? "");
+    panel.inlineValueInput.value = inlineModeFlags.supportsValueField
+      ? formatComputedFieldDisplayValue({
+        componentType: type,
+        propertyKey: "value",
+        rawValue: rawValueToken,
+        readOnly: valueReadOnly
+      })
+      : "";
     panel.inlineValueRow.hidden = !inlineModeFlags.showValueRow;
     panel.inlineValueInput.disabled = !inlineModeFlags.showValueRow;
     setInputReadOnlyState({
@@ -420,8 +432,8 @@
       input: panel.inlineValueInput,
       readOnlyChip: panel.inlineValueReadOnlyChip,
       readOnlyLock: panel.inlineValueReadOnlyLock,
-      readOnly: type === "XFMR" && !transformerSolveBySecondary,
-      reason: type === "XFMR" && !transformerSolveBySecondary
+      readOnly: valueReadOnly,
+      reason: valueReadOnly
         ? "Computed from Lp and Ls in Turns ratio mode."
         : ""
     });
@@ -446,15 +458,21 @@
       const isMatch = type === entry.componentType;
       setRowHidden(entry.row, !isMatch);
       if (isMatch) {
-        const hasValue = component && Object.prototype.hasOwnProperty.call(component, entry.propertyKey);
-        const rawValue = hasValue ? component[entry.propertyKey] : "";
-        entry.input.value = rawValue === undefined || rawValue === null ? "" : String(rawValue);
         let readOnly = entry.defaultReadOnly === true;
         let reason = readOnly ? "Read-only property." : "";
         if (type === "XFMR" && entry.propertyKey === "xfmrLs") {
           readOnly = transformerSolveBySecondary;
           reason = readOnly ? "Computed from Lp and N in Secondary inductance mode." : "";
         }
+        const hasValue = component && Object.prototype.hasOwnProperty.call(component, entry.propertyKey);
+        const rawValue = hasValue ? component[entry.propertyKey] : "";
+        const rawDisplayValue = rawValue === undefined || rawValue === null ? "" : String(rawValue);
+        entry.input.value = formatComputedFieldDisplayValue({
+          componentType: type,
+          propertyKey: entry.propertyKey,
+          rawValue: rawDisplayValue,
+          readOnly
+        });
         setInputReadOnlyState({
           row: entry.row,
           input: entry.input,
@@ -657,6 +675,9 @@
     const parseArrowAnnotationStyle = requireFunction(args.parseArrowAnnotationStyle, "parseArrowAnnotationStyle");
     const parseTextAnnotationStyle = requireFunction(args.parseTextAnnotationStyle, "parseTextAnnotationStyle");
     const applyValueFieldMeta = typeof args.applyValueFieldMeta === "function" ? args.applyValueFieldMeta : () => { };
+    const formatComputedFieldDisplayValue = typeof args.formatComputedFieldDisplayValue === "function"
+      ? args.formatComputedFieldDisplayValue
+      : (entry) => String(entry?.rawValue ?? "");
     const setInlineSwitchActiveThrowState = typeof args.setInlineSwitchActiveThrowState === "function"
       ? args.setInlineSwitchActiveThrowState
       : () => { };
@@ -740,6 +761,7 @@
         parseArrowAnnotationStyle,
         parseTextAnnotationStyle,
         applyValueFieldMeta,
+        formatComputedFieldDisplayValue,
         onBeforeSync: () => setInlineSync(true),
         onAfterSync: () => setInlineSync(false),
         onPositionComponent: (nextComponent) => {

@@ -653,8 +653,8 @@
     const coupling = normalizeSpiceValue(String(normalized?.coupling ?? "1"));
     const primaryResistance = normalizeSpiceValue(String(normalized?.primaryResistance ?? "0"));
     const secondaryResistance = normalizeSpiceValue(String(normalized?.secondaryResistance ?? "0"));
-    const primaryResistanceNum = Number(primaryResistance);
-    const secondaryResistanceNum = Number(secondaryResistance);
+    const primaryResistanceNum = Number.parseFloat(String(normalized?.primaryResistance ?? "0"));
+    const secondaryResistanceNum = Number.parseFloat(String(normalized?.secondaryResistance ?? "0"));
     const hasPrimaryResistance = Number.isFinite(primaryResistanceNum) && primaryResistanceNum > 0;
     const hasSecondaryResistance = Number.isFinite(secondaryResistanceNum) && secondaryResistanceNum > 0;
     const baseId = normalizeId(component.id);

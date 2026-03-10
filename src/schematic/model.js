@@ -154,7 +154,8 @@
     { symbol: "m", exponent: -3 },
     { symbol: "\u00b5", exponent: -6 },
     { symbol: "n", exponent: -9 },
-    { symbol: "p", exponent: -12 }
+    { symbol: "p", exponent: -12 },
+    { symbol: "f", exponent: -15 }
   ]);
   const METRIC_MULTIPLIERS = Object.freeze({
     T: 1e12,
@@ -164,9 +165,14 @@
     K: 1e3,
     m: 1e-3,
     u: 1e-6,
+    U: 1e-6,
     "\u00b5": 1e-6,
+    "\u03bc": 1e-6,
     n: 1e-9,
-    p: 1e-12
+    N: 1e-9,
+    p: 1e-12,
+    P: 1e-12,
+    f: 1e-15
   });
 
   const normalizePoint = (point) => {
@@ -226,42 +232,50 @@
     }
     return String(rounded);
   };
-  const normalizeTransformerTurnsRatio = (value) => {
-    const parsed = parseMetricValue(String(value ?? "").trim(), "");
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return DEFAULT_TRANSFORMER_TURNS_RATIO;
+  const normalizeTransformerNumericToken = (value, unit, fallback, options) => {
+    const settings = options && typeof options === "object" ? options : {};
+    const trimmed = String(value ?? "").trim();
+    if (!trimmed) {
+      return fallback;
     }
-    return formatNumericToken(parsed, DEFAULT_TRANSFORMER_TURNS_RATIO);
-  };
-  const normalizeTransformerPrimaryInductance = (value) => {
-    const parsed = parseMetricValue(String(value ?? "").trim(), "H");
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return DEFAULT_TRANSFORMER_PRIMARY_INDUCTANCE;
-    }
-    return formatNumericToken(parsed, DEFAULT_TRANSFORMER_PRIMARY_INDUCTANCE);
-  };
-  const normalizeTransformerSecondaryInductance = (value) => {
-    const parsed = parseMetricValue(String(value ?? "").trim(), "H");
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return DEFAULT_TRANSFORMER_SECONDARY_INDUCTANCE;
-    }
-    return formatNumericToken(parsed, DEFAULT_TRANSFORMER_SECONDARY_INDUCTANCE);
-  };
-  const normalizeTransformerCouplingCoefficient = (value) => {
-    const parsed = parseMetricValue(String(value ?? "").trim(), "");
+    const parsed = parseMetricValue(trimmed, unit);
     if (!Number.isFinite(parsed)) {
-      return DEFAULT_TRANSFORMER_COUPLING;
+      return fallback;
     }
-    const clamped = Math.max(0, Math.min(1, parsed));
-    return formatNumericToken(clamped, DEFAULT_TRANSFORMER_COUPLING);
-  };
-  const normalizeTransformerWindingResistance = (value) => {
-    const parsed = parseMetricValue(String(value ?? "").trim(), "\u03a9");
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      return DEFAULT_TRANSFORMER_WINDING_RESISTANCE;
+    const min = Number(settings.min);
+    const max = Number(settings.max);
+    const minInclusive = settings.minInclusive !== false;
+    const maxInclusive = settings.maxInclusive !== false;
+    if (Number.isFinite(min)) {
+      if (minInclusive ? parsed < min : parsed <= min) {
+        return fallback;
+      }
     }
-    return formatNumericToken(parsed, DEFAULT_TRANSFORMER_WINDING_RESISTANCE);
+    if (Number.isFinite(max)) {
+      if (maxInclusive ? parsed > max : parsed >= max) {
+        return fallback;
+      }
+    }
+    return trimmed.replace(/\s+/g, "");
   };
+  const parseTransformerNumericToken = (token, unit, fallbackToken) => {
+    const primary = parseMetricValue(String(token ?? "").trim(), unit);
+    if (Number.isFinite(primary)) {
+      return primary;
+    }
+    const fallback = parseMetricValue(String(fallbackToken ?? "").trim(), unit);
+    return Number.isFinite(fallback) ? fallback : 0;
+  };
+  const normalizeTransformerTurnsRatio = (value) =>
+    normalizeTransformerNumericToken(value, "", DEFAULT_TRANSFORMER_TURNS_RATIO, { min: 0, minInclusive: false });
+  const normalizeTransformerPrimaryInductance = (value) =>
+    normalizeTransformerNumericToken(value, "H", DEFAULT_TRANSFORMER_PRIMARY_INDUCTANCE, { min: 0, minInclusive: false });
+  const normalizeTransformerSecondaryInductance = (value) =>
+    normalizeTransformerNumericToken(value, "H", DEFAULT_TRANSFORMER_SECONDARY_INDUCTANCE, { min: 0, minInclusive: false });
+  const normalizeTransformerCouplingCoefficient = (value) =>
+    normalizeTransformerNumericToken(value, "", DEFAULT_TRANSFORMER_COUPLING, { min: 0, max: 1 });
+  const normalizeTransformerWindingResistance = (value) =>
+    normalizeTransformerNumericToken(value, "\u03a9", DEFAULT_TRANSFORMER_WINDING_RESISTANCE, { min: 0 });
   const normalizeTransformerPolarity = (value) => {
     const normalized = String(value ?? "").trim().toLowerCase();
     return normalized === "additive" ? "additive" : DEFAULT_TRANSFORMER_POLARITY;
@@ -271,18 +285,18 @@
     return normalized === "secondary" ? "secondary" : DEFAULT_TRANSFORMER_SOLVE_BY;
   };
   const computeTransformerSecondaryInductance = (primaryInductance, turnsRatio) => {
-    const normalizedPrimary = Number.parseFloat(normalizeTransformerPrimaryInductance(primaryInductance));
-    const normalizedRatio = Number.parseFloat(normalizeTransformerTurnsRatio(turnsRatio));
-    const computed = normalizedPrimary * normalizedRatio * normalizedRatio;
+    const parsedPrimary = parseTransformerNumericToken(primaryInductance, "H", DEFAULT_TRANSFORMER_PRIMARY_INDUCTANCE);
+    const parsedRatio = parseTransformerNumericToken(turnsRatio, "", DEFAULT_TRANSFORMER_TURNS_RATIO);
+    const computed = parsedPrimary * parsedRatio * parsedRatio;
     if (!Number.isFinite(computed) || computed <= 0) {
       return DEFAULT_TRANSFORMER_SECONDARY_INDUCTANCE;
     }
-    return formatNumericToken(computed, DEFAULT_TRANSFORMER_SECONDARY_INDUCTANCE);
+    return formatMetricToken(computed, DEFAULT_TRANSFORMER_SECONDARY_INDUCTANCE, { microSymbol: "u" });
   };
   const computeTransformerTurnsRatio = (primaryInductance, secondaryInductance) => {
-    const normalizedPrimary = Number.parseFloat(normalizeTransformerPrimaryInductance(primaryInductance));
-    const normalizedSecondary = Number.parseFloat(normalizeTransformerSecondaryInductance(secondaryInductance));
-    const computed = Math.sqrt(normalizedSecondary / normalizedPrimary);
+    const parsedPrimary = parseTransformerNumericToken(primaryInductance, "H", DEFAULT_TRANSFORMER_PRIMARY_INDUCTANCE);
+    const parsedSecondary = parseTransformerNumericToken(secondaryInductance, "H", DEFAULT_TRANSFORMER_SECONDARY_INDUCTANCE);
+    const computed = Math.sqrt(parsedSecondary / parsedPrimary);
     if (!Number.isFinite(computed) || computed <= 0) {
       return DEFAULT_TRANSFORMER_TURNS_RATIO;
     }
@@ -679,7 +693,7 @@
       return null;
     }
     const metricMatch = trimmed.match(
-      /^([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(?:\s*([TGMkKmunp\u00b5]))?$/
+      /^([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)(?:\s*([TGMkKmunpfUNP\u00b5\u03bc]))?$/
     );
     if (metricMatch) {
       const numeric = Number(metricMatch[1]);
@@ -722,6 +736,53 @@
     const factor = Math.pow(10, selected.exponent);
     const scaled = value / factor;
     return { number: formatMetricNumber(scaled), prefix: selected.symbol };
+  };
+
+  const formatMetricToken = (value, fallback, options) => {
+    const formatted = formatMetricValue(value);
+    if (!formatted) {
+      return String(fallback);
+    }
+    const preferredMicro = options?.microSymbol === "u" ? "u" : "\u00b5";
+    const prefix = formatted.prefix === "\u00b5" ? preferredMicro : formatted.prefix;
+    return `${formatted.number}${prefix}`;
+  };
+
+  const normalizeMaxSignificantDigits = (value, fallback = 4) => {
+    const parsed = Math.trunc(Number(value));
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    return Math.min(12, Math.max(1, parsed));
+  };
+
+  const formatComputedMetricTokenForDisplay = (rawToken, maxSignificantDigits = 4, options) => {
+    const compactRaw = String(rawToken ?? "").trim().replace(/\s+/g, "");
+    if (!compactRaw) {
+      return "";
+    }
+    const unit = String(options?.unit ?? "");
+    const numeric = parseMetricValue(compactRaw, unit);
+    if (!Number.isFinite(numeric)) {
+      return compactRaw;
+    }
+    const baseMetric = formatMetricValue(numeric);
+    if (!baseMetric) {
+      return compactRaw;
+    }
+    const basePrefix = String(baseMetric.prefix ?? "");
+    const baseEntry = METRIC_PREFIXES.find((entry) => entry.symbol === basePrefix) ?? { exponent: 0 };
+    const scale = Math.pow(10, baseEntry.exponent);
+    const scaled = numeric / scale;
+    const significantDigits = normalizeMaxSignificantDigits(maxSignificantDigits, 4);
+    const roundedScaled = Number.parseFloat(Number(scaled).toPrecision(significantDigits));
+    if (!Number.isFinite(roundedScaled)) {
+      return compactRaw;
+    }
+    const roundedNumeric = roundedScaled * scale;
+    return formatMetricToken(roundedNumeric, compactRaw, {
+      microSymbol: options?.microSymbol === "\u00b5" ? "\u00b5" : "u"
+    });
   };
 
   const formatWithUnit = (display, unit, prefix) => {
@@ -1118,13 +1179,9 @@
     if (type === "XFMR") {
       const transformer = normalizeTransformerComponentState(normalized);
       normalized.value = transformer.turnsRatio;
-      normalized.xfmrLp = transformer.primaryInductance;
-      normalized.xfmrLs = transformer.secondaryInductance;
-      normalized.xfmrK = transformer.coupling;
-      normalized.xfmrRpri = transformer.primaryResistance;
-      normalized.xfmrRsec = transformer.secondaryResistance;
-      normalized.xfmrPolarity = transformer.polarity;
-      normalized.xfmrSolveBy = transformer.solveBy;
+      if (transformer.solveBy === "secondary") {
+        normalized.xfmrLs = transformer.secondaryInductance;
+      }
     }
     model.components.push(normalized);
     return normalized;
@@ -1452,6 +1509,7 @@
     getDefaultComponentTextColors,
     getComponentValueUnit,
     formatComponentDisplayValue,
+    formatComputedMetricTokenForDisplay,
     parseSpdtSwitchValue,
     getMeasurementTextWeight,
     getDefaultTextStyle: () => ({
