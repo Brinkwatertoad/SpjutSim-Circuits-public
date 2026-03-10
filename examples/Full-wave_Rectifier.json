@@ -1,0 +1,833 @@
+{
+  "schema": "spjutsim/schematic",
+  "version": 1,
+  "title": "",
+  "createdAt": "2026-03-08T05:36:41.449Z",
+  "updatedAt": "2026-03-10T04:31:18.993Z",
+  "schematic": {
+    "components": [
+      {
+        "id": "XFMR4",
+        "name": "XFMR1",
+        "type": "XFMR",
+        "value": "1.41421356237",
+        "netColor": "#8a151b",
+        "xfmrLp": "1m",
+        "xfmrSolveBy": "secondary",
+        "xfmrLs": "1.99999999999m",
+        "xfmrK": "1",
+        "xfmrRpri": "1m",
+        "xfmrRsec": "1m",
+        "xfmrPolarity": "subtractive",
+        "rotation": 0,
+        "pins": [
+          {
+            "id": "P1",
+            "name": "P1",
+            "x": 460,
+            "y": 130
+          },
+          {
+            "id": "P2",
+            "name": "P2",
+            "x": 460,
+            "y": 170
+          },
+          {
+            "id": "S1",
+            "name": "S1",
+            "x": 500,
+            "y": 130
+          },
+          {
+            "id": "S2",
+            "name": "S2",
+            "x": 500,
+            "y": 170
+          }
+        ]
+      },
+      {
+        "id": "GND1",
+        "name": "GND1",
+        "type": "GND",
+        "value": "",
+        "netColor": "#8a151b",
+        "groundVariant": "earth",
+        "rotation": 0,
+        "pins": [
+          {
+            "id": "0",
+            "name": "0",
+            "x": 440,
+            "y": 180
+          }
+        ]
+      },
+      {
+        "id": "GND2",
+        "name": "GND2",
+        "type": "GND",
+        "value": "",
+        "netColor": "#8a151b",
+        "groundVariant": "earth",
+        "rotation": 0,
+        "pins": [
+          {
+            "id": "0",
+            "name": "0",
+            "x": 590,
+            "y": 210
+          }
+        ]
+      },
+      {
+        "id": "D6",
+        "name": "D1",
+        "type": "D",
+        "value": "1N4148",
+        "netColor": "#8a151b",
+        "diodeDisplayType": "default",
+        "diodePreset": "1N4148",
+        "diodeIS": "35p",
+        "diodeN": "1.24",
+        "diodeRS": "64m",
+        "diodeTT": "5.0n",
+        "diodeCJO": "4.0p",
+        "diodeVJ": "0.6",
+        "diodeM": "0.285",
+        "diodeFC": "",
+        "diodeEG": "",
+        "diodeXTI": "",
+        "diodeTNOM": "",
+        "diodeBV": "75",
+        "diodeIBV": "",
+        "diodeExtra": "",
+        "diodeArea": "",
+        "diodeTEMP": "",
+        "diodeDTEMP": "",
+        "diodeIC": "",
+        "rotation": 0,
+        "pins": [
+          {
+            "id": "A",
+            "name": "A",
+            "x": 560,
+            "y": 60
+          },
+          {
+            "id": "K",
+            "name": "K",
+            "x": 600,
+            "y": 60
+          }
+        ]
+      },
+      {
+        "id": "D8",
+        "name": "D2",
+        "type": "D",
+        "value": "1N4148",
+        "netColor": "#8a151b",
+        "diodeDisplayType": "default",
+        "diodePreset": "1N4148",
+        "diodeIS": "35p",
+        "diodeN": "1.24",
+        "diodeRS": "64m",
+        "diodeTT": "5.0n",
+        "diodeCJO": "4.0p",
+        "diodeVJ": "0.6",
+        "diodeM": "0.285",
+        "diodeFC": "",
+        "diodeEG": "",
+        "diodeXTI": "",
+        "diodeTNOM": "",
+        "diodeBV": "75",
+        "diodeIBV": "",
+        "diodeExtra": "",
+        "diodeArea": "",
+        "diodeTEMP": "",
+        "diodeDTEMP": "",
+        "diodeIC": "",
+        "rotation": 0,
+        "pins": [
+          {
+            "id": "A",
+            "name": "A",
+            "x": 620,
+            "y": 60
+          },
+          {
+            "id": "K",
+            "name": "K",
+            "x": 660,
+            "y": 60
+          }
+        ]
+      },
+      {
+        "id": "D9",
+        "name": "D4",
+        "type": "D",
+        "value": "1N4148",
+        "netColor": "#8a151b",
+        "diodeDisplayType": "default",
+        "diodePreset": "1N4148",
+        "diodeIS": "35p",
+        "diodeN": "1.24",
+        "diodeRS": "64m",
+        "diodeTT": "5.0n",
+        "diodeCJO": "4.0p",
+        "diodeVJ": "0.6",
+        "diodeM": "0.285",
+        "diodeFC": "",
+        "diodeEG": "",
+        "diodeXTI": "",
+        "diodeTNOM": "",
+        "diodeBV": "75",
+        "diodeIBV": "",
+        "diodeExtra": "",
+        "diodeArea": "",
+        "diodeTEMP": "",
+        "diodeDTEMP": "",
+        "diodeIC": "",
+        "rotation": 0,
+        "labelRotation": 180,
+        "pins": [
+          {
+            "id": "A",
+            "name": "A",
+            "x": 620,
+            "y": 110
+          },
+          {
+            "id": "K",
+            "name": "K",
+            "x": 660,
+            "y": 110
+          }
+        ]
+      },
+      {
+        "id": "D10",
+        "name": "D3",
+        "type": "D",
+        "value": "1N4148",
+        "netColor": "#8a151b",
+        "diodeDisplayType": "default",
+        "diodePreset": "1N4148",
+        "diodeIS": "35p",
+        "diodeN": "1.24",
+        "diodeRS": "64m",
+        "diodeTT": "5.0n",
+        "diodeCJO": "4.0p",
+        "diodeVJ": "0.6",
+        "diodeM": "0.285",
+        "diodeFC": "",
+        "diodeEG": "",
+        "diodeXTI": "",
+        "diodeTNOM": "",
+        "diodeBV": "75",
+        "diodeIBV": "",
+        "diodeExtra": "",
+        "diodeArea": "",
+        "diodeTEMP": "",
+        "diodeDTEMP": "",
+        "diodeIC": "",
+        "rotation": 0,
+        "labelRotation": 180,
+        "pins": [
+          {
+            "id": "A",
+            "name": "A",
+            "x": 560,
+            "y": 110
+          },
+          {
+            "id": "K",
+            "name": "K",
+            "x": 600,
+            "y": 110
+          }
+        ]
+      },
+      {
+        "id": "R3",
+        "name": "R1",
+        "type": "R",
+        "value": "5k",
+        "netColor": "#8a151b",
+        "resistorStyle": "zigzag",
+        "pins": [
+          {
+            "id": "1",
+            "name": "1",
+            "x": 730,
+            "y": 130
+          },
+          {
+            "id": "2",
+            "name": "2",
+            "x": 730,
+            "y": 170
+          }
+        ]
+      },
+      {
+        "id": "C3",
+        "name": "C1",
+        "type": "C",
+        "value": "1n",
+        "netColor": "#8a151b",
+        "pins": [
+          {
+            "id": "1",
+            "name": "1",
+            "x": 680,
+            "y": 130
+          },
+          {
+            "id": "2",
+            "name": "2",
+            "x": 680,
+            "y": 170
+          }
+        ]
+      },
+      {
+        "id": "VAC2",
+        "name": "VAC2",
+        "type": "VAC",
+        "value": "",
+        "netColor": "#8a151b",
+        "vacAmplitude": "10",
+        "vacFrequency": "50",
+        "vacPhase": "0",
+        "vacDcOffset": "0",
+        "vacWaveform": "sine",
+        "rotation": 0,
+        "labelRotation": 180,
+        "pins": [
+          {
+            "id": "+",
+            "name": "+",
+            "x": 400,
+            "y": 130
+          },
+          {
+            "id": "-",
+            "name": "-",
+            "x": 400,
+            "y": 170
+          }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "W154",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 460,
+            "y": 170
+          },
+          {
+            "x": 440,
+            "y": 170
+          }
+        ]
+      },
+      {
+        "id": "W193",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 440,
+            "y": 170
+          },
+          {
+            "x": 440,
+            "y": 180
+          }
+        ]
+      },
+      {
+        "id": "W157",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 620,
+            "y": 110
+          },
+          {
+            "x": 610,
+            "y": 110
+          }
+        ]
+      },
+      {
+        "id": "W183",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 610,
+            "y": 110
+          },
+          {
+            "x": 600,
+            "y": 110
+          }
+        ]
+      },
+      {
+        "id": "W182",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 610,
+            "y": 110
+          },
+          {
+            "x": 610,
+            "y": 170
+          },
+          {
+            "x": 500,
+            "y": 170
+          }
+        ]
+      },
+      {
+        "id": "W158",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 620,
+            "y": 60
+          },
+          {
+            "x": 610,
+            "y": 60
+          }
+        ]
+      },
+      {
+        "id": "W181",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 610,
+            "y": 60
+          },
+          {
+            "x": 600,
+            "y": 60
+          }
+        ]
+      },
+      {
+        "id": "W180",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 610,
+            "y": 60
+          },
+          {
+            "x": 610,
+            "y": 20
+          },
+          {
+            "x": 520,
+            "y": 20
+          },
+          {
+            "x": 520,
+            "y": 130
+          },
+          {
+            "x": 500,
+            "y": 130
+          }
+        ]
+      },
+      {
+        "id": "W159",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 560,
+            "y": 60
+          },
+          {
+            "x": 540,
+            "y": 60
+          },
+          {
+            "x": 540,
+            "y": 110
+          }
+        ]
+      },
+      {
+        "id": "W164",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 540,
+            "y": 110
+          },
+          {
+            "x": 560,
+            "y": 110
+          }
+        ]
+      },
+      {
+        "id": "W163",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 540,
+            "y": 110
+          },
+          {
+            "x": 540,
+            "y": 200
+          },
+          {
+            "x": 590,
+            "y": 200
+          }
+        ]
+      },
+      {
+        "id": "W201",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 590,
+            "y": 200
+          },
+          {
+            "x": 680,
+            "y": 200
+          }
+        ]
+      },
+      {
+        "id": "W197",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 680,
+            "y": 200
+          },
+          {
+            "x": 730,
+            "y": 200
+          },
+          {
+            "x": 730,
+            "y": 170
+          }
+        ]
+      },
+      {
+        "id": "W160",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 660,
+            "y": 60
+          },
+          {
+            "x": 660,
+            "y": 90
+          }
+        ]
+      },
+      {
+        "id": "W179",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 660,
+            "y": 110
+          },
+          {
+            "x": 660,
+            "y": 90
+          }
+        ]
+      },
+      {
+        "id": "W186",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 660,
+            "y": 90
+          },
+          {
+            "x": 680,
+            "y": 90
+          }
+        ]
+      },
+      {
+        "id": "W185",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 680,
+            "y": 90
+          },
+          {
+            "x": 680,
+            "y": 130
+          }
+        ]
+      },
+      {
+        "id": "W171",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 680,
+            "y": 90
+          },
+          {
+            "x": 730,
+            "y": 90
+          },
+          {
+            "x": 730,
+            "y": 130
+          }
+        ]
+      },
+      {
+        "id": "W172",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 680,
+            "y": 170
+          },
+          {
+            "x": 680,
+            "y": 200
+          }
+        ]
+      },
+      {
+        "id": "W192",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 400,
+            "y": 170
+          },
+          {
+            "x": 440,
+            "y": 170
+          }
+        ]
+      },
+      {
+        "id": "W198",
+        "netColor": "#24a148",
+        "points": [
+          {
+            "x": 400,
+            "y": 130
+          },
+          {
+            "x": 460,
+            "y": 130
+          }
+        ]
+      },
+      {
+        "id": "W200",
+        "netColor": "#139c9c",
+        "points": [
+          {
+            "x": 590,
+            "y": 200
+          },
+          {
+            "x": 590,
+            "y": 210
+          }
+        ]
+      }
+    ]
+  },
+  "editor": {
+    "view": {
+      "x": 270.62940560438255,
+      "y": -140.0386303839712,
+      "width": 600.2810000000002,
+      "height": 596.367549494309
+    },
+    "selection": {
+      "componentIds": [],
+      "wireIds": []
+    },
+    "grid": {
+      "size": 10,
+      "snap": true,
+      "visible": false
+    }
+  },
+  "simulation": {
+    "config": {
+      "activeKind": "tran",
+      "op": {},
+      "dc": {
+        "source": "VAC2",
+        "start": "0",
+        "stop": "10",
+        "step": "1"
+      },
+      "tran": {
+        "source": "VAC2",
+        "sourceMode": "sine",
+        "sourceValue": "sin(0 10 50)",
+        "dcValue": "5",
+        "pulseLow": "0",
+        "pulseHigh": "5",
+        "pulseDelay": "1m",
+        "pulseRise": "1u",
+        "pulseFall": "1u",
+        "pulseWidth": "5m",
+        "pulsePeriod": "10m",
+        "sineOffset": "0",
+        "sineAmplitude": "10",
+        "sineFreq": "50",
+        "sineDelay": "",
+        "sineDamping": "",
+        "sinePhase": "",
+        "pwlPoints": "0 0\n1m 5\n2m 0",
+        "customValue": "",
+        "start": "0",
+        "stop": "50m",
+        "step": "0.01m",
+        "maxStep": ""
+      },
+      "ac": {
+        "source": "VAC2",
+        "sourceValue": "ac 1",
+        "sweep": "dec",
+        "points": "10",
+        "start": "1",
+        "stop": "100k"
+      },
+      "save": {
+        "signals": []
+      }
+    },
+    "preamble": ""
+  },
+  "ui": {
+    "plot": {
+      "showGrid": false
+    },
+    "resultsPane": {
+      "mode": "split",
+      "splitRatio": 0.5439301408371114
+    },
+    "settings": {
+      "autoSwitchToSelectOnPlace": true,
+      "autoSwitchToSelectOnWire": false,
+      "includeSchematicValueUnitSpace": true,
+      "schematicText": {
+        "font": "Segoe UI",
+        "size": 12,
+        "bold": false,
+        "italic": false
+      },
+      "componentDefaults": {
+        "R": {
+          "value": "1k",
+          "netColor": null
+        },
+        "C": {
+          "value": "1u",
+          "netColor": null
+        },
+        "L": {
+          "value": "1m",
+          "netColor": null
+        },
+        "XFMR": {
+          "value": "1",
+          "netColor": null,
+          "xfmrPolarity": "subtractive",
+          "xfmrSolveBy": "ratio"
+        },
+        "V": {
+          "value": "1",
+          "netColor": null
+        },
+        "VAC": {
+          "value": "",
+          "netColor": null,
+          "vacAmplitude": "1",
+          "vacFrequency": "1k",
+          "vacWaveform": "sine"
+        },
+        "I": {
+          "value": "1",
+          "netColor": null
+        },
+        "VM": {
+          "value": "",
+          "netColor": null
+        },
+        "AM": {
+          "value": "",
+          "netColor": null
+        },
+        "SW": {
+          "value": "",
+          "netColor": null
+        },
+        "SPST": {
+          "value": "",
+          "netColor": null
+        },
+        "D": {
+          "value": "1N4148",
+          "netColor": null
+        },
+        "NET": {
+          "value": "",
+          "netColor": null
+        },
+        "TEXT": {
+          "value": "",
+          "netColor": null
+        },
+        "ARR": {
+          "value": "",
+          "netColor": null
+        },
+        "BOX": {
+          "value": "",
+          "netColor": null
+        }
+      },
+      "toolDisplayDefaults": {
+        "resistorStyle": "zigzag",
+        "groundVariant": "earth",
+        "groundColor": null,
+        "probeColor": null
+      },
+      "wireDefaultColor": "#139c9c"
+    }
+  }
+}

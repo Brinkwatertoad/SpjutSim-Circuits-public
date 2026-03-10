@@ -2,8 +2,8 @@
   "schema": "spjutsim/schematic",
   "version": 1,
   "title": "",
-  "createdAt": "2026-02-09T03:20:35.499Z",
-  "updatedAt": "2026-02-11T15:56:28.731Z",
+  "createdAt": "2026-03-08T05:36:41.449Z",
+  "updatedAt": "2026-03-10T04:25:21.018Z",
   "schematic": {
     "components": [
       {
@@ -46,7 +46,8 @@
             "y": -40
           }
         ],
-        "rotation": 0
+        "rotation": 0,
+        "resistorStyle": "zigzag"
       },
       {
         "id": "L1",
@@ -82,7 +83,25 @@
             "y": 60
           }
         ],
-        "rotation": 0
+        "rotation": 0,
+        "groundVariant": "earth"
+      },
+      {
+        "id": "TEXT1",
+        "name": "Try running Transient or AC",
+        "type": "TEXT",
+        "value": "",
+        "pins": [
+          {
+            "id": "A",
+            "name": "A",
+            "x": 80,
+            "y": -110
+          }
+        ],
+        "rotation": 0,
+        "textFont": "Segoe UI",
+        "textSize": 14
       }
     ],
     "wires": [
@@ -149,10 +168,10 @@
   },
   "editor": {
     "view": {
-      "x": 18.736319151339956,
-      "y": -147.03812830274921,
-      "width": 262.5273616973201,
-      "height": 314.07625660549843
+      "x": -52.77305864243098,
+      "y": -191.4511072082114,
+      "width": 405.54611728486196,
+      "height": 402.9022144164228
     },
     "selection": {
       "componentIds": [],
@@ -161,12 +180,12 @@
     "grid": {
       "size": 10,
       "snap": true,
-      "visible": true
+      "visible": false
     }
   },
   "simulation": {
     "config": {
-      "activeKind": "op",
+      "activeKind": "tran",
       "op": {},
       "dc": {
         "source": "V1",
@@ -218,6 +237,99 @@
   "ui": {
     "plot": {
       "showGrid": false
+    },
+    "resultsPane": {
+      "mode": "split",
+      "splitRatio": 0.5439301408371114
+    },
+    "settings": {
+      "autoSwitchToSelectOnPlace": true,
+      "autoSwitchToSelectOnWire": false,
+      "includeSchematicValueUnitSpace": true,
+      "schematicText": {
+        "font": "Segoe UI",
+        "size": 12,
+        "bold": false,
+        "italic": false
+      },
+      "componentDefaults": {
+        "R": {
+          "value": "1k",
+          "netColor": null
+        },
+        "C": {
+          "value": "1u",
+          "netColor": null
+        },
+        "L": {
+          "value": "1m",
+          "netColor": null
+        },
+        "XFMR": {
+          "value": "1",
+          "netColor": null,
+          "xfmrPolarity": "subtractive",
+          "xfmrSolveBy": "ratio"
+        },
+        "V": {
+          "value": "1",
+          "netColor": null
+        },
+        "VAC": {
+          "value": "",
+          "netColor": null,
+          "vacAmplitude": "1",
+          "vacFrequency": "1k",
+          "vacWaveform": "sine"
+        },
+        "I": {
+          "value": "1",
+          "netColor": null
+        },
+        "VM": {
+          "value": "",
+          "netColor": null
+        },
+        "AM": {
+          "value": "",
+          "netColor": null
+        },
+        "SW": {
+          "value": "",
+          "netColor": null
+        },
+        "SPST": {
+          "value": "",
+          "netColor": null
+        },
+        "D": {
+          "value": "1N4148",
+          "netColor": null
+        },
+        "NET": {
+          "value": "",
+          "netColor": null
+        },
+        "TEXT": {
+          "value": "",
+          "netColor": null
+        },
+        "ARR": {
+          "value": "",
+          "netColor": null
+        },
+        "BOX": {
+          "value": "",
+          "netColor": null
+        }
+      },
+      "toolDisplayDefaults": {
+        "resistorStyle": "zigzag",
+        "groundVariant": "earth",
+        "groundColor": null,
+        "probeColor": null
+      },
+      "wireDefaultColor": null
     }
   }
 }

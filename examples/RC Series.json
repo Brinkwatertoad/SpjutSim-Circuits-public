@@ -1,0 +1,355 @@
+{
+  "schema": "spjutsim/schematic",
+  "version": 1,
+  "title": "",
+  "createdAt": "2026-03-08T05:36:41.449Z",
+  "updatedAt": "2026-03-10T04:24:15.158Z",
+  "schematic": {
+    "components": [
+      {
+        "id": "R1",
+        "name": "R1",
+        "type": "R",
+        "value": "1k",
+        "pins": [
+          {
+            "id": "1",
+            "name": "1",
+            "x": 70,
+            "y": 40
+          },
+          {
+            "id": "2",
+            "name": "2",
+            "x": 110,
+            "y": 40
+          }
+        ],
+        "resistorStyle": "zigzag"
+      },
+      {
+        "id": "C1",
+        "name": "C1",
+        "type": "C",
+        "value": "1u",
+        "pins": [
+          {
+            "id": "1",
+            "name": "1",
+            "x": 140,
+            "y": 50
+          },
+          {
+            "id": "2",
+            "name": "2",
+            "x": 140,
+            "y": 90
+          }
+        ]
+      },
+      {
+        "id": "GND1",
+        "name": "GND1",
+        "type": "GND",
+        "value": "",
+        "pins": [
+          {
+            "id": "1",
+            "name": "1",
+            "x": 90,
+            "y": 130
+          }
+        ],
+        "groundVariant": "earth"
+      },
+      {
+        "id": "V2",
+        "name": "V2",
+        "type": "V",
+        "value": "1",
+        "pins": [
+          {
+            "id": "+",
+            "name": "+",
+            "x": 40,
+            "y": 50
+          },
+          {
+            "id": "-",
+            "name": "-",
+            "x": 40,
+            "y": 90
+          }
+        ],
+        "rotation": 0,
+        "labelRotation": 180
+      },
+      {
+        "id": "TEXT1",
+        "name": "Try running Transient or AC",
+        "type": "TEXT",
+        "value": "",
+        "pins": [
+          {
+            "id": "A",
+            "name": "A",
+            "x": 20,
+            "y": -30
+          }
+        ],
+        "rotation": 0,
+        "textFont": "Segoe UI",
+        "textSize": 14
+      }
+    ],
+    "wires": [
+      {
+        "id": "W9",
+        "points": [
+          {
+            "x": 40,
+            "y": 50
+          },
+          {
+            "x": 40,
+            "y": 40
+          },
+          {
+            "x": 70,
+            "y": 40
+          }
+        ]
+      },
+      {
+        "id": "W10",
+        "points": [
+          {
+            "x": 110,
+            "y": 40
+          },
+          {
+            "x": 140,
+            "y": 40
+          },
+          {
+            "x": 140,
+            "y": 50
+          }
+        ]
+      },
+      {
+        "id": "W11",
+        "points": [
+          {
+            "x": 140,
+            "y": 90
+          },
+          {
+            "x": 140,
+            "y": 110
+          },
+          {
+            "x": 90,
+            "y": 110
+          }
+        ]
+      },
+      {
+        "id": "W15",
+        "points": [
+          {
+            "x": 90,
+            "y": 110
+          },
+          {
+            "x": 40,
+            "y": 110
+          },
+          {
+            "x": 40,
+            "y": 90
+          }
+        ]
+      },
+      {
+        "id": "W14",
+        "points": [
+          {
+            "x": 90,
+            "y": 110
+          },
+          {
+            "x": 90,
+            "y": 130
+          }
+        ]
+      }
+    ]
+  },
+  "editor": {
+    "view": {
+      "x": -81.42851828456992,
+      "y": -116.4511072082114,
+      "width": 342.85703656913984,
+      "height": 402.9022144164228
+    },
+    "selection": {
+      "componentIds": [],
+      "wireIds": []
+    },
+    "grid": {
+      "size": 10,
+      "snap": true,
+      "visible": false
+    }
+  },
+  "simulation": {
+    "config": {
+      "activeKind": "tran",
+      "op": {},
+      "dc": {
+        "source": "V2",
+        "start": "0",
+        "stop": "10",
+        "step": "1"
+      },
+      "tran": {
+        "source": "V2",
+        "sourceMode": "pulse",
+        "sourceValue": "pulse(0 5 1m 1u 1u 5m 10m)",
+        "dcValue": "5",
+        "pulseLow": "0",
+        "pulseHigh": "5",
+        "pulseDelay": "1m",
+        "pulseRise": "1u",
+        "pulseFall": "1u",
+        "pulseWidth": "5m",
+        "pulsePeriod": "10m",
+        "sineOffset": "0",
+        "sineAmplitude": "1",
+        "sineFreq": "1k",
+        "sineDelay": "",
+        "sineDamping": "",
+        "sinePhase": "",
+        "pwlPoints": "0 0\n1m 5\n2m 0",
+        "customValue": "",
+        "start": "0",
+        "stop": "10m",
+        "step": "0.1m",
+        "maxStep": ""
+      },
+      "ac": {
+        "source": "V2",
+        "sourceValue": "ac 1",
+        "sweep": "dec",
+        "points": "10",
+        "start": "1",
+        "stop": "100k"
+      },
+      "save": {
+        "signals": [
+          "all"
+        ]
+      }
+    },
+    "preamble": ""
+  },
+  "ui": {
+    "plot": {
+      "showGrid": false
+    },
+    "resultsPane": {
+      "mode": "split",
+      "splitRatio": 0.5439301408371114
+    },
+    "settings": {
+      "autoSwitchToSelectOnPlace": true,
+      "autoSwitchToSelectOnWire": false,
+      "includeSchematicValueUnitSpace": true,
+      "schematicText": {
+        "font": "Segoe UI",
+        "size": 12,
+        "bold": false,
+        "italic": false
+      },
+      "componentDefaults": {
+        "R": {
+          "value": "1k",
+          "netColor": null
+        },
+        "C": {
+          "value": "1u",
+          "netColor": null
+        },
+        "L": {
+          "value": "1m",
+          "netColor": null
+        },
+        "XFMR": {
+          "value": "1",
+          "netColor": null,
+          "xfmrPolarity": "subtractive",
+          "xfmrSolveBy": "ratio"
+        },
+        "V": {
+          "value": "1",
+          "netColor": null
+        },
+        "VAC": {
+          "value": "",
+          "netColor": null,
+          "vacAmplitude": "1",
+          "vacFrequency": "1k",
+          "vacWaveform": "sine"
+        },
+        "I": {
+          "value": "1",
+          "netColor": null
+        },
+        "VM": {
+          "value": "",
+          "netColor": null
+        },
+        "AM": {
+          "value": "",
+          "netColor": null
+        },
+        "SW": {
+          "value": "",
+          "netColor": null
+        },
+        "SPST": {
+          "value": "",
+          "netColor": null
+        },
+        "D": {
+          "value": "1N4148",
+          "netColor": null
+        },
+        "NET": {
+          "value": "",
+          "netColor": null
+        },
+        "TEXT": {
+          "value": "",
+          "netColor": null
+        },
+        "ARR": {
+          "value": "",
+          "netColor": null
+        },
+        "BOX": {
+          "value": "",
+          "netColor": null
+        }
+      },
+      "toolDisplayDefaults": {
+        "resistorStyle": "zigzag",
+        "groundVariant": "earth",
+        "groundColor": null,
+        "probeColor": null
+      },
+      "wireDefaultColor": null
+    }
+  }
+}

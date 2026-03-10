@@ -2,8 +2,8 @@
   "schema": "spjutsim/schematic",
   "version": 1,
   "title": "",
-  "createdAt": "2026-02-18T23:38:36.795Z",
-  "updatedAt": "2026-02-26T03:44:59.288Z",
+  "createdAt": "2026-03-08T19:03:14.624Z",
+  "updatedAt": "2026-03-10T04:12:49.884Z",
   "schematic": {
     "components": [
       {
@@ -31,6 +31,7 @@
         "name": "R1",
         "type": "R",
         "value": "1k",
+        "resistorStyle": "zigzag",
         "pins": [
           {
             "id": "1",
@@ -51,6 +52,7 @@
         "name": "R2",
         "type": "R",
         "value": "2k",
+        "resistorStyle": "zigzag",
         "pins": [
           {
             "id": "1",
@@ -71,6 +73,7 @@
         "name": "R3",
         "type": "R",
         "value": "3k",
+        "resistorStyle": "zigzag",
         "pins": [
           {
             "id": "1",
@@ -91,6 +94,7 @@
         "name": "R4",
         "type": "R",
         "value": "1.5k",
+        "resistorStyle": "zigzag",
         "pins": [
           {
             "id": "1",
@@ -111,6 +115,7 @@
         "name": "R5",
         "type": "R",
         "value": "680",
+        "resistorStyle": "zigzag",
         "pins": [
           {
             "id": "1",
@@ -131,18 +136,19 @@
         "name": "R6",
         "type": "R",
         "value": "4.7k",
+        "resistorStyle": "zigzag",
         "pins": [
           {
             "id": "1",
             "name": "1",
-            "x": 60,
-            "y": 160
+            "x": 140,
+            "y": 140
           },
           {
             "id": "2",
             "name": "2",
-            "x": 60,
-            "y": 200
+            "x": 180,
+            "y": 140
           }
         ]
       },
@@ -195,13 +201,13 @@
           {
             "id": "1",
             "name": "1",
-            "x": 400,
+            "x": 410,
             "y": 60
           },
           {
             "id": "2",
             "name": "2",
-            "x": 400,
+            "x": 410,
             "y": 100
           }
         ]
@@ -211,6 +217,7 @@
         "name": "GND1",
         "type": "GND",
         "value": "",
+        "groundVariant": "earth",
         "pins": [
           {
             "id": "1",
@@ -266,28 +273,6 @@
             "x": 120,
             "y": 80
           },
-          {
-            "x": 160,
-            "y": 80
-          }
-        ]
-      },
-      {
-        "id": "W6",
-        "points": [
-          {
-            "x": 160,
-            "y": 80
-          },
-          {
-            "x": 180,
-            "y": 80
-          }
-        ]
-      },
-      {
-        "id": "W7",
-        "points": [
           {
             "x": 180,
             "y": 80
@@ -404,7 +389,7 @@
             "y": 60
           },
           {
-            "x": 400,
+            "x": 410,
             "y": 60
           }
         ]
@@ -421,10 +406,6 @@
             "y": 160
           },
           {
-            "x": 60,
-            "y": 160
-          },
-          {
             "x": 100,
             "y": 160
           },
@@ -446,52 +427,59 @@
           },
           {
             "x": 120,
-            "y": 140
-          }
-        ]
-      },
-      {
-        "id": "W16",
-        "points": [
-          {
-            "x": 120,
-            "y": 140
-          },
-          {
-            "x": 196.250977,
-            "y": 140
-          }
-        ]
-      },
-      {
-        "id": "W10",
-        "points": [
-          {
-            "x": 196.250977,
-            "y": 140
-          },
-          {
-            "x": 220,
-            "y": 140
-          }
-        ]
-      },
-      {
-        "id": "W11",
-        "points": [
-          {
-            "x": 220,
-            "y": 140
-          },
-          {
-            "x": 220,
             "y": 120
+          },
+          {
+            "x": 140,
+            "y": 120
+          },
+          {
+            "x": 140,
+            "y": 140
           }
         ]
       },
       {
-        "id": "W12",
+        "id": "W_RETURN_C",
         "points": [
+          {
+            "x": 200,
+            "y": 100
+          },
+          {
+            "x": 200,
+            "y": 180
+          }
+        ]
+      },
+      {
+        "id": "W3",
+        "points": [
+          {
+            "x": 200,
+            "y": 180
+          },
+          {
+            "x": 220,
+            "y": 180
+          }
+        ]
+      },
+      {
+        "id": "W4",
+        "points": [
+          {
+            "x": 220,
+            "y": 180
+          },
+          {
+            "x": 260,
+            "y": 180
+          },
+          {
+            "x": 260,
+            "y": 120
+          },
           {
             "x": 220,
             "y": 120
@@ -525,58 +513,8 @@
             "y": 100
           },
           {
-            "x": 400,
+            "x": 410,
             "y": 100
-          }
-        ]
-      },
-      {
-        "id": "W14",
-        "points": [
-          {
-            "x": 220,
-            "y": 120
-          },
-          {
-            "x": 180,
-            "y": 120
-          },
-          {
-            "x": 180,
-            "y": 80
-          }
-        ]
-      },
-      {
-        "id": "W2",
-        "points": [
-          {
-            "x": 160,
-            "y": 80
-          },
-          {
-            "x": 160,
-            "y": 100
-          },
-          {
-            "x": 200,
-            "y": 100
-          },
-          {
-            "x": 200,
-            "y": 180
-          },
-          {
-            "x": 260,
-            "y": 180
-          },
-          {
-            "x": 260,
-            "y": 120
-          },
-          {
-            "x": 220,
-            "y": 120
           }
         ]
       },
@@ -589,24 +527,20 @@
           },
           {
             "x": 220,
-            "y": 190
-          },
-          {
-            "x": 196.250977,
-            "y": 190
+            "y": 180
           }
         ]
       },
       {
-        "id": "W4",
+        "id": "W1",
         "points": [
           {
-            "x": 196.250977,
-            "y": 190
+            "x": 200,
+            "y": 180
           },
           {
-            "x": 196.250977,
-            "y": 140
+            "x": 180,
+            "y": 180
           }
         ]
       },
@@ -614,20 +548,24 @@
         "id": "W5",
         "points": [
           {
-            "x": 196.250977,
-            "y": 190
+            "x": 180,
+            "y": 180
           },
           {
-            "x": 196.250977,
-            "y": 200
+            "x": 180,
+            "y": 140
           }
         ]
       },
       {
-        "id": "W19",
+        "id": "W2",
         "points": [
           {
-            "x": 196.250977,
+            "x": 180,
+            "y": 180
+          },
+          {
+            "x": 180,
             "y": 200
           },
           {
@@ -639,41 +577,15 @@
             "y": 220
           }
         ]
-      },
-      {
-        "id": "W_R6_LEFT",
-        "points": [
-          {
-            "x": 120,
-            "y": 170
-          },
-          {
-            "x": 120,
-            "y": 140
-          }
-        ]
-      },
-      {
-        "id": "W18",
-        "points": [
-          {
-            "x": 60,
-            "y": 200
-          },
-          {
-            "x": 196.250977,
-            "y": 200
-          }
-        ]
       }
     ]
   },
   "editor": {
     "view": {
-      "x": -25.15128093470816,
-      "y": -249.00732218086617,
-      "width": 505.3038346246275,
-      "height": 731.7664660330147
+      "x": -35.61446961700898,
+      "y": -173.47088601045294,
+      "width": 531.228939234018,
+      "height": 586.9417720209059
     },
     "selection": {
       "componentIds": [],
@@ -682,7 +594,7 @@
     "grid": {
       "size": 10,
       "snap": true,
-      "visible": true
+      "visible": false
     }
   },
   "simulation": {
@@ -742,7 +654,96 @@
     },
     "resultsPane": {
       "mode": "split",
-      "splitRatio": 0.4966923449566646
+      "splitRatio": 0.48921933085501856
+    },
+    "settings": {
+      "autoSwitchToSelectOnPlace": true,
+      "autoSwitchToSelectOnWire": false,
+      "includeSchematicValueUnitSpace": true,
+      "schematicText": {
+        "font": "Segoe UI",
+        "size": 12,
+        "bold": false,
+        "italic": false
+      },
+      "componentDefaults": {
+        "R": {
+          "value": "1k",
+          "netColor": "#8a151b"
+        },
+        "C": {
+          "value": "1u",
+          "netColor": "#8a151b"
+        },
+        "L": {
+          "value": "1m",
+          "netColor": "#8a151b"
+        },
+        "XFMR": {
+          "value": "1",
+          "netColor": "#8a151b",
+          "xfmrPolarity": "subtractive",
+          "xfmrSolveBy": "ratio"
+        },
+        "V": {
+          "value": "1",
+          "netColor": "#8a151b"
+        },
+        "VAC": {
+          "value": "",
+          "netColor": "#8a151b",
+          "vacAmplitude": "1",
+          "vacFrequency": "1k",
+          "vacWaveform": "sine"
+        },
+        "I": {
+          "value": "1",
+          "netColor": "#8a151b"
+        },
+        "VM": {
+          "value": "",
+          "netColor": "#8a151b"
+        },
+        "AM": {
+          "value": "",
+          "netColor": "#8a151b"
+        },
+        "SW": {
+          "value": "",
+          "netColor": "#8a151b"
+        },
+        "SPST": {
+          "value": "",
+          "netColor": "#8a151b"
+        },
+        "D": {
+          "value": "1N4148",
+          "netColor": "#8a151b"
+        },
+        "NET": {
+          "value": "",
+          "netColor": "#1d1d1f"
+        },
+        "TEXT": {
+          "value": "",
+          "netColor": "#1d1d1f"
+        },
+        "ARR": {
+          "value": "",
+          "netColor": "#1d1d1f"
+        },
+        "BOX": {
+          "value": "",
+          "netColor": "#1d1d1f"
+        }
+      },
+      "toolDisplayDefaults": {
+        "resistorStyle": "zigzag",
+        "groundVariant": "earth",
+        "groundColor": "#8a151b",
+        "probeColor": "#1d1d1f"
+      },
+      "wireDefaultColor": "#24a148"
     }
   }
 }

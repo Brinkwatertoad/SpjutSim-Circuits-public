@@ -56,7 +56,7 @@
   --z-menu: 20;
   --z-popover: 30;
   --z-context-menu: 40;
-  --z-tooltip: 60;
+  --z-tooltip: 75;
   --z-inline-edit: 70;
   --z-modal: 80;
   background: var(--color-bg);

@@ -1,0 +1,498 @@
+{
+  "schema": "spjutsim/schematic",
+  "version": 1,
+  "title": "",
+  "createdAt": "2026-03-08T05:36:41.449Z",
+  "updatedAt": "2026-03-10T04:19:38.140Z",
+  "schematic": {
+    "components": [
+      {
+        "id": "D1",
+        "name": "D1",
+        "type": "D",
+        "value": "10A04",
+        "pins": [
+          {
+            "id": "A",
+            "name": "A",
+            "x": 290,
+            "y": 170
+          },
+          {
+            "id": "K",
+            "name": "K",
+            "x": 330,
+            "y": 170
+          }
+        ],
+        "rotation": 0,
+        "netColor": "#8a151b",
+        "diodeDisplayType": "default",
+        "diodePreset": "10A04",
+        "diodeIS": "844n",
+        "diodeN": "2.06",
+        "diodeRS": "2.06m",
+        "diodeTT": "4.32u",
+        "diodeCJO": "277p",
+        "diodeVJ": "0.6",
+        "diodeM": "0.333",
+        "diodeFC": "",
+        "diodeEG": "",
+        "diodeXTI": "",
+        "diodeTNOM": "",
+        "diodeBV": "400",
+        "diodeIBV": "10u",
+        "diodeExtra": "",
+        "diodeArea": "",
+        "diodeTEMP": "",
+        "diodeDTEMP": "",
+        "diodeIC": ""
+      },
+      {
+        "id": "R1",
+        "name": "R1",
+        "type": "R",
+        "value": "1.5k",
+        "pins": [
+          {
+            "id": "1",
+            "name": "1",
+            "x": 400,
+            "y": 190
+          },
+          {
+            "id": "2",
+            "name": "2",
+            "x": 400,
+            "y": 230
+          }
+        ],
+        "resistorStyle": "zigzag",
+        "netColor": "#8a151b"
+      },
+      {
+        "id": "GND1",
+        "name": "GND1",
+        "type": "GND",
+        "value": "",
+        "pins": [
+          {
+            "id": "0",
+            "name": "0",
+            "x": 330,
+            "y": 260
+          }
+        ],
+        "rotation": 0,
+        "groundVariant": "earth",
+        "netColor": "#8a151b"
+      },
+      {
+        "id": "PV1",
+        "name": "V(N1)",
+        "type": "PV",
+        "value": "",
+        "pins": [
+          {
+            "id": "P",
+            "name": "P",
+            "x": 370,
+            "y": 170
+          }
+        ],
+        "rotation": 0,
+        "netColor": "#da1e28"
+      },
+      {
+        "id": "PV2",
+        "name": "V(N2)",
+        "type": "PV",
+        "value": "",
+        "pins": [
+          {
+            "id": "P",
+            "name": "P",
+            "x": 260,
+            "y": 170
+          }
+        ],
+        "rotation": 270,
+        "netColor": "#da1e28"
+      },
+      {
+        "id": "VAC1",
+        "name": "VAC1",
+        "type": "VAC",
+        "value": "",
+        "pins": [
+          {
+            "id": "+",
+            "name": "+",
+            "x": 230,
+            "y": 190
+          },
+          {
+            "id": "-",
+            "name": "-",
+            "x": 230,
+            "y": 230
+          }
+        ],
+        "rotation": 0,
+        "vacAmplitude": "1",
+        "vacFrequency": "1k",
+        "vacPhase": "0",
+        "vacDcOffset": "0",
+        "vacWaveform": "sine",
+        "netColor": "#8a151b"
+      },
+      {
+        "id": "C1",
+        "name": "C1",
+        "type": "C",
+        "value": "1p",
+        "pins": [
+          {
+            "id": "1",
+            "name": "1",
+            "x": 350,
+            "y": 190
+          },
+          {
+            "id": "2",
+            "name": "2",
+            "x": 350,
+            "y": 230
+          }
+        ],
+        "rotation": 0,
+        "netColor": "#8a151b"
+      },
+      {
+        "id": "TEXT2",
+        "name": "Try increasing the capacitance!",
+        "type": "TEXT",
+        "value": "",
+        "pins": [
+          {
+            "id": "A",
+            "name": "A",
+            "x": 230,
+            "y": 90
+          }
+        ],
+        "rotation": 0,
+        "textFont": "Segoe UI",
+        "textSize": 14
+      }
+    ],
+    "wires": [
+      {
+        "id": "W93",
+        "netColor": "#139c9c",
+        "points": [
+          {
+            "x": 330,
+            "y": 170
+          },
+          {
+            "x": 350,
+            "y": 170
+          }
+        ]
+      },
+      {
+        "id": "W102",
+        "netColor": "#139c9c",
+        "points": [
+          {
+            "x": 350,
+            "y": 170
+          },
+          {
+            "x": 400,
+            "y": 170
+          },
+          {
+            "x": 400,
+            "y": 190
+          }
+        ]
+      },
+      {
+        "id": "W97",
+        "netColor": "#139c9c",
+        "points": [
+          {
+            "x": 400,
+            "y": 230
+          },
+          {
+            "x": 400,
+            "y": 250
+          },
+          {
+            "x": 350,
+            "y": 250
+          }
+        ]
+      },
+      {
+        "id": "W105",
+        "netColor": "#139c9c",
+        "points": [
+          {
+            "x": 350,
+            "y": 250
+          },
+          {
+            "x": 350,
+            "y": 230
+          }
+        ]
+      },
+      {
+        "id": "W104",
+        "netColor": "#139c9c",
+        "points": [
+          {
+            "x": 350,
+            "y": 250
+          },
+          {
+            "x": 330,
+            "y": 250
+          }
+        ]
+      },
+      {
+        "id": "W106",
+        "netColor": "#139c9c",
+        "points": [
+          {
+            "x": 330,
+            "y": 250
+          },
+          {
+            "x": 230,
+            "y": 250
+          },
+          {
+            "x": 230,
+            "y": 230
+          }
+        ]
+      },
+      {
+        "id": "W100",
+        "netColor": "#139c9c",
+        "points": [
+          {
+            "x": 330,
+            "y": 250
+          },
+          {
+            "x": 330,
+            "y": 260
+          }
+        ]
+      },
+      {
+        "id": "W98",
+        "netColor": "#139c9c",
+        "points": [
+          {
+            "x": 230,
+            "y": 190
+          },
+          {
+            "x": 230,
+            "y": 170
+          },
+          {
+            "x": 290,
+            "y": 170
+          }
+        ]
+      },
+      {
+        "id": "W101",
+        "netColor": "#139c9c",
+        "points": [
+          {
+            "x": 350,
+            "y": 190
+          },
+          {
+            "x": 350,
+            "y": 170
+          }
+        ]
+      }
+    ]
+  },
+  "editor": {
+    "view": {
+      "x": 176.50997321813526,
+      "y": -1.0042067897448117,
+      "width": 342.8570365691398,
+      "height": 402.9022144164228
+    },
+    "selection": {
+      "componentIds": [],
+      "wireIds": []
+    },
+    "grid": {
+      "size": 10,
+      "snap": true,
+      "visible": false
+    }
+  },
+  "simulation": {
+    "config": {
+      "activeKind": "tran",
+      "op": {},
+      "dc": {
+        "source": "VAC1",
+        "start": "0",
+        "stop": "10",
+        "step": "1"
+      },
+      "tran": {
+        "source": "VAC1",
+        "sourceMode": "sine",
+        "sourceValue": "sin(0 1 1k)",
+        "dcValue": "5",
+        "pulseLow": "0",
+        "pulseHigh": "5",
+        "pulseDelay": "1m",
+        "pulseRise": "1u",
+        "pulseFall": "1u",
+        "pulseWidth": "5m",
+        "pulsePeriod": "10m",
+        "sineOffset": "0",
+        "sineAmplitude": "1",
+        "sineFreq": "1k",
+        "sineDelay": "",
+        "sineDamping": "",
+        "sinePhase": "",
+        "pwlPoints": "0 0\n1m 5\n2m 0",
+        "customValue": "",
+        "start": "0",
+        "stop": "3m",
+        "step": "0.001m",
+        "maxStep": ""
+      },
+      "ac": {
+        "source": "VAC1",
+        "sourceValue": "",
+        "sweep": "dec",
+        "points": "10",
+        "start": "1",
+        "stop": "100k"
+      },
+      "save": {
+        "signals": []
+      }
+    },
+    "preamble": ""
+  },
+  "ui": {
+    "plot": {
+      "showGrid": false
+    },
+    "resultsPane": {
+      "mode": "split",
+      "splitRatio": 0.5439301408371114
+    },
+    "settings": {
+      "autoSwitchToSelectOnPlace": true,
+      "autoSwitchToSelectOnWire": false,
+      "includeSchematicValueUnitSpace": true,
+      "schematicText": {
+        "font": "Segoe UI",
+        "size": 12,
+        "bold": false,
+        "italic": false
+      },
+      "componentDefaults": {
+        "R": {
+          "value": "1k",
+          "netColor": "#8a151b"
+        },
+        "C": {
+          "value": "1u",
+          "netColor": "#8a151b"
+        },
+        "L": {
+          "value": "1m",
+          "netColor": "#8a151b"
+        },
+        "XFMR": {
+          "value": "1",
+          "netColor": "#8a151b",
+          "xfmrPolarity": "subtractive",
+          "xfmrSolveBy": "ratio"
+        },
+        "V": {
+          "value": "1",
+          "netColor": "#8a151b"
+        },
+        "VAC": {
+          "value": "",
+          "netColor": "#8a151b",
+          "vacAmplitude": "1",
+          "vacFrequency": "1k",
+          "vacWaveform": "sine"
+        },
+        "I": {
+          "value": "1",
+          "netColor": "#8a151b"
+        },
+        "VM": {
+          "value": "",
+          "netColor": "#8a151b"
+        },
+        "AM": {
+          "value": "",
+          "netColor": "#8a151b"
+        },
+        "SW": {
+          "value": "",
+          "netColor": "#8a151b"
+        },
+        "SPST": {
+          "value": "",
+          "netColor": "#8a151b"
+        },
+        "D": {
+          "value": "1N5711",
+          "netColor": "#8a151b"
+        },
+        "NET": {
+          "value": "",
+          "netColor": null
+        },
+        "TEXT": {
+          "value": "",
+          "netColor": null
+        },
+        "ARR": {
+          "value": "",
+          "netColor": null
+        },
+        "BOX": {
+          "value": "",
+          "netColor": null
+        }
+      },
+      "toolDisplayDefaults": {
+        "resistorStyle": "zigzag",
+        "groundVariant": "earth",
+        "groundColor": "#8a151b",
+        "probeColor": "#da1e28"
+      },
+      "wireDefaultColor": "#139c9c"
+    }
+  }
+}
